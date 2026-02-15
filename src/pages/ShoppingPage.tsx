@@ -3,11 +3,21 @@ import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { StatusBadge } from "@/components/StatusBadge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 
 export default function ShoppingPage() {
   const { user } = useAuth();
@@ -15,6 +25,7 @@ export default function ShoppingPage() {
   const [items, setItems] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [selectedProduct, setSelectedProduct] = useState("");
+  const [clearing, setClearing] = useState(false);
 
   const fetchItems = async () => {
     const { data } = await supabase
@@ -51,9 +62,60 @@ export default function ShoppingPage() {
     fetchItems();
   };
 
+  const handleClearList = async () => {
+    if (!user) return;
+    setClearing(true);
+
+    const openItems = items.filter((i) => ["MISSING", "ORDERED", "BOUGHT"].includes(i.status));
+
+    if (openItems.length > 0) {
+      const ids = openItems.map((i) => i.id);
+      await supabase
+        .from("shopping_list")
+        .update({
+          status: "OK" as const,
+          last_cleared_at: new Date().toISOString(),
+          cleared_by_user_id: user.id,
+        })
+        .in("id", ids);
+    }
+
+    toast({ title: "Shopping list cleared", description: `${openItems.length} items set to OK.` });
+    setClearing(false);
+    fetchItems();
+  };
+
+  const openItemsCount = items.filter((i) => ["MISSING", "ORDERED", "BOUGHT"].includes(i.status)).length;
+
   return (
     <div>
-      <PageHeader title="Shopping List" description="Track consumables and supplies" />
+      <PageHeader
+        title="Shopping List"
+        description="Track consumables and supplies"
+        actions={
+          openItemsCount > 0 ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5" disabled={clearing}>
+                  <Trash2 className="h-4 w-4" /> Clear List
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear shopping list?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will set {openItemsCount} open item{openItemsCount !== 1 ? "s" : ""} to OK status. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleClearList}>Clear All</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : undefined
+        }
+      />
       <div className="p-6 space-y-4 max-w-2xl">
         {/* Add item */}
         <div className="flex gap-2">
