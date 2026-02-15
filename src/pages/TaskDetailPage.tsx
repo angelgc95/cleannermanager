@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
-import { ArrowLeft, Play, CheckCircle } from "lucide-react";
+import { ArrowLeft, Play, CheckCircle, ClipboardList } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function TaskDetailPage() {
@@ -91,13 +91,18 @@ export default function TaskDetailPage() {
         </Card>
 
         <div className="flex gap-2 flex-wrap">
+          {(task.status === "TODO" || task.status === "IN_PROGRESS") && (
+            <Button onClick={() => navigate(`/tasks/${id}/checklist`)} className="gap-2" size="lg">
+              <ClipboardList className="h-4 w-4" /> Start Checklist
+            </Button>
+          )}
           {task.status === "TODO" && (
-            <Button onClick={() => updateStatus("IN_PROGRESS")} className="gap-2">
-              <Play className="h-4 w-4" /> Start Cleaning
+            <Button variant="outline" onClick={() => updateStatus("IN_PROGRESS")} className="gap-2">
+              <Play className="h-4 w-4" /> Start (no checklist)
             </Button>
           )}
           {task.status === "IN_PROGRESS" && (
-            <Button onClick={() => updateStatus("DONE")} className="gap-2">
+            <Button variant="outline" onClick={() => updateStatus("DONE")} className="gap-2">
               <CheckCircle className="h-4 w-4" /> Mark Done
             </Button>
           )}
