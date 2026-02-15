@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
-import { Plus } from "lucide-react";
+
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<any[]>([]);
@@ -16,7 +16,7 @@ export default function TasksPage() {
     const fetch = async () => {
       const { data } = await supabase
         .from("cleaning_tasks")
-        .select("*, properties(name), rooms(name), profiles:assigned_cleaner_user_id(name)")
+        .select("*, properties(name), rooms(name)")
         .order("start_at", { ascending: false })
         .limit(50);
       setTasks(data || []);
@@ -27,18 +27,13 @@ export default function TasksPage() {
   return (
     <div>
       <PageHeader
-        title="Cleaning Tasks"
-        description="All scheduled and manual cleaning tasks"
-        actions={
-          <Button size="sm" onClick={() => navigate("/tasks/new")}>
-            <Plus className="h-4 w-4 mr-1" /> New Task
-          </Button>
-        }
+        title="Checklists"
+        description="Cleaning checklists for each scheduled task"
       />
       <div className="p-6">
         <div className="space-y-2">
           {tasks.length === 0 && (
-            <p className="text-center text-muted-foreground py-8">No cleaning tasks yet.</p>
+            <p className="text-center text-muted-foreground py-8">No scheduled cleanings yet. Tasks are created automatically from bookings.</p>
           )}
           {tasks.map((task: any) => (
             <Card
