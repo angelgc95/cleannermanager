@@ -101,7 +101,12 @@ export default function LogHoursPage() {
           <Card key={entry.id}>
             <CardContent className="flex items-center justify-between p-4">
               <div>
-                <p className="font-medium text-sm">{format(new Date(entry.date), "MMM d, yyyy")}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-sm">{format(new Date(entry.date), "MMM d, yyyy")}</p>
+                  {entry.source === "CHECKLIST" && (
+                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">CHECKLIST</span>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">{entry.start_at?.slice(0,5)} – {entry.end_at?.slice(0,5)} · {entry.duration_minutes} min</p>
                 {entry.description && <p className="text-xs text-muted-foreground mt-1">{entry.description}</p>}
               </div>

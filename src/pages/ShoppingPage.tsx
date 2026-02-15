@@ -3,11 +3,21 @@ import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { StatusBadge } from "@/components/StatusBadge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 
 export default function ShoppingPage() {
   const { user } = useAuth();
@@ -15,6 +25,7 @@ export default function ShoppingPage() {
   const [items, setItems] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [selectedProduct, setSelectedProduct] = useState("");
+  const [clearing, setClearing] = useState(false);
 
   const fetchItems = async () => {
     const { data } = await supabase
@@ -51,9 +62,61 @@ export default function ShoppingPage() {
     fetchItems();
   };
 
+  const clearList = async () => {
+    if (!user) return;
+    setClearing(true);
+    const openItems = items.filter((i) => ["MISSING", "ORDERED", "BOUGHT"].includes(i.status));
+    if (openItems.length === 0) {
+      toast({ title: "Nothing to clear", description: "All items are already OK." });
+      setClearing(false);
+      return;
+    }
+    const ids = openItems.map((i) => i.id);
+    const now = new Date().toISOString();
+    await supabase
+      .from("shopping_list")
+      .update({
+        status: "OK" as const,
+        last_cleared_at: now,
+        cleared_by_user_id: user.id,
+      })
+      .in("id", ids);
+    toast({ title: "Shopping list cleared", description: `${openItems.length} item(s) marked as OK.` });
+    setClearing(false);
+    fetchItems();
+  };
+
+  const openCount = items.filter((i) => ["MISSING", "ORDERED", "BOUGHT"].includes(i.status)).length;
+
   return (
     <div>
-      <PageHeader title="Shopping List" description="Track consumables and supplies" />
+      <PageHeader
+        title="Shopping List"
+        description="Track consumables and supplies"
+        actions={
+          openCount > 0 ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5" disabled={clearing}>
+                  <Trash2 className="h-4 w-4" /> Clear list ({openCount})
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear shopping list?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will mark all {openCount} open item(s) as OK. The items won't be deleted — they'll just be marked as resolved.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={clearList}>Clear all</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : undefined
+        }
+      />
       <div className="p-6 space-y-4 max-w-2xl">
         {/* Add item */}
         <div className="flex gap-2">
