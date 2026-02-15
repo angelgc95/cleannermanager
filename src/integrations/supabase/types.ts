@@ -593,6 +593,8 @@ export type Database = {
       }
       log_hours: {
         Row: {
+          checklist_run_id: string | null
+          cleaning_task_id: string | null
           created_at: string
           date: string
           description: string | null
@@ -601,10 +603,13 @@ export type Database = {
           id: string
           property_id: string | null
           room_id: string | null
+          source: Database["public"]["Enums"]["log_hours_source"] | null
           start_at: string
           user_id: string
         }
         Insert: {
+          checklist_run_id?: string | null
+          cleaning_task_id?: string | null
           created_at?: string
           date?: string
           description?: string | null
@@ -613,10 +618,13 @@ export type Database = {
           id?: string
           property_id?: string | null
           room_id?: string | null
+          source?: Database["public"]["Enums"]["log_hours_source"] | null
           start_at: string
           user_id: string
         }
         Update: {
+          checklist_run_id?: string | null
+          cleaning_task_id?: string | null
           created_at?: string
           date?: string
           description?: string | null
@@ -625,10 +633,25 @@ export type Database = {
           id?: string
           property_id?: string | null
           room_id?: string | null
+          source?: Database["public"]["Enums"]["log_hours_source"] | null
           start_at?: string
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "log_hours_checklist_run_id_fkey"
+            columns: ["checklist_run_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "log_hours_cleaning_task_id_fkey"
+            columns: ["cleaning_task_id"]
+            isOneToOne: false
+            referencedRelation: "cleaning_tasks"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "log_hours_property_id_fkey"
             columns: ["property_id"]
@@ -1061,9 +1084,15 @@ export type Database = {
       }
       shopping_list: {
         Row: {
+          checklist_run_id: string | null
+          cleared_by_user_id: string | null
           created_at: string
           created_by_user_id: string
+          created_from:
+            | Database["public"]["Enums"]["shopping_created_from"]
+            | null
           id: string
+          last_cleared_at: string | null
           note: string | null
           product_id: string
           property_id: string | null
@@ -1073,9 +1102,15 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          checklist_run_id?: string | null
+          cleared_by_user_id?: string | null
           created_at?: string
           created_by_user_id: string
+          created_from?:
+            | Database["public"]["Enums"]["shopping_created_from"]
+            | null
           id?: string
+          last_cleared_at?: string | null
           note?: string | null
           product_id: string
           property_id?: string | null
@@ -1085,9 +1120,15 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          checklist_run_id?: string | null
+          cleared_by_user_id?: string | null
           created_at?: string
           created_by_user_id?: string
+          created_from?:
+            | Database["public"]["Enums"]["shopping_created_from"]
+            | null
           id?: string
+          last_cleared_at?: string | null
           note?: string | null
           product_id?: string
           property_id?: string | null
@@ -1097,6 +1138,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "shopping_list_checklist_run_id_fkey"
+            columns: ["checklist_run_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_runs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "shopping_list_product_id_fkey"
             columns: ["product_id"]
@@ -1157,12 +1205,14 @@ export type Database = {
       cleaning_mode: "CLEAN_ON_CHECKIN" | "CLEAN_ON_CHECKOUT"
       cleaning_source: "AUTO" | "MANUAL"
       cleaning_status: "TODO" | "IN_PROGRESS" | "DONE" | "CANCELLED"
+      log_hours_source: "MANUAL" | "CHECKLIST"
       maintenance_priority: "LOW" | "MEDIUM" | "HIGH"
       maintenance_status: "OPEN" | "IN_PROGRESS" | "DONE"
       notification_job_status: "SCHEDULED" | "SENT" | "SKIPPED" | "FAILED"
       notification_type: "REMINDER_12H" | "REMINDER_1H" | "CHECKLIST_2PM"
       payout_period_status: "OPEN" | "CLOSED"
       payout_status: "PENDING" | "PAID"
+      shopping_created_from: "MANUAL" | "CHECKLIST"
       shopping_status: "MISSING" | "ORDERED" | "BOUGHT" | "OK"
     }
     CompositeTypes: {
@@ -1296,12 +1346,14 @@ export const Constants = {
       cleaning_mode: ["CLEAN_ON_CHECKIN", "CLEAN_ON_CHECKOUT"],
       cleaning_source: ["AUTO", "MANUAL"],
       cleaning_status: ["TODO", "IN_PROGRESS", "DONE", "CANCELLED"],
+      log_hours_source: ["MANUAL", "CHECKLIST"],
       maintenance_priority: ["LOW", "MEDIUM", "HIGH"],
       maintenance_status: ["OPEN", "IN_PROGRESS", "DONE"],
       notification_job_status: ["SCHEDULED", "SENT", "SKIPPED", "FAILED"],
       notification_type: ["REMINDER_12H", "REMINDER_1H", "CHECKLIST_2PM"],
       payout_period_status: ["OPEN", "CLOSED"],
       payout_status: ["PENDING", "PAID"],
+      shopping_created_from: ["MANUAL", "CHECKLIST"],
       shopping_status: ["MISSING", "ORDERED", "BOUGHT", "OK"],
     },
   },
