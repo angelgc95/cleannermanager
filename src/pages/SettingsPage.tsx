@@ -15,7 +15,7 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const [properties, setProperties] = useState<any[]>([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [newProp, setNewProp] = useState({ name: "", default_checkin_time: "15:00", default_checkout_time: "11:00", cleaning_mode: "CLEAN_ON_CHECKOUT" });
+  const [newProp, setNewProp] = useState({ name: "", default_checkin_time: "15:00", default_checkout_time: "11:00", cleaning_mode: "CLEAN_ON_CHECKOUT", ics_url_airbnb: "", ics_url_booking: "" });
 
   const fetchProperties = async () => {
     const { data } = await supabase.from("properties").select("*").order("name");
@@ -35,7 +35,7 @@ export default function SettingsPage() {
     } else {
       toast({ title: "Property added" });
       setShowAdd(false);
-      setNewProp({ name: "", default_checkin_time: "15:00", default_checkout_time: "11:00", cleaning_mode: "CLEAN_ON_CHECKOUT" });
+      setNewProp({ name: "", default_checkin_time: "15:00", default_checkout_time: "11:00", cleaning_mode: "CLEAN_ON_CHECKOUT", ics_url_airbnb: "", ics_url_booking: "" });
       fetchProperties();
     }
   };
@@ -76,6 +76,11 @@ export default function SettingsPage() {
                       <SelectItem value="CLEAN_ON_CHECKOUT">Clean on Check-out</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>iCalendar URLs (optional)</Label>
+                  <Input placeholder="Airbnb iCal URL" value={newProp.ics_url_airbnb} onChange={(e) => setNewProp({ ...newProp, ics_url_airbnb: e.target.value })} className="text-xs" />
+                  <Input placeholder="Booking.com iCal URL" value={newProp.ics_url_booking} onChange={(e) => setNewProp({ ...newProp, ics_url_booking: e.target.value })} className="text-xs" />
                 </div>
                 <Button type="submit">Save Property</Button>
               </form>
