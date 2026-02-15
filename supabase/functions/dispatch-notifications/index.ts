@@ -21,14 +21,13 @@ Deno.serve(async (req) => {
       .from("notification_jobs")
       .select(
         `*, cleaning_tasks(id, property_id, room_id, start_at, end_at, status, notes, nights_to_show, guests_to_show, 
-          properties(name, timezone), rooms(name)),
-        profiles:user_id(name, email)`
+          properties(name, timezone), rooms(name))`
       )
       .eq("status", "SCHEDULED")
       .lte("scheduled_for", new Date().toISOString())
       .limit(100);
 
-    if (fetchError) throw fetchError;
+    if (fetchError) throw new Error(fetchError.message);
     if (!dueJobs || dueJobs.length === 0) {
       return new Response(JSON.stringify({ processed: 0 }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -151,10 +150,15 @@ Deno.serve(async (req) => {
               });
 
               if (hasRole || hasAdminRole) {
-                const profile = job.profiles as any;
+                // Fetch cleaner name
+                const { data: cleanerProfile } = await supabase
+                  .from("profiles")
+                  .select("name")
+                  .eq("user_id", job.user_id)
+                  .single();
                 await supabase.from("in_app_notifications").insert({
                   user_id: mp.user_id,
-                  title: `📋 Checklist overdue: ${profile?.name || "Cleaner"}`,
+                  title: `📋 Checklist overdue: ${cleanerProfile?.name || "Cleaner"}`,
                   body: `${propertyName} — ${roomName}\nChecklist not submitted by 2 PM.`,
                   link,
                 });
