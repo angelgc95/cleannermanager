@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Plus } from "lucide-react";
+import { NotificationSettings } from "@/components/NotificationSettings";
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -132,6 +133,9 @@ export default function SettingsPage() {
           </Card>
         ))}
         {properties.length === 0 && !showAdd && <p className="text-center text-muted-foreground py-8">No properties configured yet.</p>}
+
+        {/* Notification Preferences */}
+        <NotificationSettings />
       </div>
     </div>
   );
