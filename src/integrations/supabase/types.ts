@@ -84,6 +84,7 @@ export type Database = {
         Row: {
           help_text: string | null
           id: string
+          item_key: string | null
           label: string
           required: boolean | null
           section_id: string
@@ -93,6 +94,7 @@ export type Database = {
         Insert: {
           help_text?: string | null
           id?: string
+          item_key?: string | null
           label: string
           required?: boolean | null
           section_id: string
@@ -102,6 +104,7 @@ export type Database = {
         Update: {
           help_text?: string | null
           id?: string
+          item_key?: string | null
           label?: string
           required?: boolean | null
           section_id?: string
@@ -114,6 +117,48 @@ export type Database = {
             columns: ["section_id"]
             isOneToOne: false
             referencedRelation: "checklist_sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      checklist_photos: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          photo_url: string
+          run_id: string
+          sort_order: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          photo_url: string
+          run_id: string
+          sort_order?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          photo_url?: string
+          run_id?: string
+          sort_order?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checklist_photos_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "checklist_photos_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_runs"
             referencedColumns: ["id"]
           },
         ]
