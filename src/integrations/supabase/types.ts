@@ -505,6 +505,47 @@ export type Database = {
           },
         ]
       }
+      in_app_notifications: {
+        Row: {
+          body: string | null
+          created_at: string
+          id: string
+          link: string | null
+          notification_job_id: string | null
+          read: boolean | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          link?: string | null
+          notification_job_id?: string | null
+          read?: boolean | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          link?: string | null
+          notification_job_id?: string | null
+          read?: boolean | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "in_app_notifications_notification_job_id_fkey"
+            columns: ["notification_job_id"]
+            isOneToOne: false
+            referencedRelation: "notification_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       log_hours: {
         Row: {
           created_at: string
@@ -650,6 +691,95 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      notification_jobs: {
+        Row: {
+          cleaning_task_id: string
+          created_at: string
+          id: string
+          last_error: string | null
+          scheduled_for: string
+          sent_at: string | null
+          status: Database["public"]["Enums"]["notification_job_status"] | null
+          type: Database["public"]["Enums"]["notification_type"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cleaning_task_id: string
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          scheduled_for: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["notification_job_status"] | null
+          type: Database["public"]["Enums"]["notification_type"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cleaning_task_id?: string
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["notification_job_status"] | null
+          type?: Database["public"]["Enums"]["notification_type"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_jobs_cleaning_task_id_fkey"
+            columns: ["cleaning_task_id"]
+            isOneToOne: false
+            referencedRelation: "cleaning_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_preferences: {
+        Row: {
+          checklist_2pm_enabled: boolean | null
+          created_at: string
+          email_enabled: boolean | null
+          id: string
+          inapp_enabled: boolean | null
+          manager_cc_enabled: boolean | null
+          push_enabled: boolean | null
+          reminders_12h_enabled: boolean | null
+          reminders_1h_enabled: boolean | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          checklist_2pm_enabled?: boolean | null
+          created_at?: string
+          email_enabled?: boolean | null
+          id?: string
+          inapp_enabled?: boolean | null
+          manager_cc_enabled?: boolean | null
+          push_enabled?: boolean | null
+          reminders_12h_enabled?: boolean | null
+          reminders_1h_enabled?: boolean | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          checklist_2pm_enabled?: boolean | null
+          created_at?: string
+          email_enabled?: boolean | null
+          id?: string
+          inapp_enabled?: boolean | null
+          manager_cc_enabled?: boolean | null
+          push_enabled?: boolean | null
+          reminders_12h_enabled?: boolean | null
+          reminders_1h_enabled?: boolean | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       payout_periods: {
         Row: {
@@ -984,6 +1114,8 @@ export type Database = {
       cleaning_status: "TODO" | "IN_PROGRESS" | "DONE" | "CANCELLED"
       maintenance_priority: "LOW" | "MEDIUM" | "HIGH"
       maintenance_status: "OPEN" | "IN_PROGRESS" | "DONE"
+      notification_job_status: "SCHEDULED" | "SENT" | "SKIPPED" | "FAILED"
+      notification_type: "REMINDER_12H" | "REMINDER_1H" | "CHECKLIST_2PM"
       payout_period_status: "OPEN" | "CLOSED"
       payout_status: "PENDING" | "PAID"
       shopping_status: "MISSING" | "ORDERED" | "BOUGHT" | "OK"
@@ -1121,6 +1253,8 @@ export const Constants = {
       cleaning_status: ["TODO", "IN_PROGRESS", "DONE", "CANCELLED"],
       maintenance_priority: ["LOW", "MEDIUM", "HIGH"],
       maintenance_status: ["OPEN", "IN_PROGRESS", "DONE"],
+      notification_job_status: ["SCHEDULED", "SENT", "SKIPPED", "FAILED"],
+      notification_type: ["REMINDER_12H", "REMINDER_1H", "CHECKLIST_2PM"],
       payout_period_status: ["OPEN", "CLOSED"],
       payout_status: ["PENDING", "PAID"],
       shopping_status: ["MISSING", "ORDERED", "BOUGHT", "OK"],
