@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import CalendarPage from "./pages/CalendarPage";
 import TasksPage from "./pages/TasksPage";
 import TaskDetailPage from "./pages/TaskDetailPage";
+import ChecklistRunPage from "./pages/ChecklistRunPage";
 import LogHoursPage from "./pages/LogHoursPage";
 import ExpensesPage from "./pages/ExpensesPage";
 import MaintenancePage from "./pages/MaintenancePage";
@@ -48,6 +49,7 @@ const App = () => (
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/tasks" element={<TasksPage />} />
               <Route path="/tasks/:id" element={<TaskDetailPage />} />
+              <Route path="/tasks/:taskId/checklist" element={<ChecklistRunPage />} />
               <Route path="/hours" element={<LogHoursPage />} />
               <Route path="/expenses" element={<ExpensesPage />} />
               <Route path="/maintenance" element={<MaintenancePage />} />
