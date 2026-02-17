@@ -134,7 +134,7 @@ export default function CalendarPage() {
                           : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]"
                       )}
                     >
-                      {t.properties?.name} {t.rooms?.name ? `· ${t.rooms.name}` : ""}
+                      {t.nights_to_show != null ? `${t.nights_to_show}N` : ""}{t.guests_to_show != null ? ` · ${t.guests_to_show}G` : ""}{!t.nights_to_show && !t.guests_to_show ? (t.properties?.name || "Cleaning") : ""}
                     </button>
                   ))}
                   {dayTasks.length > 3 && (
