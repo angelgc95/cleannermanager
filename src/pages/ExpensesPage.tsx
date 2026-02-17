@@ -15,7 +15,7 @@ export default function ExpensesPage() {
   const { toast } = useToast();
   const [entries, setEntries] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ date: format(new Date(), "yyyy-MM-dd"), name: "", amount: "", shop: "", reference: "" });
+  const [form, setForm] = useState({ date: format(new Date(), "yyyy-MM-dd"), name: "", amount: "", shop: "" });
 
   const fetchEntries = async () => {
     const { data } = await supabase
@@ -37,14 +37,13 @@ export default function ExpensesPage() {
       name: form.name,
       amount: parseFloat(form.amount),
       shop: form.shop,
-      reference: form.reference,
     });
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Expense added" });
       setShowForm(false);
-      setForm({ date: format(new Date(), "yyyy-MM-dd"), name: "", amount: "", shop: "", reference: "" });
+      setForm({ date: format(new Date(), "yyyy-MM-dd"), name: "", amount: "", shop: "" });
       fetchEntries();
     }
   };
@@ -70,10 +69,7 @@ export default function ExpensesPage() {
                   <div className="space-y-1"><Label>Amount (€)</Label><Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required /></div>
                 </div>
                 <div className="space-y-1"><Label>Description</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="What was purchased?" required /></div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1"><Label>Shop</Label><Input value={form.shop} onChange={(e) => setForm({ ...form, shop: e.target.value })} /></div>
-                  <div className="space-y-1"><Label>Reference</Label><Input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} /></div>
-                </div>
+                <div className="space-y-1"><Label>Shop</Label><Input value={form.shop} onChange={(e) => setForm({ ...form, shop: e.target.value })} /></div>
                 <Button type="submit">Save</Button>
               </form>
             </CardContent>
