@@ -8,12 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Plus } from "lucide-react";
+import { Plus, Loader2 } from "lucide-react";
+
 import { NotificationSettings } from "@/components/NotificationSettings";
 
 export default function SettingsPage() {
   const { toast } = useToast();
   const [properties, setProperties] = useState<any[]>([]);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [newProp, setNewProp] = useState({ name: "", default_checkin_time: "15:00", default_checkout_time: "11:00", cleaning_mode: "CLEAN_ON_CHECKOUT", ics_url_airbnb: "", ics_url_booking: "" });
 
@@ -43,6 +45,29 @@ export default function SettingsPage() {
   const updateProperty = async (id: string, updates: any) => {
     await supabase.from("properties").update(updates).eq("id", id);
     fetchProperties();
+  };
+
+  const syncProperty = async (id: string) => {
+    setSyncingId(id);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-ics", {
+        body: { property_id: id },
+      });
+      if (error) throw error;
+      toast({
+        title: "Sync complete",
+        description: `${data.bookings_synced} bookings synced, ${data.tasks_created} new checklists created.`,
+      });
+      fetchProperties();
+    } catch (err: any) {
+      toast({
+        title: "Sync failed",
+        description: err.message || "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setSyncingId(null);
+    }
   };
 
   return (
@@ -131,7 +156,9 @@ export default function SettingsPage() {
                     />
                     <span className="text-xs text-muted-foreground">Auto-sync enabled</span>
                   </div>
-                  <Button variant="outline" size="sm" className="text-xs">Sync Now</Button>
+                  <Button variant="outline" size="sm" className="text-xs" onClick={() => syncProperty(p.id)} disabled={syncingId === p.id}>
+                    {syncingId === p.id ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Syncing...</> : "Sync Now"}
+                  </Button>
                 </div>
               </div>
             </CardContent>
