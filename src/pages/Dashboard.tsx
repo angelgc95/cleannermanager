@@ -69,7 +69,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" description="Overview of today's listing activity" />
+      <PageHeader title="Dashboard" description="Overview of today's activity" />
       <div className="p-6 space-y-6">
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

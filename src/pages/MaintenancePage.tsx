@@ -12,7 +12,7 @@ import { format } from "date-fns";
 import { Plus, X, Camera, Loader2 } from "lucide-react";
 
 export default function MaintenancePage() {
-  const { user } = useAuth();
+  const { user, orgId } = useAuth();
   const { toast } = useToast();
   const [tickets, setTickets] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -69,13 +69,13 @@ export default function MaintenancePage() {
     if (photos[0]) pic1_url = await uploadPhoto(photos[0].file);
     if (photos[1]) pic2_url = await uploadPhoto(photos[1].file);
 
-    const orgId = (await supabase.from("profiles").select("org_id").eq("user_id", user.id).single()).data?.org_id;
+    const currentOrgId = orgId;
     const { error } = await supabase.from("maintenance_tickets").insert([{
       created_by_user_id: user.id,
       issue,
       pic1_url,
       pic2_url,
-      org_id: orgId,
+      org_id: currentOrgId,
     }]);
 
     setUploading(false);
