@@ -11,7 +11,7 @@ import { format } from "date-fns";
 import { Plus, X } from "lucide-react";
 
 export default function ExpensesPage() {
-  const { user } = useAuth();
+  const { user, orgId } = useAuth();
   const { toast } = useToast();
   const [entries, setEntries] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -27,8 +27,6 @@ export default function ExpensesPage() {
   };
 
   useEffect(() => { fetchEntries(); }, []);
-
-  const { orgId } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

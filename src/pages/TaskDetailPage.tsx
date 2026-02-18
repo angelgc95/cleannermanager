@@ -55,7 +55,7 @@ export default function TaskDetailPage() {
   return (
     <div>
       <PageHeader
-        title={`${task.properties?.name} — ${task.rooms?.name || "All rooms"}`}
+        title={`${task.properties?.name || "Listing"} — ${task.rooms?.name || "All rooms"}`}
         actions={
           <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-4 w-4 mr-1" /> Back
