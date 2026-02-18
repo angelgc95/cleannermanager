@@ -28,7 +28,7 @@ export default function TasksPage() {
     <div>
       <PageHeader
         title="Checklists"
-        description="Cleaning checklists for each scheduled task"
+        description="Cleaning checklists for each scheduled listing task"
       />
       <div className="p-6">
         <div className="space-y-2">
@@ -44,7 +44,7 @@ export default function TasksPage() {
               <CardContent className="flex items-center justify-between p-4">
                 <div className="min-w-0">
                   <p className="font-medium text-sm truncate">
-                    {task.properties?.name} — {task.rooms?.name || "All"}
+                    {task.properties?.name || "Listing"} — {task.rooms?.name || "All"}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {task.start_at ? format(new Date(task.start_at), "MMM d, HH:mm") : "No date"} 

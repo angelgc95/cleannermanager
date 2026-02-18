@@ -47,7 +47,7 @@ const SHOPPING_TAB_ID = "__shopping__";
 export default function ChecklistRunPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, orgId } = useAuth();
   const { toast } = useToast();
 
   const [task, setTask] = useState<any>(null);
@@ -57,6 +57,7 @@ export default function ChecklistRunPage() {
   const [photos, setPhotos] = useState<Record<string, PhotoEntry[]>>({});
   const [activeTab, setActiveTab] = useState("");
   const [finishing, setFinishing] = useState(false);
+  const [alreadyFinished, setAlreadyFinished] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activePhotoItemId, setActivePhotoItemId] = useState<string | null>(null);
 
@@ -75,7 +76,7 @@ export default function ChecklistRunPage() {
   const [missingItems, setMissingItems] = useState<MissingItem[]>([]);
   const [shoppingError, setShoppingError] = useState<string | null>(null);
 
-  // Load task + template sections
+  // Load task + template sections + reuse existing run
   useEffect(() => {
     if (!taskId || !user) return;
 
@@ -86,6 +87,12 @@ export default function ChecklistRunPage() {
         .eq("id", taskId)
         .single();
       setTask(taskData);
+
+      // Check if task is already DONE
+      if (taskData?.status === "DONE") {
+        setAlreadyFinished(true);
+        return;
+      }
 
       const templateId = taskData?.rooms?.checklist_template_id || "00000000-0000-0000-0000-000000000001";
 
@@ -112,21 +119,35 @@ export default function ChecklistRunPage() {
       setSections(fullSections);
       if (fullSections.length > 0) setActiveTab(fullSections[0].id);
 
-      // Create checklist run
-      const startedAt = new Date().toISOString();
-      const { data: run } = await supabase
+      // Check for existing unfinished run for this task
+      const { data: existingRuns } = await supabase
         .from("checklist_runs")
-        .insert({
-          cleaning_task_id: taskId,
-          property_id: taskData?.property_id,
-          room_id: taskData?.room_id,
-          cleaner_user_id: user.id,
-          started_at: startedAt,
-        })
         .select("id")
-        .single();
+        .eq("cleaning_task_id", taskId)
+        .is("finished_at", null)
+        .limit(1);
 
-      if (run) setRunId(run.id);
+      if (existingRuns && existingRuns.length > 0) {
+        // Reuse existing run
+        setRunId(existingRuns[0].id);
+      } else {
+        // Create new checklist run
+        const startedAt = new Date().toISOString();
+        const { data: run } = await supabase
+          .from("checklist_runs")
+          .insert({
+            cleaning_task_id: taskId,
+            property_id: taskData?.property_id,
+            room_id: taskData?.room_id,
+            cleaner_user_id: user.id,
+            started_at: startedAt,
+            org_id: orgId,
+          })
+          .select("id")
+          .single();
+
+        if (run) setRunId(run.id);
+      }
 
       if (taskData?.status === "TODO") {
         await supabase.from("cleaning_tasks").update({ status: "IN_PROGRESS" as const }).eq("id", taskId);
@@ -177,6 +198,7 @@ export default function ChecklistRunPage() {
         item_id: activePhotoItemId,
         photo_url: urlData.publicUrl,
         sort_order: (photos[activePhotoItemId]?.length || 0),
+        org_id: orgId,
       });
 
       setPhotos((prev) => ({
@@ -277,6 +299,7 @@ export default function ChecklistRunPage() {
         run_id: runId,
         item_id: itemId,
         yesno_value: val,
+        org_id: orgId,
       }));
 
     if (responseEntries.length > 0) {
@@ -289,8 +312,9 @@ export default function ChecklistRunPage() {
       duration_minutes: durationMinutes,
     }).eq("id", runId);
 
-    // Upsert LogHours with source=CHECKLIST
-    await supabase.from("log_hours").insert({
+    // UPSERT LogHours with source=CHECKLIST (unique on checklist_run_id)
+    // Use upsert pattern: try insert, if conflict do nothing (already logged)
+    await supabase.from("log_hours").upsert({
       user_id: user.id,
       date: today,
       start_at: workStart,
@@ -302,11 +326,11 @@ export default function ChecklistRunPage() {
       property_id: task?.property_id || null,
       room_id: task?.room_id || null,
       description: workNotes || null,
-    });
+      org_id: orgId,
+    }, { onConflict: "checklist_run_id" });
 
     // Create shopping list entries for missing items
     for (const item of missingItems) {
-      // Check if product already exists in open status
       const { data: existing } = await supabase
         .from("shopping_list")
         .select("id, quantity_needed, status")
@@ -315,7 +339,6 @@ export default function ChecklistRunPage() {
         .limit(1);
 
       if (existing && existing.length > 0) {
-        // Update existing: increment quantity
         await supabase.from("shopping_list").update({
           quantity_needed: (existing[0].quantity_needed || 1) + item.quantity,
           status: "MISSING" as const,
@@ -332,6 +355,7 @@ export default function ChecklistRunPage() {
           checklist_run_id: runId,
           property_id: task?.property_id || null,
           room_id: task?.room_id || null,
+          org_id: orgId,
         });
       }
     }
@@ -346,11 +370,21 @@ export default function ChecklistRunPage() {
     navigate(`/tasks/${taskId}`);
   };
 
+  if (alreadyFinished) {
+    return (
+      <div className="p-6 text-center space-y-4">
+        <p className="text-muted-foreground">This cleaning task has already been completed.</p>
+        <Button variant="outline" onClick={() => navigate(`/tasks/${taskId}`)}>
+          <ArrowLeft className="h-4 w-4 mr-1" /> Back to Task
+        </Button>
+      </div>
+    );
+  }
+
   if (!task || sections.length === 0) {
     return <div className="p-6 text-muted-foreground">Loading checklist...</div>;
   }
 
-  // All tabs = sections + shopping
   const shoppingCompletion = shoppingChecked === true ? { done: 1, total: 1 } : { done: 0, total: 1 };
 
   return (
@@ -374,7 +408,6 @@ export default function ChecklistRunPage() {
         onChange={handlePhotoUpload}
       />
 
-      {/* Work Log Header */}
       <WorkLogSection
         workStart={workStart}
         workEnd={workEnd}
@@ -408,7 +441,6 @@ export default function ChecklistRunPage() {
                   </TabsTrigger>
                 );
               })}
-              {/* Shopping tab */}
               <TabsTrigger
                 value={SHOPPING_TAB_ID}
                 className={cn(
@@ -510,7 +542,6 @@ export default function ChecklistRunPage() {
                   </Card>
                 ))}
 
-                {/* Section complete button */}
                 {(() => {
                   const { done, total } = getSectionCompletion(section);
                   if (done >= total && total > 0) return null;
@@ -535,7 +566,6 @@ export default function ChecklistRunPage() {
               </TabsContent>
             ))}
 
-            {/* Shopping tab content */}
             <TabsContent value={SHOPPING_TAB_ID} className="mt-0">
               <ShoppingCheckSection
                 shoppingChecked={shoppingChecked}
@@ -548,7 +578,6 @@ export default function ChecklistRunPage() {
           </div>
         </Tabs>
 
-        {/* Finish bar */}
         <div className="border-t border-border bg-card p-4 flex items-center justify-between">
           <div className="text-sm text-muted-foreground">
             {sections.reduce((a, s) => a + getSectionCompletion(s).done, 0) + shoppingCompletion.done} / {sections.reduce((a, s) => a + getSectionCompletion(s).total, 0) + shoppingCompletion.total} items complete
