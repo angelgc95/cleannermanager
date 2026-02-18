@@ -28,6 +28,8 @@ export default function ExpensesPage() {
 
   useEffect(() => { fetchEntries(); }, []);
 
+  const { orgId } = useAuth();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -37,6 +39,7 @@ export default function ExpensesPage() {
       name: form.name,
       amount: parseFloat(form.amount),
       shop: form.shop,
+      org_id: orgId,
     });
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });

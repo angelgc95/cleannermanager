@@ -1,29 +1,226 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/StatusBadge";
 import { supabase } from "@/integrations/supabase/client";
-import { format } from "date-fns";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { format, subDays } from "date-fns";
+import { DollarSign, Plus } from "lucide-react";
 
 export default function PayoutsPage() {
+  const { role, orgId, user } = useAuth();
+  const { toast } = useToast();
+  const isHost = role === "admin" || role === "manager";
+
   const [payouts, setPayouts] = useState<any[]>([]);
+  const [showCreate, setShowCreate] = useState(false);
+
+  // Create payout state (host only)
+  const [cleaners, setCleaners] = useState<any[]>([]);
+  const [selectedCleaner, setSelectedCleaner] = useState("");
+  const [dateFrom, setDateFrom] = useState(format(subDays(new Date(), 14), "yyyy-MM-dd"));
+  const [dateTo, setDateTo] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [unpaidItems, setUnpaidItems] = useState<any[]>([]);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [creating, setCreating] = useState(false);
+
+  const fetchPayouts = async () => {
+    const { data } = await supabase
+      .from("payouts")
+      .select("*, profiles:cleaner_user_id(name), payout_periods:period_id(start_date, end_date)")
+      .order("created_at", { ascending: false });
+    setPayouts(data || []);
+  };
+
+  const fetchCleaners = async () => {
+    if (!orgId) return;
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("user_id, name, email, hourly_rate_override")
+      .eq("org_id", orgId);
+    if (!profiles) return;
+    const cleanerList: any[] = [];
+    for (const p of profiles) {
+      const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", p.user_id);
+      if (roles?.some((r) => r.role === "cleaner")) cleanerList.push(p);
+    }
+    setCleaners(cleanerList);
+  };
 
   useEffect(() => {
-    const fetch = async () => {
-      const { data } = await supabase
+    fetchPayouts();
+    if (isHost) fetchCleaners();
+  }, [orgId]);
+
+  const fetchUnpaidItems = async () => {
+    if (!selectedCleaner) return;
+    const { data } = await supabase
+      .from("log_hours")
+      .select("*, cleaning_tasks:cleaning_task_id(properties(name))")
+      .eq("user_id", selectedCleaner)
+      .is("payout_id", null)
+      .gte("date", dateFrom)
+      .lte("date", dateTo)
+      .order("date");
+    setUnpaidItems(data || []);
+    setSelectedItems(new Set((data || []).map((i: any) => i.id)));
+  };
+
+  useEffect(() => {
+    if (selectedCleaner && dateFrom && dateTo) fetchUnpaidItems();
+  }, [selectedCleaner, dateFrom, dateTo]);
+
+  const toggleItem = (id: string) => {
+    setSelectedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const selectedHours = unpaidItems
+    .filter((i) => selectedItems.has(i.id))
+    .reduce((sum, i) => sum + (i.duration_minutes || 0), 0);
+
+  const cleanerProfile = cleaners.find((c) => c.user_id === selectedCleaner);
+  const hourlyRate = cleanerProfile?.hourly_rate_override || 15;
+  const totalAmount = (selectedHours / 60) * hourlyRate;
+
+  const handleCreatePayout = async () => {
+    if (!orgId || !selectedCleaner || selectedItems.size === 0) return;
+    setCreating(true);
+
+    try {
+      // Create payout period
+      const { data: period, error: periodError } = await supabase
+        .from("payout_periods")
+        .insert({ start_date: dateFrom, end_date: dateTo, org_id: orgId, status: "CLOSED" as const })
+        .select()
+        .single();
+      if (periodError) throw periodError;
+
+      // Create payout
+      const { data: payout, error: payoutError } = await supabase
         .from("payouts")
-        .select("*, profiles:cleaner_user_id(name), payout_periods:period_id(start_date, end_date)")
-        .order("created_at", { ascending: false });
-      setPayouts(data || []);
-    };
-    fetch();
-  }, []);
+        .insert({
+          period_id: period.id,
+          cleaner_user_id: selectedCleaner,
+          hourly_rate_used: hourlyRate,
+          total_minutes: selectedHours,
+          total_amount: totalAmount,
+          org_id: orgId,
+          status: "PENDING" as const,
+        })
+        .select()
+        .single();
+      if (payoutError) throw payoutError;
+
+      // Mark log_hours as paid
+      const ids = Array.from(selectedItems);
+      await supabase.from("log_hours").update({ payout_id: payout.id }).in("id", ids);
+
+      toast({ title: "Payout created", description: `€${totalAmount.toFixed(2)} for ${cleanerProfile?.name}` });
+      setShowCreate(false);
+      setSelectedCleaner("");
+      setUnpaidItems([]);
+      setSelectedItems(new Set());
+      fetchPayouts();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setCreating(false);
+    }
+  };
 
   return (
     <div>
-      <PageHeader title="Payouts" description="Manage cleaner payouts and history" />
-      <div className="p-6 space-y-4 max-w-2xl">
-        {payouts.length === 0 && <p className="text-center text-muted-foreground py-8">No payouts yet.</p>}
+      <PageHeader
+        title="Payouts"
+        description={isHost ? "Create and manage cleaner payouts" : "Your payout history"}
+        actions={
+          isHost ? (
+            <Button size="sm" onClick={() => setShowCreate(!showCreate)}>
+              <Plus className="h-4 w-4 mr-1" /> Create Payout
+            </Button>
+          ) : undefined
+        }
+      />
+      <div className="p-6 space-y-4 max-w-3xl">
+        {/* Create Payout Form (Host only) */}
+        {showCreate && isHost && (
+          <Card>
+            <CardHeader><CardTitle className="text-base">New Payout</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label>Cleaner</Label>
+                  <Select value={selectedCleaner} onValueChange={setSelectedCleaner}>
+                    <SelectTrigger><SelectValue placeholder="Select cleaner..." /></SelectTrigger>
+                    <SelectContent>
+                      {cleaners.map((c) => (
+                        <SelectItem key={c.user_id} value={c.user_id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>From</Label>
+                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>To</Label>
+                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                </div>
+              </div>
+
+              {unpaidItems.length > 0 && (
+                <>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {unpaidItems.map((item) => (
+                      <div key={item.id} className="flex items-center gap-3 p-2 rounded border border-border">
+                        <Checkbox
+                          checked={selectedItems.has(item.id)}
+                          onCheckedChange={() => toggleItem(item.id)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium">
+                            {format(new Date(item.date), "MMM d")} · {item.start_at?.slice(0, 5)} – {item.end_at?.slice(0, 5)}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {item.duration_minutes} min · {item.source} {item.description ? `· ${item.description}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-3 border-t border-border">
+                    <div className="text-sm">
+                      <p className="text-muted-foreground">{selectedItems.size} items · {selectedHours} min · €{hourlyRate.toFixed(2)}/hr</p>
+                      <p className="text-lg font-bold">€{totalAmount.toFixed(2)}</p>
+                    </div>
+                    <Button onClick={handleCreatePayout} disabled={creating || selectedItems.size === 0}>
+                      {creating ? "Creating..." : "Create Payout"}
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              {selectedCleaner && unpaidItems.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">No unpaid hours found in this range.</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Payout List */}
+        {payouts.length === 0 && !showCreate && <p className="text-center text-muted-foreground py-8">No payouts yet.</p>}
         {payouts.map((p: any) => (
           <Card key={p.id}>
             <CardContent className="flex items-center justify-between p-4">

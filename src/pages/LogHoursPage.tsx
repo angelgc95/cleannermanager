@@ -12,7 +12,7 @@ import { format } from "date-fns";
 import { Plus, X } from "lucide-react";
 
 export default function LogHoursPage() {
-  const { user } = useAuth();
+  const { user, orgId } = useAuth();
   const { toast } = useToast();
   const [entries, setEntries] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -45,6 +45,7 @@ export default function LogHoursPage() {
       end_at: form.end_at,
       duration_minutes: duration > 0 ? duration : 0,
       description: form.description,
+      org_id: orgId,
     });
 
     if (error) {
