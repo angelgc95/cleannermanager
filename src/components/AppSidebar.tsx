@@ -13,33 +13,36 @@ import {
   Menu,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Calendar", url: "/calendar", icon: CalendarDays },
-  { title: "Cleaning Tasks", url: "/tasks", icon: ClipboardCheck },
-  { title: "Log Hours", url: "/hours", icon: Clock },
-  { title: "Expenses", url: "/expenses", icon: Receipt },
-  { title: "Maintenance", url: "/maintenance", icon: Wrench },
-  { title: "Shopping List", url: "/shopping", icon: ShoppingCart },
-  { title: "Payouts", url: "/payouts", icon: DollarSign },
-  { title: "Guides", url: "/guides", icon: BookOpen },
-  { title: "Settings", url: "/settings", icon: Settings },
+const allNavItems = [
+  { title: "Dashboard", url: "/", icon: LayoutDashboard, roles: ["admin", "manager", "cleaner"] },
+  { title: "Calendar", url: "/calendar", icon: CalendarDays, roles: ["admin", "manager", "cleaner"] },
+  { title: "Checklists", url: "/tasks", icon: ClipboardCheck, roles: ["admin", "manager", "cleaner"] },
+  { title: "Log Hours", url: "/hours", icon: Clock, roles: ["admin", "manager", "cleaner"] },
+  { title: "Expenses", url: "/expenses", icon: Receipt, roles: ["admin", "manager", "cleaner"] },
+  { title: "Maintenance", url: "/maintenance", icon: Wrench, roles: ["admin", "manager", "cleaner"] },
+  { title: "Shopping List", url: "/shopping", icon: ShoppingCart, roles: ["admin", "manager", "cleaner"] },
+  { title: "Payouts", url: "/payouts", icon: DollarSign, roles: ["admin", "manager", "cleaner"] },
+  { title: "Guides", url: "/guides", icon: BookOpen, roles: ["admin", "manager", "cleaner"] },
+  { title: "Settings", url: "/settings", icon: Settings, roles: ["admin", "manager"] },
 ];
 
 export function AppSidebar() {
-  const location = useLocation();
   const navigate = useNavigate();
+  const { role } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/auth");
   };
+
+  const navItems = allNavItems.filter((item) => !role || item.roles.includes(role));
 
   return (
     <aside

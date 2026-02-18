@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2 } from "lucide-react";
 
 export default function ShoppingPage() {
-  const { user } = useAuth();
+  const { user, orgId } = useAuth();
   const { toast } = useToast();
   const [items, setItems] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -48,6 +48,7 @@ export default function ShoppingPage() {
       product_id: selectedProduct,
       created_by_user_id: user.id,
       status: "MISSING",
+      org_id: orgId,
     });
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
