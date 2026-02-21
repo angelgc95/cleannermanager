@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,17 +11,24 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Send, ShoppingCart, Package, Edit2, X, Check, Search } from "lucide-react";
+import { format } from "date-fns";
+import { Plus, Trash2, Send, ShoppingCart, Package, Edit2, X, Check, Search, ChevronDown, ChevronRight } from "lucide-react";
 
 /* ─── types ─── */
 interface Product { id: string; name: string; category: string | null; }
 interface ShoppingItem {
   id: string; product_id: string; status: string; quantity_needed: number;
   note: string | null; created_at: string; created_by_user_id: string;
+  submission_id: string | null;
   products?: { name: string; category: string | null } | null;
+}
+interface Submission {
+  id: string; created_by_user_id: string; created_at: string; status: string; notes: string | null;
+  org_id: string | null;
 }
 interface SelectedProduct { productId: string; quantity: number; note: string; }
 
@@ -31,16 +38,19 @@ export default function ShoppingPage() {
   const { toast } = useToast();
   const isAdmin = role === "admin" || role === "manager";
 
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchAll = async () => {
     setLoading(true);
-    const [{ data: itemsData }, { data: productsData }] = await Promise.all([
-      supabase.from("shopping_list").select("*, products(name, category)").order("created_at", { ascending: false }),
+    const [{ data: subsData }, { data: itemsData }, { data: productsData }] = await Promise.all([
+      supabase.from("shopping_submissions").select("*").order("created_at", { ascending: true }),
+      supabase.from("shopping_list").select("*, products(name, category)").order("created_at", { ascending: true }),
       supabase.from("products").select("*").eq("active", true).order("name"),
     ]);
+    setSubmissions((subsData as Submission[]) || []);
     setItems((itemsData as ShoppingItem[]) || []);
     setProducts((productsData as Product[]) || []);
     setLoading(false);
@@ -51,19 +61,22 @@ export default function ShoppingPage() {
   if (loading) return <div className="p-6 text-muted-foreground">Loading...</div>;
 
   return isAdmin
-    ? <AdminShoppingView items={items} products={products} user={user} orgId={orgId} toast={toast} onRefresh={fetchAll} />
-    : <CleanerShoppingView items={items} products={products} user={user} orgId={orgId} toast={toast} onRefresh={fetchAll} />;
+    ? <AdminShoppingView submissions={submissions} items={items} products={products} user={user} orgId={orgId} toast={toast} onRefresh={fetchAll} />
+    : <CleanerShoppingView submissions={submissions} items={items} products={products} user={user} orgId={orgId} toast={toast} onRefresh={fetchAll} />;
 }
 
 /* ═══════════════════════════════════════════
    CLEANER VIEW
    ═══════════════════════════════════════════ */
-function CleanerShoppingView({ items, products, user, orgId, toast, onRefresh }: any) {
+function CleanerShoppingView({ submissions, items, products, user, orgId, toast, onRefresh }: any) {
   const [selected, setSelected] = useState<SelectedProduct[]>([]);
   const [search, setSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const mySubmitted = items.filter((i: ShoppingItem) => i.created_by_user_id === user?.id && i.status !== "OK");
+  // My submissions (oldest first)
+  const mySubs = (submissions as Submission[])
+    .filter((s) => s.created_by_user_id === user?.id)
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
   const toggleProduct = (productId: string) => {
     setSelected((prev) => {
@@ -80,6 +93,21 @@ function CleanerShoppingView({ items, products, user, orgId, toast, onRefresh }:
   const handleSubmit = async () => {
     if (!user || selected.length === 0) return;
     setSubmitting(true);
+
+    // 1. Create submission
+    const { data: sub, error: subErr } = await supabase
+      .from("shopping_submissions")
+      .insert({ created_by_user_id: user.id, org_id: orgId, status: "PENDING" })
+      .select("id")
+      .single();
+
+    if (subErr || !sub) {
+      toast({ title: "Error", description: subErr?.message || "Failed to create submission", variant: "destructive" });
+      setSubmitting(false);
+      return;
+    }
+
+    // 2. Insert items linked to submission
     const rows = selected.map((s) => ({
       product_id: s.productId,
       created_by_user_id: user.id,
@@ -88,12 +116,13 @@ function CleanerShoppingView({ items, products, user, orgId, toast, onRefresh }:
       quantity_needed: s.quantity,
       note: s.note || null,
       created_from: "MANUAL" as const,
+      submission_id: sub.id,
     }));
     const { error } = await supabase.from("shopping_list").insert(rows);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Submitted!", description: `${selected.length} item(s) added to shopping list.` });
+      toast({ title: "Submitted!", description: `Shopping list with ${selected.length} item(s) submitted.` });
       setSelected([]);
     }
     setSubmitting(false);
@@ -127,12 +156,7 @@ function CleanerShoppingView({ items, products, user, orgId, toast, onRefresh }:
 
           <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search products..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9 text-sm"
-            />
+            <Input placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
           </div>
 
           <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-1">
@@ -145,21 +169,12 @@ function CleanerShoppingView({ items, products, user, orgId, toast, onRefresh }:
                     return (
                       <Card key={p.id} className={sel ? "border-primary/50 bg-primary/5" : ""}>
                         <CardContent className="p-3 flex items-center gap-3">
-                          <Checkbox
-                            checked={!!sel}
-                            onCheckedChange={() => toggleProduct(p.id)}
-                          />
+                          <Checkbox checked={!!sel} onCheckedChange={() => toggleProduct(p.id)} />
                           <span className="text-sm font-medium flex-1">{p.name}</span>
                           {sel && (
                             <div className="flex items-center gap-1.5">
                               <span className="text-xs text-muted-foreground">Qty:</span>
-                              <Input
-                                type="number"
-                                min={1}
-                                value={sel.quantity}
-                                onChange={(e) => updateQuantity(p.id, Number(e.target.value))}
-                                className="w-14 h-7 text-xs text-center"
-                              />
+                              <Input type="number" min={1} value={sel.quantity} onChange={(e) => updateQuantity(p.id, Number(e.target.value))} className="w-14 h-7 text-xs text-center" />
                             </div>
                           )}
                         </CardContent>
@@ -174,37 +189,25 @@ function CleanerShoppingView({ items, products, user, orgId, toast, onRefresh }:
 
           {selected.length > 0 && (
             <Button onClick={handleSubmit} disabled={submitting} className="w-full mt-4 gap-2">
-              <Send className="h-4 w-4" />
-              Submit {selected.length} item{selected.length !== 1 ? "s" : ""}
+              <Send className="h-4 w-4" /> Submit {selected.length} item{selected.length !== 1 ? "s" : ""}
             </Button>
           )}
         </section>
 
-        {/* ── Submitted Shopping List ── */}
+        {/* ── My Submitted Lists ── */}
         <section>
           <div className="flex items-center gap-2 mb-3">
             <ShoppingCart className="h-5 w-5 text-primary" />
-            <h2 className="text-base font-semibold">Shopping List</h2>
-            {mySubmitted.length > 0 && <Badge variant="outline">{mySubmitted.length}</Badge>}
+            <h2 className="text-base font-semibold">Shopping Lists</h2>
+            {mySubs.length > 0 && <Badge variant="outline">{mySubs.length}</Badge>}
           </div>
 
-          {mySubmitted.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">No pending items.</p>
+          {mySubs.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">No submitted lists yet.</p>
           ) : (
-            <div className="space-y-1.5">
-              {(mySubmitted as ShoppingItem[]).map((item: ShoppingItem) => (
-                <Card key={item.id}>
-                  <CardContent className="p-3 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">{item.products?.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {item.products?.category || "—"} · Qty: {item.quantity_needed}
-                        {item.note ? ` · ${item.note}` : ""}
-                      </p>
-                    </div>
-                    <StatusBadge status={item.status} />
-                  </CardContent>
-                </Card>
+            <div className="space-y-2">
+              {mySubs.map((sub) => (
+                <SubmissionCard key={sub.id} submission={sub} items={(items as ShoppingItem[]).filter((i) => i.submission_id === sub.id)} />
               ))}
             </div>
           )}
@@ -214,37 +217,81 @@ function CleanerShoppingView({ items, products, user, orgId, toast, onRefresh }:
   );
 }
 
+/* ─── Collapsible submission card (shared) ─── */
+function SubmissionCard({ submission, items, actions }: { submission: Submission; items: ShoppingItem[]; actions?: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const pendingCount = items.filter((i) => i.status !== "OK").length;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <Card>
+        <CollapsibleTrigger asChild>
+          <CardContent className="p-3 flex items-center gap-3 cursor-pointer hover:bg-muted/30 transition-colors">
+            {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">
+                {format(new Date(submission.created_at), "dd MMM yyyy, HH:mm")}
+              </p>
+              <p className="text-xs text-muted-foreground">{items.length} item{items.length !== 1 ? "s" : ""}</p>
+            </div>
+            {pendingCount > 0 && <Badge variant="destructive" className="text-[10px]">{pendingCount} pending</Badge>}
+            <SubmissionStatusBadge status={submission.status} />
+            {actions}
+          </CardContent>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="border-t px-3 pb-3 pt-2 space-y-1.5">
+            {items.map((item) => (
+              <div key={item.id} className="flex items-center justify-between text-sm py-1">
+                <div>
+                  <span className="font-medium">{item.products?.name}</span>
+                  <span className="text-muted-foreground ml-2 text-xs">× {item.quantity_needed}</span>
+                  {item.note && <span className="text-muted-foreground text-xs ml-2">({item.note})</span>}
+                </div>
+                <StatusBadge status={item.status} />
+              </div>
+            ))}
+          </div>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
+  );
+}
+
 /* ═══════════════════════════════════════════
    ADMIN VIEW
    ═══════════════════════════════════════════ */
-function AdminShoppingView({ items, products, user, orgId, toast, onRefresh }: any) {
+function AdminShoppingView({ submissions, items, products, user, orgId, toast, onRefresh }: any) {
   const [clearing, setClearing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState(1);
   const [editStatus, setEditStatus] = useState<string>("MISSING");
-
-  // New item multi-select for admin
   const [adminSelected, setAdminSelected] = useState<SelectedProduct[]>([]);
   const [adminSearch, setAdminSearch] = useState("");
 
-  const openItems = items.filter((i: ShoppingItem) => ["MISSING", "ORDERED", "BOUGHT"].includes(i.status));
-  const newItemsCount = items.filter((i: ShoppingItem) => i.status === "MISSING").length;
+  const allSubs = (submissions as Submission[]).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  const pendingSubs = allSubs.filter((s) => s.status === "PENDING");
+  const openItems = (items as ShoppingItem[]).filter((i) => ["MISSING", "ORDERED", "BOUGHT"].includes(i.status));
 
   const handleClearList = async () => {
     if (!user) return;
     setClearing(true);
     if (openItems.length > 0) {
-      await supabase
-        .from("shopping_list")
+      await supabase.from("shopping_list")
         .update({ status: "OK" as const, last_cleared_at: new Date().toISOString(), cleared_by_user_id: user.id })
-        .in("id", openItems.map((i: ShoppingItem) => i.id));
+        .in("id", openItems.map((i) => i.id));
+      // Mark all pending submissions as DONE
+      const subIds = [...new Set(openItems.map((i) => i.submission_id).filter(Boolean))];
+      if (subIds.length > 0) {
+        await supabase.from("shopping_submissions").update({ status: "DONE" }).in("id", subIds as string[]);
+      }
     }
     toast({ title: "List cleared", description: `${openItems.length} items set to OK.` });
     setClearing(false);
     onRefresh();
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDeleteItem = async (id: string) => {
     await supabase.from("shopping_list").delete().eq("id", id);
     onRefresh();
   };
@@ -252,6 +299,11 @@ function AdminShoppingView({ items, products, user, orgId, toast, onRefresh }: a
   const handleSaveEdit = async (id: string) => {
     await supabase.from("shopping_list").update({ quantity_needed: editQty, status: editStatus as "MISSING" | "ORDERED" | "BOUGHT" | "OK" }).eq("id", id);
     setEditingId(null);
+    onRefresh();
+  };
+
+  const handleDeleteSubmission = async (subId: string) => {
+    await supabase.from("shopping_submissions").delete().eq("id", subId);
     onRefresh();
   };
 
@@ -265,13 +317,14 @@ function AdminShoppingView({ items, products, user, orgId, toast, onRefresh }: a
 
   const handleAdminAdd = async () => {
     if (!user || adminSelected.length === 0) return;
+    // Create a submission for admin-added items too
+    const { data: sub } = await supabase.from("shopping_submissions")
+      .insert({ created_by_user_id: user.id, org_id: orgId, status: "PENDING" })
+      .select("id").single();
+    if (!sub) return;
     const rows = adminSelected.map((s) => ({
-      product_id: s.productId,
-      created_by_user_id: user.id,
-      status: "MISSING" as const,
-      org_id: orgId,
-      quantity_needed: s.quantity,
-      created_from: "MANUAL" as const,
+      product_id: s.productId, created_by_user_id: user.id, status: "MISSING" as const,
+      org_id: orgId, quantity_needed: s.quantity, created_from: "MANUAL" as const, submission_id: sub.id,
     }));
     await supabase.from("shopping_list").insert(rows);
     setAdminSelected([]);
@@ -280,15 +333,14 @@ function AdminShoppingView({ items, products, user, orgId, toast, onRefresh }: a
   };
 
   const filteredProducts = products.filter((p: Product) =>
-    p.name.toLowerCase().includes(adminSearch.toLowerCase()) ||
-    (p.category || "").toLowerCase().includes(adminSearch.toLowerCase())
+    p.name.toLowerCase().includes(adminSearch.toLowerCase()) || (p.category || "").toLowerCase().includes(adminSearch.toLowerCase())
   );
 
   return (
     <div>
       <PageHeader
         title="Shopping List"
-        description="Manage all shopping items"
+        description="Manage all shopping submissions"
         actions={
           openItems.length > 0 ? (
             <AlertDialog>
@@ -300,9 +352,7 @@ function AdminShoppingView({ items, products, user, orgId, toast, onRefresh }: a
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Clear shopping list?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Set {openItems.length} open item{openItems.length !== 1 ? "s" : ""} to OK.
-                  </AlertDialogDescription>
+                  <AlertDialogDescription>Set {openItems.length} open item{openItems.length !== 1 ? "s" : ""} to OK.</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -314,13 +364,13 @@ function AdminShoppingView({ items, products, user, orgId, toast, onRefresh }: a
         }
       />
       <div className="p-4 md:p-6 max-w-3xl">
-        <Tabs defaultValue="list">
+        <Tabs defaultValue="lists">
           <TabsList className="mb-4">
-            <TabsTrigger value="list" className="gap-1.5">
-              Shopping List
-              {newItemsCount > 0 && (
+            <TabsTrigger value="lists" className="gap-1.5">
+              Shopping Lists
+              {pendingSubs.length > 0 && (
                 <Badge variant="destructive" className="ml-1 h-5 min-w-5 text-[10px] px-1.5 rounded-full">
-                  {newItemsCount}
+                  {pendingSubs.length}
                 </Badge>
               )}
             </TabsTrigger>
@@ -329,63 +379,31 @@ function AdminShoppingView({ items, products, user, orgId, toast, onRefresh }: a
             </TabsTrigger>
           </TabsList>
 
-          {/* ── Tab: Shopping List ── */}
-          <TabsContent value="list" className="space-y-2">
-            {openItems.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No open items.</p>
+          {/* ── Tab: Shopping Lists ── */}
+          <TabsContent value="lists" className="space-y-3">
+            {allSubs.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No shopping lists submitted yet.</p>
             ) : (
-              openItems.map((item: ShoppingItem) => (
-                <Card key={item.id}>
-                  <CardContent className="p-3 flex items-center gap-3">
-                    {editingId === item.id ? (
-                      <>
-                        <div className="flex-1 space-y-1.5">
-                          <p className="text-sm font-medium">{item.products?.name}</p>
-                          <div className="flex gap-2 items-center">
-                            <Input
-                              type="number" min={1} value={editQty}
-                              onChange={(e) => setEditQty(Number(e.target.value) || 1)}
-                              className="w-16 h-7 text-xs"
-                            />
-                            <Select value={editStatus} onValueChange={setEditStatus}>
-                              <SelectTrigger className="w-28 h-7 text-xs"><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="MISSING">Missing</SelectItem>
-                                <SelectItem value="ORDERED">Ordered</SelectItem>
-                                <SelectItem value="BOUGHT">Bought</SelectItem>
-                                <SelectItem value="OK">OK</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                        <Button size="sm" variant="ghost" onClick={() => handleSaveEdit(item.id)}>
-                          <Check className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">{item.products?.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {item.products?.category || "—"} · Qty: {item.quantity_needed}
-                            {item.note ? ` · ${item.note}` : ""}
-                          </p>
-                        </div>
-                        <StatusBadge status={item.status} />
-                        <Button size="sm" variant="ghost" onClick={() => { setEditingId(item.id); setEditQty(item.quantity_needed); setEditStatus(item.status); }}>
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDelete(item.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              ))
+              allSubs.map((sub) => {
+                const subItems = (items as ShoppingItem[]).filter((i) => i.submission_id === sub.id);
+                return (
+                  <AdminSubmissionCard
+                    key={sub.id}
+                    submission={sub}
+                    items={subItems}
+                    editingId={editingId}
+                    editQty={editQty}
+                    editStatus={editStatus}
+                    onStartEdit={(item: ShoppingItem) => { setEditingId(item.id); setEditQty(item.quantity_needed); setEditStatus(item.status); }}
+                    onCancelEdit={() => setEditingId(null)}
+                    onSaveEdit={handleSaveEdit}
+                    onDeleteItem={handleDeleteItem}
+                    onDeleteSubmission={handleDeleteSubmission}
+                    setEditQty={setEditQty}
+                    setEditStatus={setEditStatus}
+                  />
+                );
+              })
             )}
           </TabsContent>
 
@@ -405,8 +423,7 @@ function AdminShoppingView({ items, products, user, orgId, toast, onRefresh }: a
                       <span className="text-sm font-medium flex-1">{p.name}</span>
                       <span className="text-xs text-muted-foreground">{p.category || ""}</span>
                       {sel && (
-                        <Input
-                          type="number" min={1} value={sel.quantity}
+                        <Input type="number" min={1} value={sel.quantity}
                           onChange={(e) => {
                             const v = Number(e.target.value) || 1;
                             setAdminSelected((prev) => prev.map((s) => s.productId === p.id ? { ...s, quantity: v } : s));
@@ -431,13 +448,85 @@ function AdminShoppingView({ items, products, user, orgId, toast, onRefresh }: a
   );
 }
 
-/* ── Shared status badge ── */
+/* ─── Admin submission card with inline editing ─── */
+function AdminSubmissionCard({ submission, items, editingId, editQty, editStatus, onStartEdit, onCancelEdit, onSaveEdit, onDeleteItem, onDeleteSubmission, setEditQty, setEditStatus }: any) {
+  const [open, setOpen] = useState(false);
+  const pendingCount = items.filter((i: ShoppingItem) => i.status !== "OK").length;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <Card>
+        <CollapsibleTrigger asChild>
+          <CardContent className="p-3 flex items-center gap-3 cursor-pointer hover:bg-muted/30 transition-colors">
+            {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">{format(new Date(submission.created_at), "dd MMM yyyy, HH:mm")}</p>
+              <p className="text-xs text-muted-foreground">{items.length} item{items.length !== 1 ? "s" : ""}</p>
+            </div>
+            {pendingCount > 0 && <Badge variant="destructive" className="text-[10px]">{pendingCount} pending</Badge>}
+            <SubmissionStatusBadge status={submission.status} />
+            <Button size="sm" variant="ghost" className="text-destructive" onClick={(e) => { e.stopPropagation(); onDeleteSubmission(submission.id); }}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </CardContent>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="border-t px-3 pb-3 pt-2 space-y-1.5">
+            {items.map((item: ShoppingItem) => (
+              <div key={item.id} className="flex items-center gap-2 py-1">
+                {editingId === item.id ? (
+                  <>
+                    <span className="text-sm font-medium flex-1">{item.products?.name}</span>
+                    <Input type="number" min={1} value={editQty} onChange={(e) => setEditQty(Number(e.target.value) || 1)} className="w-16 h-7 text-xs" />
+                    <Select value={editStatus} onValueChange={setEditStatus}>
+                      <SelectTrigger className="w-24 h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="MISSING">Missing</SelectItem>
+                        <SelectItem value="ORDERED">Ordered</SelectItem>
+                        <SelectItem value="BOUGHT">Bought</SelectItem>
+                        <SelectItem value="OK">OK</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" variant="ghost" onClick={() => onSaveEdit(item.id)}><Check className="h-3.5 w-3.5" /></Button>
+                    <Button size="sm" variant="ghost" onClick={onCancelEdit}><X className="h-3.5 w-3.5" /></Button>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium">{item.products?.name}</span>
+                      <span className="text-muted-foreground ml-2 text-xs">× {item.quantity_needed}</span>
+                      {item.note && <span className="text-muted-foreground text-xs ml-2">({item.note})</span>}
+                    </div>
+                    <StatusBadge status={item.status} />
+                    <Button size="sm" variant="ghost" onClick={() => onStartEdit(item)}><Edit2 className="h-3 w-3" /></Button>
+                    <Button size="sm" variant="ghost" className="text-destructive" onClick={() => onDeleteItem(item.id)}><Trash2 className="h-3 w-3" /></Button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
+  );
+}
+
+/* ── Status badges ── */
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
     MISSING: { label: "Missing", variant: "destructive" },
     ORDERED: { label: "Ordered", variant: "secondary" },
     BOUGHT: { label: "Bought", variant: "default" },
     OK: { label: "OK", variant: "outline" },
+  };
+  const { label, variant } = map[status] || { label: status, variant: "outline" as const };
+  return <Badge variant={variant} className="text-[10px]">{label}</Badge>;
+}
+
+function SubmissionStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+    PENDING: { label: "Pending", variant: "secondary" },
+    DONE: { label: "Done", variant: "outline" },
   };
   const { label, variant } = map[status] || { label: status, variant: "outline" as const };
   return <Badge variant={variant} className="text-[10px]">{label}</Badge>;

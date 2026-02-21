@@ -1366,6 +1366,7 @@ export type Database = {
           quantity_needed: number | null
           room_id: string | null
           status: Database["public"]["Enums"]["shopping_status"] | null
+          submission_id: string | null
           updated_at: string
         }
         Insert: {
@@ -1385,6 +1386,7 @@ export type Database = {
           quantity_needed?: number | null
           room_id?: string | null
           status?: Database["public"]["Enums"]["shopping_status"] | null
+          submission_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1404,6 +1406,7 @@ export type Database = {
           quantity_needed?: number | null
           room_id?: string | null
           status?: Database["public"]["Enums"]["shopping_status"] | null
+          submission_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1440,6 +1443,48 @@ export type Database = {
             columns: ["room_id"]
             isOneToOne: false
             referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shopping_list_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "shopping_submissions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shopping_submissions: {
+        Row: {
+          created_at: string
+          created_by_user_id: string
+          id: string
+          notes: string | null
+          org_id: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          created_by_user_id: string
+          id?: string
+          notes?: string | null
+          org_id?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          created_by_user_id?: string
+          id?: string
+          notes?: string | null
+          org_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopping_submissions_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
