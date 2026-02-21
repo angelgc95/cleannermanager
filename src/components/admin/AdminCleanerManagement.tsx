@@ -122,18 +122,17 @@ export function AdminCleanerManagement() {
   };
 
   const handleRemoveCleaner = async (cleanerUserId: string) => {
-    // Remove cleaner from org by setting org_id to null via edge function is complex;
-    // For now, remove all assignments. The admin can't remove org_id directly due to RLS.
-    // We'll just remove assignments for now.
-    for (const c of cleaners) {
-      if (c.user_id === cleanerUserId) {
-        for (const a of c.assignments) {
-          await supabase.from("cleaner_assignments").delete().eq("id", a.id);
-        }
-      }
+    try {
+      const { data, error } = await supabase.functions.invoke("onboard-user", {
+        body: { type: "remove_cleaner", cleaner_user_id: cleanerUserId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast({ title: "Cleaner removed" });
+      fetchData();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     }
-    toast({ title: "Cleaner assignments removed" });
-    fetchData();
   };
 
   return (
