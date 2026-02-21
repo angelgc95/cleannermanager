@@ -414,9 +414,6 @@ function AdminShoppingView({ submissions, items, products, user, orgId, toast, o
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="add" className="gap-1.5">
-              <Plus className="h-3.5 w-3.5" /> Add Items
-            </TabsTrigger>
             <TabsTrigger value="products" className="gap-1.5">
               <Package className="h-3.5 w-3.5" /> Products
               <Badge variant="outline" className="ml-1 text-[10px]">{products.length}</Badge>
@@ -448,42 +445,6 @@ function AdminShoppingView({ submissions, items, products, user, orgId, toast, o
                   />
                 );
               })
-            )}
-          </TabsContent>
-
-          {/* ── Tab: Add Items ── */}
-          <TabsContent value="add" className="space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search products..." value={adminSearch} onChange={(e) => setAdminSearch(e.target.value)} className="pl-9 h-9 text-sm" />
-            </div>
-            <div className="space-y-1 max-h-[50vh] overflow-y-auto">
-              {filteredProducts.map((p: Product) => {
-                const sel = adminSelected.find((s) => s.productId === p.id);
-                return (
-                  <Card key={p.id} className={sel ? "border-primary/50 bg-primary/5" : ""}>
-                    <CardContent className="p-3 flex items-center gap-3">
-                      <Checkbox checked={!!sel} onCheckedChange={() => toggleAdminProduct(p.id)} />
-                      <span className="text-sm font-medium flex-1">{p.name}</span>
-                      <span className="text-xs text-muted-foreground">{p.category || ""}</span>
-                      {sel && (
-                        <Input type="number" min={1} value={sel.quantity}
-                          onChange={(e) => {
-                            const v = Number(e.target.value) || 1;
-                            setAdminSelected((prev) => prev.map((s) => s.productId === p.id ? { ...s, quantity: v } : s));
-                          }}
-                          className="w-14 h-7 text-xs text-center"
-                        />
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-            {adminSelected.length > 0 && (
-              <Button onClick={handleAdminAdd} className="w-full gap-2">
-                <Plus className="h-4 w-4" /> Add {adminSelected.length} item{adminSelected.length !== 1 ? "s" : ""}
-              </Button>
             )}
           </TabsContent>
 
