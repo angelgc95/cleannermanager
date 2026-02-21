@@ -16,25 +16,69 @@ serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Get caller's org or accept org_id in body
-    const authHeader = req.headers.get("authorization");
-    let orgId: string | null = null;
+    // Authenticate the caller
+    const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: userError } = await anonClient.auth.getUser();
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Verify admin/manager role
+    const { data: hasAdmin } = await supabase.rpc("has_role", { _user_id: user.id, _role: "admin" });
+    const { data: hasManager } = await supabase.rpc("has_role", { _user_id: user.id, _role: "manager" });
+    if (!hasAdmin && !hasManager) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const body = await req.json().catch(() => ({}));
 
+    // Validate org_id format if provided
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let orgId: string | null = null;
+
     if (body.org_id) {
-      orgId = body.org_id;
-    } else if (authHeader) {
-      const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!);
-      const { data: { user } } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("org_id")
-          .eq("user_id", user.id)
-          .single();
-        orgId = profile?.org_id;
+      if (!uuidRegex.test(body.org_id)) {
+        return new Response(JSON.stringify({ error: "Invalid org_id format" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
+      // Verify user belongs to this org
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("org_id")
+        .eq("user_id", user.id)
+        .single();
+      if (profile?.org_id !== body.org_id) {
+        return new Response(JSON.stringify({ error: "Forbidden: not your organization" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      orgId = body.org_id;
+    } else {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("org_id")
+        .eq("user_id", user.id)
+        .single();
+      orgId = profile?.org_id;
     }
 
     if (!orgId) {
