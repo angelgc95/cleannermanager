@@ -71,15 +71,28 @@ export default function PayoutsPage() {
       .lte("date", dateTo)
       .order("date");
 
-    // Also fetch completed checklist_runs that have NO log_hours entry
-    const { data: runData } = await supabase
-      .from("checklist_runs")
-      .select("id, cleaning_task_id, cleaner_user_id, started_at, finished_at, duration_minutes, property_id, cleaning_tasks:cleaning_task_id(properties(name))")
-      .eq("cleaner_user_id", selectedCleaner)
-      .not("finished_at", "is", null)
-      .not("duration_minutes", "is", null)
-      .gte("finished_at", `${dateFrom}T00:00:00`)
-      .lte("finished_at", `${dateTo}T23:59:59`);
+    // Also fetch completed checklist_runs for tasks assigned to this cleaner
+    // (the run may have been done by a different user, e.g. admin testing)
+    const { data: taskData } = await supabase
+      .from("cleaning_tasks")
+      .select("id")
+      .eq("assigned_cleaner_user_id", selectedCleaner)
+      .eq("status", "DONE");
+
+    const taskIds = (taskData || []).map((t: any) => t.id);
+    
+    let runData: any[] = [];
+    if (taskIds.length > 0) {
+      const { data } = await supabase
+        .from("checklist_runs")
+        .select("id, cleaning_task_id, cleaner_user_id, started_at, finished_at, duration_minutes, property_id, cleaning_tasks:cleaning_task_id(properties(name))")
+        .in("cleaning_task_id", taskIds)
+        .not("finished_at", "is", null)
+        .not("duration_minutes", "is", null)
+        .gte("finished_at", `${dateFrom}T00:00:00`)
+        .lte("finished_at", `${dateTo}T23:59:59`);
+      runData = data || [];
+    }
 
     // Filter out runs that already have a log_hours entry
     const logRunIds = new Set((logData || []).map((l: any) => l.checklist_run_id).filter(Boolean));
@@ -95,9 +108,9 @@ export default function PayoutsPage() {
       end_at: r.finished_at ? new Date(r.finished_at).toTimeString().slice(0, 5) : "—",
       duration_minutes: r.duration_minutes,
       source: "CHECKLIST",
-      description: "From completed checklist (no log entry)",
+      description: "From completed checklist",
       cleaning_tasks: r.cleaning_tasks,
-      user_id: r.cleaner_user_id,
+      user_id: selectedCleaner,
       property_id: r.property_id,
       cleaning_task_id: r.cleaning_task_id,
     }));
