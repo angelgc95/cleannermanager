@@ -37,7 +37,41 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { type, org_name, invite_code, cleaner_unique_code, cleaner_user_id } = await req.json();
+    const body = await req.json();
+    const { type, org_name, invite_code, cleaner_unique_code, cleaner_user_id } = body;
+
+    // Validate input types and lengths
+    if (!type || typeof type !== "string" || !["host", "cleaner", "add_cleaner", "remove_cleaner"].includes(type)) {
+      return new Response(JSON.stringify({ error: "Invalid type" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (org_name && (typeof org_name !== "string" || org_name.length > 200)) {
+      return new Response(JSON.stringify({ error: "Invalid org_name" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (invite_code && (typeof invite_code !== "string" || invite_code.length > 50)) {
+      return new Response(JSON.stringify({ error: "Invalid invite_code" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (cleaner_unique_code && (typeof cleaner_unique_code !== "string" || cleaner_unique_code.length > 20)) {
+      return new Response(JSON.stringify({ error: "Invalid cleaner_unique_code" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (cleaner_user_id && (typeof cleaner_user_id !== "string" || !uuidRegex.test(cleaner_user_id))) {
+      return new Response(JSON.stringify({ error: "Invalid cleaner_user_id" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (type === "host") {
       // Create organization

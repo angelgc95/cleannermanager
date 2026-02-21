@@ -2,3 +2,9 @@ project_id = "rejerjibsoadxwfqofda"
 
 [functions.generate-payouts]
 verify_jwt = false
+
+[functions.sync-ics]
+verify_jwt = false
+
+[functions.dispatch-notifications]
+verify_jwt = false
