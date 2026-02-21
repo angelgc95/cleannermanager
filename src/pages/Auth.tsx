@@ -5,9 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ClipboardCheck } from "lucide-react";
+import { ClipboardCheck, Copy } from "lucide-react";
 
 type AuthMode = "login" | "host-signup" | "cleaner-signup";
 
@@ -17,8 +16,8 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [orgName, setOrgName] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [cleanerCode, setCleanerCode] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -38,12 +37,6 @@ export default function Auth() {
     e.preventDefault();
     setLoading(true);
 
-    if (type === "cleaner" && !inviteCode.trim()) {
-      toast({ title: "Error", description: "Invite code is required.", variant: "destructive" });
-      setLoading(false);
-      return;
-    }
-
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
@@ -59,36 +52,83 @@ export default function Auth() {
       return;
     }
 
-    // If email confirmation is required, user won't have a session yet
     if (!signUpData.session) {
       toast({ title: "Check your email", description: "We sent you a confirmation link. After confirming, sign in and you'll be onboarded." });
       setLoading(false);
       return;
     }
 
-    // Call onboard-user edge function
     try {
       const { data, error } = await supabase.functions.invoke("onboard-user", {
         body: {
           type,
           org_name: type === "host" ? (orgName || name) : undefined,
-          invite_code: type === "cleaner" ? inviteCode.trim() : undefined,
         },
       });
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      toast({ title: "Welcome!", description: type === "host" ? "Your organization has been created." : `You've joined ${data.org_name || "the team"}.` });
+      if (type === "cleaner" && data?.unique_code) {
+        // Show the cleaner their unique code before navigating
+        setCleanerCode(data.unique_code);
+        setLoading(false);
+        return;
+      }
+
+      toast({ title: "Welcome!", description: type === "host" ? "Your organization has been created." : "Account created! Share your code with a host to get added." });
       navigate("/");
     } catch (err: any) {
       toast({ title: "Onboarding failed", description: err.message || "Please try again.", variant: "destructive" });
-      // Sign out since onboarding failed
       await supabase.auth.signOut();
     }
 
     setLoading(false);
   };
+
+  const copyCode = () => {
+    if (cleanerCode) {
+      navigator.clipboard.writeText(cleanerCode);
+      toast({ title: "Copied!", description: "Your unique code has been copied." });
+    }
+  };
+
+  // Show cleaner code screen after signup
+  if (cleanerCode) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-3">
+              <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
+                <ClipboardCheck className="h-6 w-6 text-primary-foreground" />
+              </div>
+            </div>
+            <CardTitle className="text-2xl">Welcome, Cleaner!</CardTitle>
+            <CardDescription>
+              Your unique ID has been generated. Share it with your host so they can add you to their organization.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-center gap-3">
+              <code className="bg-muted px-6 py-3 rounded-lg text-2xl font-mono font-bold tracking-widest">
+                {cleanerCode}
+              </code>
+              <Button variant="outline" size="icon" onClick={copyCode}>
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground text-center">
+              Once your host adds you, you'll be able to see your assigned listings.
+            </p>
+            <Button className="w-full" onClick={() => navigate("/")}>
+              Continue
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -162,11 +202,6 @@ export default function Auth() {
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" required />
               </div>
               <div className="space-y-2">
-                <Label>Invite Code</Label>
-                <Input value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="Enter code from your host" required />
-                <p className="text-xs text-muted-foreground">Ask your host for the invite code</p>
-              </div>
-              <div className="space-y-2">
                 <Label>Email</Label>
                 <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
               </div>
@@ -174,8 +209,11 @@ export default function Auth() {
                 <Label>Password</Label>
                 <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
               </div>
+              <p className="text-xs text-muted-foreground">
+                After signing up, you'll receive a unique code. Share it with your host to get added to their organization.
+              </p>
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Joining..." : "Join as Cleaner"}
+                {loading ? "Creating..." : "Sign Up as Cleaner"}
               </Button>
               <button type="button" onClick={() => setMode("login")} className="text-sm text-primary hover:underline w-full text-center">
                 Already have an account? Sign in

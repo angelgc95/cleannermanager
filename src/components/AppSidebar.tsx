@@ -29,7 +29,7 @@ const allNavItems = [
   { title: "Shopping List", url: "/shopping", icon: ShoppingCart, roles: ["admin", "manager", "cleaner"] },
   { title: "Payouts", url: "/payouts", icon: DollarSign, roles: ["admin", "manager", "cleaner"] },
   { title: "Guides", url: "/guides", icon: BookOpen, roles: ["admin", "manager", "cleaner"] },
-  { title: "Settings", url: "/settings", icon: Settings, roles: ["admin", "manager"] },
+  { title: "Settings", url: "/settings", icon: Settings, roles: ["admin", "manager", "cleaner"] },
 ];
 
 export function AppSidebar() {

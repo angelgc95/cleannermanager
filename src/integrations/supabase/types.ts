@@ -420,6 +420,45 @@ export type Database = {
           },
         ]
       }
+      cleaner_assignments: {
+        Row: {
+          cleaner_user_id: string
+          created_at: string
+          id: string
+          org_id: string | null
+          property_id: string
+        }
+        Insert: {
+          cleaner_user_id: string
+          created_at?: string
+          id?: string
+          org_id?: string | null
+          property_id: string
+        }
+        Update: {
+          cleaner_user_id?: string
+          created_at?: string
+          id?: string
+          org_id?: string | null
+          property_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cleaner_assignments_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaner_assignments_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cleaning_tasks: {
         Row: {
           assigned_cleaner_user_id: string | null
@@ -1208,6 +1247,7 @@ export type Database = {
           id: string
           name: string
           org_id: string | null
+          unique_code: string | null
           updated_at: string
           user_id: string
         }
@@ -1218,6 +1258,7 @@ export type Database = {
           id?: string
           name?: string
           org_id?: string | null
+          unique_code?: string | null
           updated_at?: string
           user_id: string
         }
@@ -1228,6 +1269,7 @@ export type Database = {
           id?: string
           name?: string
           org_id?: string | null
+          unique_code?: string | null
           updated_at?: string
           user_id?: string
         }
