@@ -258,10 +258,7 @@ export default function ChecklistRunPage() {
   };
 
   const validateShopping = (): boolean => {
-    if (shoppingChecked === null || shoppingChecked === false) {
-      setShoppingError("You must confirm shopping has been checked.");
-      return false;
-    }
+    // Shopping is optional for cleaners
     setShoppingError(null);
     return true;
   };
@@ -271,7 +268,8 @@ export default function ChecklistRunPage() {
       const { done, total } = getSectionCompletion(section);
       return done >= total;
     });
-    return sectionsOk && workStart && workEnd && workEnd > workStart && shoppingChecked === true;
+    // Shopping is optional
+    return sectionsOk && workStart && workEnd && workEnd > workStart;
   };
 
   const handleFinish = async () => {
@@ -391,6 +389,14 @@ export default function ChecklistRunPage() {
 
   const shoppingCompletion = shoppingChecked === true ? { done: 1, total: 1 } : { done: 0, total: 1 };
 
+  // Helper to go to next section
+  const goToNextTab = () => {
+    const allTabs = [...sections.map(s => s.id), SHOPPING_TAB_ID];
+    const currentIdx = allTabs.indexOf(activeTab);
+    if (currentIdx < allTabs.length - 1) {
+      setActiveTab(allTabs[currentIdx + 1]);
+    }
+  };
   return (
     <div className="flex flex-col h-full">
       <PageHeader
@@ -470,7 +476,7 @@ export default function ChecklistRunPage() {
               >
                 Shopping
                 <span className="ml-1 text-[10px] text-muted-foreground">
-                  {shoppingCompletion.done}/{shoppingCompletion.total}
+                  (optional)
                 </span>
               </TabsTrigger>
             </TabsList>
@@ -564,23 +570,37 @@ export default function ChecklistRunPage() {
 
                 {(() => {
                   const { done, total } = getSectionCompletion(section);
-                  if (done >= total && total > 0) return null;
                   const uncheckedYesNo = section.items.filter(
                     (i) => i.type === "YESNO" && i.required && responses[i.id] !== true
                   );
-                  if (uncheckedYesNo.length === 0) return null;
+                  const sectionComplete = done >= total && total > 0;
+                  const allTabs = [...sections.map(s => s.id), SHOPPING_TAB_ID];
+                  const isLastSection = allTabs.indexOf(section.id) === allTabs.length - 1;
+
                   return (
-                    <Button
-                      variant="outline"
-                      className="w-full mt-3"
-                      onClick={() => {
-                        const updates: Record<string, boolean> = {};
-                        uncheckedYesNo.forEach((i) => { updates[i.id] = true; });
-                        setResponses((prev) => ({ ...prev, ...updates }));
-                      }}
-                    >
-                      <Check className="h-4 w-4 mr-2" /> Mark Section Complete
-                    </Button>
+                    <div className="flex gap-2 mt-3">
+                      {!sectionComplete && uncheckedYesNo.length > 0 && (
+                        <Button
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => {
+                            const updates: Record<string, boolean> = {};
+                            uncheckedYesNo.forEach((i) => { updates[i.id] = true; });
+                            setResponses((prev) => ({ ...prev, ...updates }));
+                          }}
+                        >
+                          <Check className="h-4 w-4 mr-2" /> Mark Section Complete
+                        </Button>
+                      )}
+                      {sectionComplete && !isLastSection && (
+                        <Button
+                          className="flex-1 gap-2"
+                          onClick={goToNextTab}
+                        >
+                          Next Section →
+                        </Button>
+                      )}
+                    </div>
                   );
                 })()}
               </TabsContent>
@@ -600,7 +620,7 @@ export default function ChecklistRunPage() {
 
         <div className="border-t border-border bg-card p-4 flex items-center justify-between">
           <div className="text-sm text-muted-foreground">
-            {sections.reduce((a, s) => a + getSectionCompletion(s).done, 0) + shoppingCompletion.done} / {sections.reduce((a, s) => a + getSectionCompletion(s).total, 0) + shoppingCompletion.total} items complete
+            {sections.reduce((a, s) => a + getSectionCompletion(s).done, 0)} / {sections.reduce((a, s) => a + getSectionCompletion(s).total, 0)} items complete
           </div>
           <Button
             onClick={handleFinish}
