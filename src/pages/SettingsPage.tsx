@@ -9,9 +9,65 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Loader2, Copy, RefreshCw, Users } from "lucide-react";
+import { Plus, Loader2, Copy, RefreshCw, Users, DollarSign } from "lucide-react";
 import { NotificationSettings } from "@/components/NotificationSettings";
 import { AdminCleanerManagement } from "@/components/admin/AdminCleanerManagement";
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function PayoutScheduleSettings({ org, onUpdate }: { org: any; onUpdate: () => void }) {
+  const { toast } = useToast();
+  const [weekEndDay, setWeekEndDay] = useState<string>(String(org.payout_week_end_day ?? 0));
+
+  const handleSave = async () => {
+    const { error } = await supabase
+      .from("organizations")
+      .update({ payout_week_end_day: parseInt(weekEndDay) })
+      .eq("id", org.id);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Payout schedule updated" });
+      onUpdate();
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <DollarSign className="h-4 w-4" />
+          Payout Schedule
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-1">
+          <Label>Frequency</Label>
+          <Input value="Weekly" disabled className="max-w-[200px]" />
+        </div>
+        <div className="space-y-1">
+          <Label>Week ends on</Label>
+          <div className="flex items-center gap-2">
+            <Select value={weekEndDay} onValueChange={setWeekEndDay}>
+              <SelectTrigger className="max-w-[200px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DAY_NAMES.map((name, i) => (
+                  <SelectItem key={i} value={String(i)}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button size="sm" onClick={handleSave}>Save</Button>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Payout periods will close on {DAY_NAMES[parseInt(weekEndDay)]}. New periods start the next day.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -247,6 +303,11 @@ export default function SettingsPage() {
         {properties.length === 0 && !showAdd && <p className="text-center text-muted-foreground py-8">No listings configured yet.</p>}
 
         <AdminCleanerManagement />
+
+        {/* Payout Schedule Settings */}
+        {org && (
+          <PayoutScheduleSettings org={org} onUpdate={fetchOrg} />
+        )}
 
         <NotificationSettings />
       </div>
