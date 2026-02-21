@@ -1,1 +1,4 @@
 project_id = "rejerjibsoadxwfqofda"
+
+[functions.generate-payouts]
+verify_jwt = false
