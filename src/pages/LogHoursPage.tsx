@@ -10,13 +10,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { Plus, X, Clock, User } from "lucide-react";
+import { Plus, X, Clock, User, Pencil, Trash2 } from "lucide-react";
 
 export default function LogHoursPage() {
   const { user, orgId, role } = useAuth();
   const { toast } = useToast();
   const [entries, setEntries] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [form, setForm] = useState({
     date: format(new Date(), "yyyy-MM-dd"),
@@ -86,6 +87,7 @@ export default function LogHoursPage() {
       description: "",
       user_id: "",
     });
+    setEditingId(null);
     setShowForm(false);
   };
 
@@ -103,21 +105,62 @@ export default function LogHoursPage() {
     const [eh, em] = form.end_at.split(":").map(Number);
     const duration = (eh * 60 + em) - (sh * 60 + sm);
 
-    const { error } = await supabase.from("log_hours").insert({
-      user_id: targetUserId,
-      date: form.date,
-      start_at: form.start_at,
-      end_at: form.end_at,
-      duration_minutes: duration > 0 ? duration : 0,
-      description: form.description,
-      org_id: orgId,
-    });
+    if (editingId) {
+      // Update existing entry
+      const { error } = await supabase.from("log_hours").update({
+        date: form.date,
+        start_at: form.start_at,
+        end_at: form.end_at,
+        duration_minutes: duration > 0 ? duration : 0,
+        description: form.description,
+      }).eq("id", editingId);
 
+      if (error) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Entry updated" });
+        resetForm();
+        fetchEntries();
+      }
+    } else {
+      const { error } = await supabase.from("log_hours").insert({
+        user_id: targetUserId,
+        date: form.date,
+        start_at: form.start_at,
+        end_at: form.end_at,
+        duration_minutes: duration > 0 ? duration : 0,
+        description: form.description,
+        org_id: orgId,
+      });
+
+      if (error) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Hours logged" });
+        resetForm();
+        fetchEntries();
+      }
+    }
+  };
+
+  const handleEdit = (entry: any) => {
+    setForm({
+      date: entry.date,
+      start_at: entry.start_at?.slice(0, 5) || "09:00",
+      end_at: entry.end_at?.slice(0, 5) || "10:00",
+      description: entry.description || "",
+      user_id: entry.user_id,
+    });
+    setEditingId(entry.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from("log_hours").delete().eq("id", id);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Hours logged" });
-      resetForm();
+      toast({ title: "Entry deleted" });
       fetchEntries();
     }
   };
@@ -150,7 +193,7 @@ export default function LogHoursPage() {
         title="Log Hours"
         description={isAdmin ? "View submitted hours and log hours for cleaners" : "Track extra hours outside scheduled cleanings"}
         actions={
-          <Button size="sm" onClick={() => setShowForm(!showForm)}>
+          <Button size="sm" onClick={() => { if (showForm) resetForm(); else setShowForm(true); }}>
             {showForm ? <><X className="h-4 w-4 mr-1" /> Cancel</> : <><Plus className="h-4 w-4 mr-1" /> Log Hours</>}
           </Button>
         }
@@ -161,7 +204,7 @@ export default function LogHoursPage() {
           <Card>
             <CardContent className="pt-6">
               <form onSubmit={handleSubmit} className="space-y-4">
-                {isAdmin && (
+                {isAdmin && !editingId && (
                   <div className="space-y-1">
                     <Label>Assign to Cleaner</Label>
                     <Select value={form.user_id} onValueChange={(v) => setForm({ ...form, user_id: v })}>
@@ -196,7 +239,7 @@ export default function LogHoursPage() {
                   <Label>Description</Label>
                   <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What did you do?" />
                 </div>
-                <Button type="submit">Save</Button>
+                <Button type="submit">{editingId ? "Update" : "Save"}</Button>
               </form>
             </CardContent>
           </Card>
@@ -247,6 +290,16 @@ export default function LogHoursPage() {
                     {entry.description && <p className="text-xs text-muted-foreground mt-1">{entry.description}</p>}
                   </div>
                 </div>
+                {isAdmin && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(entry)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDelete(entry.id)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
