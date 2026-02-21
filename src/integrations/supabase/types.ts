@@ -1074,6 +1074,8 @@ export type Database = {
           id: string
           invite_code: string
           name: string
+          payout_frequency: string
+          payout_week_end_day: number
           timezone: string
         }
         Insert: {
@@ -1081,6 +1083,8 @@ export type Database = {
           id?: string
           invite_code?: string
           name: string
+          payout_frequency?: string
+          payout_week_end_day?: number
           timezone?: string
         }
         Update: {
@@ -1088,6 +1092,8 @@ export type Database = {
           id?: string
           invite_code?: string
           name?: string
+          payout_frequency?: string
+          payout_week_end_day?: number
           timezone?: string
         }
         Relationships: []
