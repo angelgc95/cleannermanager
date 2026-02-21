@@ -52,18 +52,28 @@ export default function LogHoursPage() {
     if (!user) return;
     let query = supabase
       .from("log_hours")
-      .select("*, profiles:user_id(name)")
+      .select("*")
       .order("date", { ascending: false })
       .limit(50);
 
     if (!isAdmin) {
-      // Cleaners only see their own
       query = query.eq("user_id", user.id);
     }
-    // Admins see all org hours (RLS handles org scoping)
 
     const { data } = await query;
-    setEntries(data || []);
+
+    // Fetch user names separately (no FK from log_hours.user_id to profiles)
+    if (isAdmin && data && data.length > 0) {
+      const userIds = [...new Set(data.map((e: any) => e.user_id))];
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("user_id, name")
+        .in("user_id", userIds);
+      const nameMap = Object.fromEntries((profiles || []).map((p: any) => [p.user_id, p.name]));
+      setEntries(data.map((e: any) => ({ ...e, _user_name: nameMap[e.user_id] || "Unknown" })));
+    } else {
+      setEntries(data || []);
+    }
   };
 
   useEffect(() => { fetchEntries(); }, [user, role]);
@@ -118,7 +128,7 @@ export default function LogHoursPage() {
         const uid = entry.user_id;
         if (!acc[uid]) {
           acc[uid] = {
-            name: entry.profiles?.name || "Unknown",
+            name: entry._user_name || "Unknown",
             totalMinutes: 0,
             count: 0,
           };
@@ -229,8 +239,8 @@ export default function LogHoursPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-sm">{format(new Date(entry.date), "MMM d, yyyy")}</p>
-                      {isAdmin && entry.profiles?.name && (
-                        <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">{entry.profiles.name}</span>
+                      {isAdmin && entry._user_name && (
+                        <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">{entry._user_name}</span>
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground">{entry.start_at?.slice(0, 5)} – {entry.end_at?.slice(0, 5)} · {entry.duration_minutes} min</p>
