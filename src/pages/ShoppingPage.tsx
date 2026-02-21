@@ -269,6 +269,14 @@ function AdminShoppingView({ submissions, items, products, user, orgId, toast, o
   const [adminSelected, setAdminSelected] = useState<SelectedProduct[]>([]);
   const [adminSearch, setAdminSearch] = useState("");
 
+  // Product template management
+  const [productSearch, setProductSearch] = useState("");
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [editProductName, setEditProductName] = useState("");
+  const [editProductCategory, setEditProductCategory] = useState("");
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductCategory, setNewProductCategory] = useState("");
+
   const allSubs = (submissions as Submission[]).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   const pendingSubs = allSubs.filter((s) => s.status === "PENDING");
   const openItems = (items as ShoppingItem[]).filter((i) => ["MISSING", "ORDERED", "BOUGHT"].includes(i.status));
@@ -336,6 +344,38 @@ function AdminShoppingView({ submissions, items, products, user, orgId, toast, o
     p.name.toLowerCase().includes(adminSearch.toLowerCase()) || (p.category || "").toLowerCase().includes(adminSearch.toLowerCase())
   );
 
+  const templateProducts = (products as Product[]).filter((p) =>
+    p.name.toLowerCase().includes(productSearch.toLowerCase()) || (p.category || "").toLowerCase().includes(productSearch.toLowerCase())
+  );
+
+  const groupedTemplate = templateProducts.reduce((acc: Record<string, Product[]>, p: Product) => {
+    const cat = p.category || "Other";
+    (acc[cat] = acc[cat] || []).push(p);
+    return acc;
+  }, {});
+
+  const handleAddProduct = async () => {
+    if (!newProductName.trim()) return;
+    await supabase.from("products").insert({ name: newProductName.trim(), category: newProductCategory.trim() || null, org_id: orgId, active: true });
+    setNewProductName("");
+    setNewProductCategory("");
+    toast({ title: "Product added" });
+    onRefresh();
+  };
+
+  const handleSaveProduct = async (id: string) => {
+    await supabase.from("products").update({ name: editProductName, category: editProductCategory || null }).eq("id", id);
+    setEditingProductId(null);
+    toast({ title: "Product updated" });
+    onRefresh();
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    await supabase.from("products").update({ active: false }).eq("id", id);
+    toast({ title: "Product removed" });
+    onRefresh();
+  };
+
   return (
     <div>
       <PageHeader
@@ -376,6 +416,10 @@ function AdminShoppingView({ submissions, items, products, user, orgId, toast, o
             </TabsTrigger>
             <TabsTrigger value="add" className="gap-1.5">
               <Plus className="h-3.5 w-3.5" /> Add Items
+            </TabsTrigger>
+            <TabsTrigger value="products" className="gap-1.5">
+              <Package className="h-3.5 w-3.5" /> Products
+              <Badge variant="outline" className="ml-1 text-[10px]">{products.length}</Badge>
             </TabsTrigger>
           </TabsList>
 
@@ -441,6 +485,78 @@ function AdminShoppingView({ submissions, items, products, user, orgId, toast, o
                 <Plus className="h-4 w-4" /> Add {adminSelected.length} item{adminSelected.length !== 1 ? "s" : ""}
               </Button>
             )}
+          </TabsContent>
+
+          {/* ── Tab: Products Template ── */}
+          <TabsContent value="products" className="space-y-4">
+            {/* Add new product */}
+            <Card>
+              <CardContent className="p-3 space-y-2">
+                <p className="text-sm font-medium">Add New Product</p>
+                <div className="flex gap-2">
+                  <Input placeholder="Product name" value={newProductName} onChange={(e) => setNewProductName(e.target.value)} className="flex-1 h-8 text-sm" />
+                  <Input placeholder="Category" value={newProductCategory} onChange={(e) => setNewProductCategory(e.target.value)} className="w-32 h-8 text-sm" />
+                  <Button size="sm" onClick={handleAddProduct} disabled={!newProductName.trim()} className="gap-1">
+                    <Plus className="h-3.5 w-3.5" /> Add
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Search products..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} className="pl-9 h-9 text-sm" />
+            </div>
+
+            {/* Product list grouped by category */}
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+              {Object.entries(groupedTemplate).sort(([a], [b]) => a.localeCompare(b)).map(([cat, prods]: [string, Product[]]) => (
+                <div key={cat}>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 px-1">{cat} ({prods.length})</p>
+                  <div className="space-y-1">
+                    {prods.map((p: Product) => (
+                      <Card key={p.id}>
+                        <CardContent className="p-3 flex items-center gap-2">
+                          {editingProductId === p.id ? (
+                            <>
+                              <Input value={editProductName} onChange={(e) => setEditProductName(e.target.value)} className="flex-1 h-7 text-sm" />
+                              <Input value={editProductCategory} onChange={(e) => setEditProductCategory(e.target.value)} placeholder="Category" className="w-28 h-7 text-sm" />
+                              <Button size="sm" variant="ghost" onClick={() => handleSaveProduct(p.id)}><Check className="h-3.5 w-3.5" /></Button>
+                              <Button size="sm" variant="ghost" onClick={() => setEditingProductId(null)}><X className="h-3.5 w-3.5" /></Button>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-sm font-medium flex-1">{p.name}</span>
+                              <span className="text-xs text-muted-foreground">{p.category || ""}</span>
+                              <Button size="sm" variant="ghost" onClick={() => { setEditingProductId(p.id); setEditProductName(p.name); setEditProductCategory(p.category || ""); }}>
+                                <Edit2 className="h-3 w-3" />
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button size="sm" variant="ghost" className="text-destructive"><Trash2 className="h-3 w-3" /></Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Remove "{p.name}"?</AlertDialogTitle>
+                                    <AlertDialogDescription>This product will be deactivated and hidden from the shopping list.</AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => handleDeleteProduct(p.id)}>Remove</AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {templateProducts.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No products found.</p>}
+            </div>
           </TabsContent>
         </Tabs>
       </div>
