@@ -91,7 +91,18 @@ async function syncProperty(supabase: any, property: any): Promise<{ bookings: n
         continue;
       }
 
+      // Limit ICS content size to 1MB
+      const contentLength = response.headers.get("content-length");
+      if (contentLength && parseInt(contentLength) > 1_048_576) {
+        console.error(`ICS content too large from ${platform}: ${contentLength} bytes`);
+        continue;
+      }
+
       const icsText = await response.text();
+      if (icsText.length > 1_048_576) {
+        console.error(`ICS content too large from ${platform}: ${icsText.length} chars`);
+        continue;
+      }
       const events = parseICS(icsText);
 
       console.log(`Parsed ${events.length} events from ${platform} ICS for ${property.name}`);
@@ -213,7 +224,39 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+    // Authenticate the caller
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: userError } = await userClient.auth.getUser();
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabase = createClient(supabaseUrl, serviceKey);
+
+    // Verify admin/manager role
+    const { data: hasAdmin } = await supabase.rpc("has_role", { _user_id: user.id, _role: "admin" });
+    const { data: hasManager } = await supabase.rpc("has_role", { _user_id: user.id, _role: "manager" });
+    if (!hasAdmin && !hasManager) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     let body: any = {};
     try {
@@ -222,7 +265,16 @@ Deno.serve(async (req) => {
       // No body = batch mode
     }
 
-    const { property_id } = body;
+    const property_id = body.property_id;
+
+    // Validate property_id format if provided
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (property_id && !uuidRegex.test(property_id)) {
+      return new Response(JSON.stringify({ error: "Invalid property_id format" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (property_id) {
       // Single property sync
