@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Loader2, Copy, RefreshCw, Users } from "lucide-react";
 import { NotificationSettings } from "@/components/NotificationSettings";
+import { AdminCleanerManagement } from "@/components/admin/AdminCleanerManagement";
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -244,6 +245,8 @@ export default function SettingsPage() {
           </Card>
         ))}
         {properties.length === 0 && !showAdd && <p className="text-center text-muted-foreground py-8">No listings configured yet.</p>}
+
+        <AdminCleanerManagement />
 
         <NotificationSettings />
       </div>

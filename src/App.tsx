@@ -19,24 +19,26 @@ import ShoppingPage from "./pages/ShoppingPage";
 import PayoutsPage from "./pages/PayoutsPage";
 import GuidesPage from "./pages/GuidesPage";
 import SettingsPage from "./pages/SettingsPage";
+import CleanerSettingsPage from "./pages/CleanerSettingsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, orgId } = useAuth();
+  const { user, loading, orgId, role } = useAuth();
   if (loading) return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading...</div>;
   if (!user) return <Navigate to="/auth" replace />;
-  // If logged in but no org, send to onboarding
-  if (!orgId) return <Navigate to="/onboarding" replace />;
+  // Cleaners without org can still access the app (settings page shows their code)
+  // Hosts without org go to onboarding
+  if (!orgId && role !== "cleaner") return <Navigate to="/onboarding" replace />;
   return <>{children}</>;
 }
 
-function AdminRoute({ children }: { children: React.ReactNode }) {
+function SettingsRoute() {
   const { role, loading } = useAuth();
   if (loading) return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading...</div>;
-  if (role === "cleaner") return <Navigate to="/" replace />;
-  return <>{children}</>;
+  if (role === "cleaner") return <CleanerSettingsPage />;
+  return <SettingsPage />;
 }
 
 function OnboardingRoute() {
@@ -75,7 +77,7 @@ const App = () => (
               <Route path="/shopping" element={<ShoppingPage />} />
               <Route path="/payouts" element={<PayoutsPage />} />
               <Route path="/guides" element={<GuidesPage />} />
-              <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
+              <Route path="/settings" element={<SettingsRoute />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
