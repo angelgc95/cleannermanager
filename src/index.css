@@ -88,6 +88,34 @@
     --sidebar-border: 220 20% 16%;
     --sidebar-ring: 220 70% 60%;
   }
+
+  /* Cleaner role theme */
+  .cleaner-theme {
+    --primary: 0 72% 50%;
+    --primary-foreground: 0 0% 100%;
+    --ring: 0 72% 50%;
+    --sidebar-background: 0 30% 14%;
+    --sidebar-foreground: 0 14% 85%;
+    --sidebar-primary: 0 72% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 25% 20%;
+    --sidebar-accent-foreground: 0 14% 92%;
+    --sidebar-border: 0 20% 22%;
+    --sidebar-ring: 0 72% 50%;
+  }
+
+  .cleaner-theme.dark {
+    --primary: 0 72% 60%;
+    --ring: 0 72% 60%;
+    --sidebar-background: 0 30% 8%;
+    --sidebar-foreground: 0 14% 80%;
+    --sidebar-primary: 0 72% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 25% 14%;
+    --sidebar-accent-foreground: 0 14% 90%;
+    --sidebar-border: 0 20% 16%;
+    --sidebar-ring: 0 72% 60%;
+  }
 }
 
 @layer base {
