@@ -60,7 +60,9 @@ export default function PayoutsPage() {
 
   const fetchUnpaidItems = async () => {
     if (!selectedCleaner) return;
-    const { data } = await supabase
+
+    // Fetch unpaid log_hours
+    const { data: logData } = await supabase
       .from("log_hours")
       .select("*, cleaning_tasks:cleaning_task_id(properties(name))")
       .eq("user_id", selectedCleaner)
@@ -68,8 +70,41 @@ export default function PayoutsPage() {
       .gte("date", dateFrom)
       .lte("date", dateTo)
       .order("date");
-    setUnpaidItems(data || []);
-    setSelectedItems(new Set((data || []).map((i: any) => i.id)));
+
+    // Also fetch completed checklist_runs that have NO log_hours entry
+    const { data: runData } = await supabase
+      .from("checklist_runs")
+      .select("id, cleaning_task_id, cleaner_user_id, started_at, finished_at, duration_minutes, property_id, cleaning_tasks:cleaning_task_id(properties(name))")
+      .eq("cleaner_user_id", selectedCleaner)
+      .not("finished_at", "is", null)
+      .not("duration_minutes", "is", null)
+      .gte("finished_at", `${dateFrom}T00:00:00`)
+      .lte("finished_at", `${dateTo}T23:59:59`);
+
+    // Filter out runs that already have a log_hours entry
+    const logRunIds = new Set((logData || []).map((l: any) => l.checklist_run_id).filter(Boolean));
+    const orphanRuns = (runData || []).filter((r: any) => !logRunIds.has(r.id));
+
+    // Normalize orphan runs into the same shape as log_hours items
+    const orphanItems = orphanRuns.map((r: any) => ({
+      id: `run_${r.id}`,
+      _run_id: r.id,
+      _is_run: true,
+      date: r.finished_at?.split("T")[0] || "",
+      start_at: r.started_at ? new Date(r.started_at).toTimeString().slice(0, 5) : "—",
+      end_at: r.finished_at ? new Date(r.finished_at).toTimeString().slice(0, 5) : "—",
+      duration_minutes: r.duration_minutes,
+      source: "CHECKLIST",
+      description: "From completed checklist (no log entry)",
+      cleaning_tasks: r.cleaning_tasks,
+      user_id: r.cleaner_user_id,
+      property_id: r.property_id,
+      cleaning_task_id: r.cleaning_task_id,
+    }));
+
+    const combined = [...(logData || []), ...orphanItems].sort((a, b) => a.date.localeCompare(b.date));
+    setUnpaidItems(combined);
+    setSelectedItems(new Set(combined.map((i: any) => i.id)));
   };
 
   useEffect(() => {
@@ -121,9 +156,32 @@ export default function PayoutsPage() {
         .single();
       if (payoutError) throw payoutError;
 
-      // Mark log_hours as paid
-      const ids = Array.from(selectedItems);
-      await supabase.from("log_hours").update({ payout_id: payout.id }).in("id", ids);
+      // Separate real log_hours ids from orphan run items
+      const realLogIds = Array.from(selectedItems).filter((id) => !id.startsWith("run_"));
+      const orphanRunItems = unpaidItems.filter((i) => selectedItems.has(i.id) && i._is_run);
+
+      // Create log_hours for orphan checklist runs
+      for (const item of orphanRunItems) {
+        const { data: newLog } = await supabase.from("log_hours").insert({
+          user_id: item.user_id,
+          date: item.date,
+          start_at: item.start_at === "—" ? "09:00" : item.start_at,
+          end_at: item.end_at === "—" ? "17:00" : item.end_at,
+          duration_minutes: item.duration_minutes,
+          source: "CHECKLIST" as const,
+          checklist_run_id: item._run_id,
+          cleaning_task_id: item.cleaning_task_id,
+          property_id: item.property_id || null,
+          org_id: orgId,
+          payout_id: payout.id,
+        }).select("id").single();
+        // No need to add to realLogIds since payout_id is already set
+      }
+
+      // Mark existing log_hours as paid
+      if (realLogIds.length > 0) {
+        await supabase.from("log_hours").update({ payout_id: payout.id }).in("id", realLogIds);
+      }
 
       toast({ title: "Payout created", description: `€${totalAmount.toFixed(2)} for ${cleanerProfile?.name}` });
       setShowCreate(false);
