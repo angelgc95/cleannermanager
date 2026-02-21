@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { type, org_name, invite_code, cleaner_unique_code } = await req.json();
+    const { type, org_name, invite_code, cleaner_unique_code, cleaner_user_id } = await req.json();
 
     if (type === "host") {
       // Create organization
@@ -149,6 +149,37 @@ Deno.serve(async (req) => {
 
       return new Response(
         JSON.stringify({ success: true, cleaner_name: cleanerProfile.name, cleaner_email: cleanerProfile.email }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    } else if (type === "remove_cleaner") {
+      if (!cleaner_user_id) {
+        return new Response(JSON.stringify({ error: "cleaner_user_id is required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Verify caller is admin/manager
+      const { data: callerProfile } = await supabase.from("profiles").select("org_id").eq("user_id", user.id).single();
+      if (!callerProfile?.org_id) {
+        return new Response(JSON.stringify({ error: "No organization" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: callerRoles } = await supabase.from("user_roles").select("role").eq("user_id", user.id);
+      if (!callerRoles?.some(r => r.role === "admin" || r.role === "manager")) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Remove all assignments
+      await supabase.from("cleaner_assignments").delete().eq("cleaner_user_id", cleaner_user_id).eq("org_id", callerProfile.org_id);
+
+      // Set cleaner's org_id to null
+      await supabase.from("profiles").update({ org_id: null }).eq("user_id", cleaner_user_id).eq("org_id", callerProfile.org_id);
+
+      return new Response(
+        JSON.stringify({ success: true }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     } else {
