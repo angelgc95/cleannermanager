@@ -33,9 +33,20 @@ export default function PayoutsPage() {
   const fetchPayouts = async () => {
     const { data } = await supabase
       .from("payouts")
-      .select("*, profiles:cleaner_user_id(name), payout_periods:period_id(start_date, end_date)")
+      .select("*, payout_periods:period_id(start_date, end_date)")
       .order("created_at", { ascending: false });
-    setPayouts(data || []);
+
+    if (!data || data.length === 0) { setPayouts([]); return; }
+
+    // Fetch cleaner names separately since there's no FK to profiles
+    const cleanerIds = [...new Set(data.map((p: any) => p.cleaner_user_id))];
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("user_id, name")
+      .in("user_id", cleanerIds);
+    const nameMap = Object.fromEntries((profiles || []).map((p: any) => [p.user_id, p.name]));
+
+    setPayouts(data.map((p: any) => ({ ...p, cleaner_name: nameMap[p.cleaner_user_id] || "Unknown" })));
   };
 
   const fetchCleaners = async () => {
@@ -296,7 +307,7 @@ export default function PayoutsPage() {
           <Card key={p.id}>
             <CardContent className="flex items-center justify-between p-4">
               <div>
-                <p className="font-medium text-sm">{p.profiles?.name || "Unknown"}</p>
+                <p className="font-medium text-sm">{p.cleaner_name || "Unknown"}</p>
                 <p className="text-xs text-muted-foreground">
                   {p.payout_periods?.start_date && format(new Date(p.payout_periods.start_date), "MMM d")} – {p.payout_periods?.end_date && format(new Date(p.payout_periods.end_date), "MMM d, yyyy")}
                   {" · "}{p.total_minutes} min @ €{Number(p.hourly_rate_used).toFixed(2)}/hr
