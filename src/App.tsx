@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
 import Auth from "./pages/Auth";
+import OnboardingPage from "./pages/OnboardingPage";
 import Index from "./pages/Index";
 import CalendarPage from "./pages/CalendarPage";
 import TasksPage from "./pages/TasksPage";
@@ -23,9 +24,11 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, orgId } = useAuth();
   if (loading) return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading...</div>;
   if (!user) return <Navigate to="/auth" replace />;
+  // If logged in but no org, send to onboarding
+  if (!orgId) return <Navigate to="/onboarding" replace />;
   return <>{children}</>;
 }
 
@@ -34,6 +37,14 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   if (loading) return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading...</div>;
   if (role === "cleaner") return <Navigate to="/" replace />;
   return <>{children}</>;
+}
+
+function OnboardingRoute() {
+  const { user, loading, orgId } = useAuth();
+  if (loading) return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading...</div>;
+  if (!user) return <Navigate to="/auth" replace />;
+  if (orgId) return <Navigate to="/" replace />;
+  return <OnboardingPage />;
 }
 
 const App = () => (
@@ -45,6 +56,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route path="/onboarding" element={<OnboardingRoute />} />
             <Route
               element={
                 <ProtectedRoute>
