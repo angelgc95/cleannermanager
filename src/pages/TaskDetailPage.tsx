@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import { ArrowLeft, ClipboardList, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { TaskInlineEdit } from "@/components/admin/TaskInlineEdit";
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 export default function TaskDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const { toast } = useToast();
   const [task, setTask] = useState<any>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -89,6 +90,10 @@ export default function TaskDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {(role === "admin" || role === "manager") && (
+          <TaskInlineEdit task={task} onUpdated={(updated) => setTask(updated)} />
+        )}
 
         <div className="flex gap-2 flex-wrap">
           {(task.status === "TODO" || task.status === "IN_PROGRESS") && (
