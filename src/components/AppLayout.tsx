@@ -1,10 +1,13 @@
 import { AppSidebar } from "./AppSidebar";
 import { NotificationBell } from "./NotificationBell";
 import { Outlet } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { cn } from "@/lib/utils";
 
 export function AppLayout() {
+  const { role } = useAuth();
   return (
-    <div className="flex min-h-screen w-full bg-background">
+    <div className={cn("flex min-h-screen w-full bg-background", role === "cleaner" && "cleaner-theme")}>
       <AppSidebar />
       <div className="flex-1 flex flex-col overflow-auto">
         {/* Top bar with notification bell */}
