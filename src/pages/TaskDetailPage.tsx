@@ -7,9 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
-import { ArrowLeft, ClipboardList, XCircle } from "lucide-react";
+import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { TaskInlineEdit } from "@/components/admin/TaskInlineEdit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -23,11 +25,22 @@ import { Textarea } from "@/components/ui/textarea";
 export default function TaskDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, role } = useAuth();
+  const { user, role, orgId } = useAuth();
   const { toast } = useToast();
   const [task, setTask] = useState<any>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+
+  // Admin: checklist summary
+  const [checklistRun, setChecklistRun] = useState<any>(null);
+  const [runPhotos, setRunPhotos] = useState<any[]>([]);
+  const [runShoppingItems, setRunShoppingItems] = useState<any[]>([]);
+
+  // Admin: assign cleaner
+  const [cleaners, setCleaners] = useState<any[]>([]);
+  const [assigningCleaner, setAssigningCleaner] = useState<string>("");
+
+  const isAdmin = role === "admin" || role === "manager";
 
   useEffect(() => {
     if (!id) return;
@@ -36,8 +49,66 @@ export default function TaskDetailPage() {
       .select("*, properties(name), rooms(name)")
       .eq("id", id)
       .single()
-      .then(({ data }) => setTask(data));
+      .then(({ data }) => {
+        setTask(data);
+        if (data?.assigned_cleaner_user_id) {
+          setAssigningCleaner(data.assigned_cleaner_user_id);
+        }
+      });
   }, [id]);
+
+  // Load admin data: checklist summary, cleaners list
+  useEffect(() => {
+    if (!isAdmin || !task || !orgId) return;
+
+    // Load cleaners for assignment
+    const loadCleaners = async () => {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("user_id, name, email")
+        .eq("org_id", orgId);
+      if (!profiles) return;
+
+      const cleanerProfiles: any[] = [];
+      for (const p of profiles) {
+        const { data: roles } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", p.user_id);
+        const isCleaner = roles?.some((r) => r.role === "cleaner");
+        if (isCleaner) cleanerProfiles.push(p);
+      }
+      setCleaners(cleanerProfiles);
+    };
+    loadCleaners();
+
+    // Load checklist run summary if task is DONE
+    if (task.checklist_run_id) {
+      const loadRunSummary = async () => {
+        const { data: run } = await supabase
+          .from("checklist_runs")
+          .select("*")
+          .eq("id", task.checklist_run_id)
+          .single();
+        setChecklistRun(run);
+
+        // Load photos
+        const { data: photos } = await supabase
+          .from("checklist_photos")
+          .select("photo_url, item_id")
+          .eq("run_id", task.checklist_run_id);
+        setRunPhotos(photos || []);
+
+        // Load shopping items from this run
+        const { data: shopItems } = await supabase
+          .from("shopping_list")
+          .select("*, products(name)")
+          .eq("checklist_run_id", task.checklist_run_id);
+        setRunShoppingItems(shopItems || []);
+      };
+      loadRunSummary();
+    }
+  }, [isAdmin, task, orgId]);
 
   const cancelTask = async () => {
     if (!id || !cancelReason.trim()) return;
@@ -49,6 +120,35 @@ export default function TaskDetailPage() {
     setCancelOpen(false);
     setCancelReason("");
     toast({ title: "Task cancelled" });
+  };
+
+  const handleAssignCleaner = async (userId: string) => {
+    if (!id) return;
+    setAssigningCleaner(userId);
+    const { error } = await supabase
+      .from("cleaning_tasks")
+      .update({ assigned_cleaner_user_id: userId || null })
+      .eq("id", id);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      setTask((prev: any) => ({ ...prev, assigned_cleaner_user_id: userId || null }));
+      toast({ title: "Cleaner assigned" });
+    }
+  };
+
+  const handleStatusChange = async (newStatus: string) => {
+    if (!id) return;
+    const { error } = await supabase
+      .from("cleaning_tasks")
+      .update({ status: newStatus as any })
+      .eq("id", id);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      setTask((prev: any) => ({ ...prev, status: newStatus }));
+      toast({ title: `Status updated to ${newStatus}` });
+    }
   };
 
   if (!task) return <div className="p-6 text-muted-foreground">Loading...</div>;
@@ -91,14 +191,136 @@ export default function TaskDetailPage() {
           </CardContent>
         </Card>
 
-        {(role === "admin" || role === "manager") && (
+        {/* Admin: Assign Cleaner + Change Status */}
+        {isAdmin && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <UserPlus className="h-4 w-4" /> Manage Task
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Assign Cleaner</Label>
+                  <Select value={assigningCleaner} onValueChange={handleAssignCleaner}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Select cleaner..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cleaners.map((c) => (
+                        <SelectItem key={c.user_id} value={c.user_id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Status</Label>
+                  <Select value={task.status} onValueChange={handleStatusChange}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TODO">To-do</SelectItem>
+                      <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                      <SelectItem value="DONE">Done</SelectItem>
+                      <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Admin: Inline Edit */}
+        {isAdmin && (
           <TaskInlineEdit task={task} onUpdated={(updated) => setTask(updated)} />
         )}
 
+        {/* Admin: Checklist Summary (when checklist run exists) */}
+        {isAdmin && checklistRun && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Checklist Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-muted-foreground">Listing</p>
+                  <p className="font-medium">{task.properties?.name || "N/A"}</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-muted-foreground">Duration</p>
+                    <p className="font-medium">
+                      {checklistRun.duration_minutes
+                        ? `${Math.floor(checklistRun.duration_minutes / 60)}h ${checklistRun.duration_minutes % 60}m`
+                        : "N/A"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {checklistRun.overall_notes && (
+                <div className="flex items-start gap-1.5">
+                  <StickyNote className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="text-muted-foreground">Notes</p>
+                    <p className="font-medium">{checklistRun.overall_notes}</p>
+                  </div>
+                </div>
+              )}
+
+              {runShoppingItems.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-muted-foreground font-medium">Shopping List ({runShoppingItems.length})</p>
+                  </div>
+                  <div className="space-y-1 pl-6">
+                    {runShoppingItems.map((item: any) => (
+                      <div key={item.id} className="flex items-center gap-2 text-sm">
+                        <span className="font-medium">{item.products?.name || "Unknown"}</span>
+                        <span className="text-muted-foreground">×{item.quantity_needed}</span>
+                        {item.note && <span className="text-xs text-muted-foreground">— {item.note}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {runPhotos.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Camera className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-muted-foreground font-medium">Photos ({runPhotos.length})</p>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {runPhotos.map((photo: any, idx: number) => (
+                      <a key={idx} href={photo.photo_url} target="_blank" rel="noopener noreferrer">
+                        <img
+                          src={photo.photo_url}
+                          alt=""
+                          className="h-20 w-20 rounded-lg object-cover border border-border hover:opacity-80 transition-opacity"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Action buttons */}
         <div className="flex gap-2 flex-wrap">
           {(task.status === "TODO" || task.status === "IN_PROGRESS") && (
             <Button onClick={() => navigate(`/tasks/${id}/checklist`)} className="gap-2" size="lg">
-              <ClipboardList className="h-4 w-4" /> Checklist
+              <ClipboardList className="h-4 w-4" /> Start Cleaning Checklist
             </Button>
           )}
           {task.status !== "CANCELLED" && task.status !== "DONE" && (
