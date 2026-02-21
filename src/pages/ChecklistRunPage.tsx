@@ -11,6 +11,8 @@ import { ArrowLeft, Check, Camera, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WorkLogSection } from "@/components/checklist/WorkLogSection";
 import { ShoppingCheckSection } from "@/components/checklist/ShoppingCheckSection";
+import { ChecklistTemplateEditor } from "@/components/admin/ChecklistTemplateEditor";
+import { TaskInlineEdit } from "@/components/admin/TaskInlineEdit";
 
 interface Section {
   id: string;
@@ -47,8 +49,9 @@ const SHOPPING_TAB_ID = "__shopping__";
 export default function ChecklistRunPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
-  const { user, orgId } = useAuth();
+  const { user, orgId, role } = useAuth();
   const { toast } = useToast();
+  const [templateId, setTemplateId] = useState<string>("");
 
   const [task, setTask] = useState<any>(null);
   const [sections, setSections] = useState<Section[]>([]);
@@ -94,12 +97,13 @@ export default function ChecklistRunPage() {
         return;
       }
 
-      const templateId = taskData?.rooms?.checklist_template_id || "00000000-0000-0000-0000-000000000001";
+      const tplId = taskData?.rooms?.checklist_template_id || "00000000-0000-0000-0000-000000000001";
+      setTemplateId(tplId);
 
       const { data: sectionsData } = await supabase
         .from("checklist_sections")
         .select("id, title, sort_order")
-        .eq("template_id", templateId)
+        .eq("template_id", tplId)
         .order("sort_order");
 
       if (!sectionsData || sectionsData.length === 0) return;
@@ -398,6 +402,22 @@ export default function ChecklistRunPage() {
           </Button>
         }
       />
+
+      {/* Admin controls */}
+      {(role === "admin" || role === "manager") && (
+        <div className="border-b border-border bg-muted/30 px-4 py-3 space-y-3">
+          <div className="flex gap-2 flex-wrap">
+            <TaskInlineEdit task={task} onUpdated={(updated) => setTask(updated)} />
+            {templateId && (
+              <ChecklistTemplateEditor
+                sections={sections}
+                templateId={templateId}
+                onSectionsUpdated={setSections}
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       <input
         ref={fileInputRef}
