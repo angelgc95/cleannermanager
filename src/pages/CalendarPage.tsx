@@ -2,15 +2,21 @@ import { useEffect, useState, useMemo } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, addMonths, subMonths, isSameMonth, isToday } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 export default function CalendarPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [tasks, setTasks] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { role } = useAuth();
+  const isHost = role === "host";
 
   useEffect(() => {
     const fetchTasks = async () => {
@@ -26,6 +32,21 @@ export default function CalendarPage() {
     };
     fetchTasks();
   }, [currentMonth]);
+
+  useEffect(() => {
+    if (!isHost) return;
+    const fetchSuggestions = async () => {
+      const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
+      const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
+      const { data } = await supabase
+        .from("pricing_suggestions")
+        .select("*")
+        .gte("date", format(start, "yyyy-MM-dd"))
+        .lte("date", format(end, "yyyy-MM-dd"));
+      setSuggestions(data || []);
+    };
+    fetchSuggestions();
+  }, [currentMonth, isHost]);
 
   const days = useMemo(() => {
     const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
@@ -48,7 +69,24 @@ export default function CalendarPage() {
     return map;
   }, [tasks]);
 
+  const suggestionsByDate = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    suggestions.forEach((s) => {
+      if (!map[s.date]) map[s.date] = [];
+      map[s.date].push(s);
+    });
+    return map;
+  }, [suggestions]);
+
   const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  const selectedSuggestions = selectedDay ? (suggestionsByDate[selectedDay] || []) : [];
+
+  const colorClasses: Record<string, string> = {
+    green: "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400",
+    orange: "bg-amber-500/20 text-amber-700 dark:text-amber-400",
+    red: "bg-red-500/20 text-red-700 dark:text-red-400",
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -68,12 +106,33 @@ export default function CalendarPage() {
           {days.map((day) => {
             const key = format(day, "yyyy-MM-dd");
             const dayTasks = tasksByDate[key] || [];
+            const daySuggestions = isHost ? (suggestionsByDate[key] || []) : [];
+            // Pick the highest uplift suggestion for the badge
+            const topSuggestion = daySuggestions.length > 0
+              ? daySuggestions.reduce((a: any, b: any) => (b.uplift_pct > a.uplift_pct ? b : a))
+              : null;
+
             return (
-              <div key={key} className={cn("min-h-[100px] p-1.5 border-b border-r border-border last:border-r-0 transition-colors", !isSameMonth(day, currentMonth) && "bg-muted/20", isToday(day) && "bg-primary/5")}>
-                <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-full text-xs", isToday(day) && "bg-primary text-primary-foreground font-bold", !isSameMonth(day, currentMonth) && "text-muted-foreground")}>{format(day, "d")}</span>
+              <div
+                key={key}
+                className={cn(
+                  "min-h-[100px] p-1.5 border-b border-r border-border last:border-r-0 transition-colors cursor-pointer hover:bg-muted/10",
+                  !isSameMonth(day, currentMonth) && "bg-muted/20",
+                  isToday(day) && "bg-primary/5"
+                )}
+                onClick={() => isHost && daySuggestions.length > 0 && setSelectedDay(key)}
+              >
+                <div className="flex items-center justify-between">
+                  <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-full text-xs", isToday(day) && "bg-primary text-primary-foreground font-bold", !isSameMonth(day, currentMonth) && "text-muted-foreground")}>{format(day, "d")}</span>
+                  {topSuggestion && topSuggestion.uplift_pct > 0 && (
+                    <span className={cn("inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold", colorClasses[topSuggestion.color_level] || colorClasses.green)}>
+                      +{Math.round(topSuggestion.uplift_pct)}%
+                    </span>
+                  )}
+                </div>
                 <div className="mt-1 space-y-1">
                   {dayTasks.slice(0, 3).map((t: any) => (
-                    <button key={t.id} onClick={() => navigate(`/tasks/${t.id}`)} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", t.status === "DONE" ? "bg-[hsl(var(--status-done)/0.15)] text-[hsl(var(--status-done))]" : t.status === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
+                    <button key={t.id} onClick={(e) => { e.stopPropagation(); navigate(`/tasks/${t.id}`); }} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", t.status === "DONE" ? "bg-[hsl(var(--status-done)/0.15)] text-[hsl(var(--status-done))]" : t.status === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
                       {t.listings?.name || "Cleaning"}{t.nights_to_show != null ? ` · ${t.nights_to_show}N` : ""}{t.guests_to_show != null ? ` · ${t.guests_to_show}G` : ""}
                     </button>
                   ))}
@@ -84,6 +143,54 @@ export default function CalendarPage() {
           })}
         </div>
       </div>
+
+      {/* Pricing Suggestion Detail Sheet */}
+      <Sheet open={!!selectedDay} onOpenChange={(open) => !open && setSelectedDay(null)}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Price Suggestions — {selectedDay}</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 space-y-4">
+            {selectedSuggestions.map((s: any) => (
+              <div key={s.id} className="border border-border rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className={cn("inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold", colorClasses[s.color_level] || colorClasses.green)}>
+                    +{Math.round(s.uplift_pct)}%
+                  </span>
+                  <span className="text-sm text-muted-foreground">Confidence: {Math.round(s.confidence * 100)}%</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Base Price</p>
+                    <p className="font-semibold">€{s.base_price}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Suggested Price</p>
+                    <p className="font-semibold text-primary">€{s.suggested_price}</p>
+                  </div>
+                </div>
+                {s.reasons && Array.isArray(s.reasons) && s.reasons.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Reasons:</p>
+                    <ul className="space-y-1">
+                      {(s.reasons as any[]).map((r: any, i: number) => (
+                        <li key={i} className="text-xs flex items-center gap-1.5">
+                          <span className={cn("w-2 h-2 rounded-full", r.category === "bank_holiday" ? "bg-red-400" : r.category === "weekend" ? "bg-blue-400" : r.category === "festival" ? "bg-purple-400" : "bg-amber-400")} />
+                          <span className="font-medium capitalize">{r.category.replace("_", " ")}</span>
+                          <span className="text-muted-foreground">— {r.title}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ))}
+            {selectedSuggestions.length === 0 && (
+              <p className="text-sm text-muted-foreground">No suggestions for this date.</p>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

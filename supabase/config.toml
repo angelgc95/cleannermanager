@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.dispatch-notifications]
 verify_jwt = false
+
+[functions.fetch-events]
+verify_jwt = false
+
+[functions.compute-price-suggestions]
+verify_jwt = false
