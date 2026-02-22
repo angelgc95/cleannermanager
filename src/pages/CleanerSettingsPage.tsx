@@ -60,17 +60,17 @@ export default function CleanerSettingsPage() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Share this code with your host to get added to their organization.
+              Share this code with your host so they can assign you to listings.
             </p>
           </CardContent>
         </Card>
 
-        {/* Organization Status */}
+        {/* Assignment Status */}
         {!hostId && (
           <Card className="border-dashed">
             <CardContent className="p-6 text-center">
               <p className="text-muted-foreground text-sm">
-                You're not part of an organization yet. Share your Cleaner ID with a host to get started.
+                You're not assigned to any host yet. Share your Cleaner ID with a host to get started.
               </p>
             </CardContent>
           </Card>
