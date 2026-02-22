@@ -2,14 +2,14 @@ import { useState, useEffect, createContext, useContext, ReactNode } from "react
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
-type AppRole = "admin" | "manager" | "cleaner";
+type AppRole = "host" | "cleaner";
 
 interface AuthContextType {
   session: Session | null;
   user: User | null;
   loading: boolean;
   role: AppRole | null;
-  orgId: string | null;
+  hostId: string | null; // For hosts: own user_id. For cleaners: host_user_id from assignments.
   refreshProfile: () => Promise<void>;
 }
 
@@ -18,7 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   role: null,
-  orgId: null,
+  hostId: null,
   refreshProfile: async () => {},
 });
 
@@ -26,20 +26,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<AppRole | null>(null);
-  const [orgId, setOrgId] = useState<string | null>(null);
+  const [hostId, setHostId] = useState<string | null>(null);
 
-  const fetchRoleAndOrg = async (userId: string) => {
-    const [{ data: roleData }, { data: profileData }] = await Promise.all([
-      supabase.from("user_roles").select("role").eq("user_id", userId).limit(1).single(),
-      supabase.from("profiles").select("org_id").eq("user_id", userId).limit(1).single(),
-    ]);
-    setRole((roleData?.role as AppRole) || null);
-    setOrgId(profileData?.org_id || null);
+  const fetchRoleAndHost = async (userId: string) => {
+    const { data: roleData } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .limit(1)
+      .single();
+
+    const userRole = (roleData?.role as AppRole) || null;
+    setRole(userRole);
+
+    if (userRole === "host") {
+      setHostId(userId);
+    } else if (userRole === "cleaner") {
+      // Get host_user_id from first assignment
+      const { data: assignment } = await supabase
+        .from("cleaner_assignments")
+        .select("host_user_id")
+        .eq("cleaner_user_id", userId)
+        .limit(1)
+        .single();
+      setHostId(assignment?.host_user_id || null);
+    } else {
+      setHostId(null);
+    }
   };
 
   const refreshProfile = async () => {
     if (session?.user) {
-      await fetchRoleAndOrg(session.user.id);
+      await fetchRoleAndHost(session.user.id);
     }
   };
 
@@ -47,11 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session?.user) {
-        // Defer to avoid deadlock with auth state
-        setTimeout(() => fetchRoleAndOrg(session.user.id), 0);
+        setTimeout(() => fetchRoleAndHost(session.user.id), 0);
       } else {
         setRole(null);
-        setOrgId(null);
+        setHostId(null);
       }
       setLoading(false);
     });
@@ -59,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
-        fetchRoleAndOrg(session.user.id).then(() => setLoading(false));
+        fetchRoleAndHost(session.user.id).then(() => setLoading(false));
       } else {
         setLoading(false);
       }
@@ -69,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, role, orgId, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, role, hostId, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
