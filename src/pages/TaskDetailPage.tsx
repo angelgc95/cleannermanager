@@ -25,7 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 export default function TaskDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, role, orgId } = useAuth();
+  const { user, role, hostId } = useAuth();
   const { toast } = useToast();
   const [task, setTask] = useState<any>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -40,13 +40,13 @@ export default function TaskDetailPage() {
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [assigningCleaner, setAssigningCleaner] = useState<string>("");
 
-  const isAdmin = role === "admin" || role === "manager";
+  const isAdmin = role === "host";
 
   useEffect(() => {
     if (!id) return;
     supabase
       .from("cleaning_tasks")
-      .select("*, properties(name), rooms(name)")
+      .select("*, listings(name)")
       .eq("id", id)
       .single()
       .then(({ data }) => {
@@ -59,26 +59,24 @@ export default function TaskDetailPage() {
 
   // Load admin data: checklist summary, cleaners list
   useEffect(() => {
-    if (!isAdmin || !task || !orgId) return;
+    if (!isAdmin || !task || !hostId) return;
 
     // Load cleaners for assignment
     const loadCleaners = async () => {
+      const { data: assignments } = await supabase
+        .from("cleaner_assignments")
+        .select("cleaner_user_id")
+        .eq("host_user_id", hostId);
+      if (!assignments) return;
+      const cleanerIds = [...new Set(assignments.map(a => a.cleaner_user_id))];
+      if (cleanerIds.length === 0) return;
       const { data: profiles } = await supabase
         .from("profiles")
         .select("user_id, name, email")
-        .eq("org_id", orgId);
+        .in("user_id", cleanerIds);
       if (!profiles) return;
 
-      const cleanerProfiles: any[] = [];
-      for (const p of profiles) {
-        const { data: roles } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", p.user_id);
-        const isCleaner = roles?.some((r) => r.role === "cleaner");
-        if (isCleaner) cleanerProfiles.push(p);
-      }
-      setCleaners(cleanerProfiles);
+      if (profiles) setCleaners(profiles);
     };
     loadCleaners();
 
@@ -108,7 +106,7 @@ export default function TaskDetailPage() {
       };
       loadRunSummary();
     }
-  }, [isAdmin, task, orgId]);
+  }, [isAdmin, task, hostId]);
 
   const cancelTask = async () => {
     if (!id || !cancelReason.trim()) return;
@@ -156,7 +154,7 @@ export default function TaskDetailPage() {
   return (
     <div>
       <PageHeader
-        title={`${task.properties?.name || "Listing"} — ${task.rooms?.name || "All rooms"}`}
+        title={`${task.listings?.name || "Listing"}`}
         actions={
           <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-4 w-4 mr-1" /> Back
@@ -250,7 +248,7 @@ export default function TaskDetailPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-muted-foreground">Listing</p>
-                  <p className="font-medium">{task.properties?.name || "N/A"}</p>
+                  <p className="font-medium">{task.listings?.name || "N/A"}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Clock className="h-4 w-4 text-muted-foreground" />

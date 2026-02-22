@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
 export default function CleanerSettingsPage() {
-  const { user, orgId } = useAuth();
+  const { user, hostId } = useAuth();
   const { toast } = useToast();
   const [uniqueCode, setUniqueCode] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<any[]>([]);
@@ -25,14 +25,14 @@ export default function CleanerSettingsPage() {
       .then(({ data }) => setUniqueCode(data?.unique_code || null));
 
     // Get assigned listings
-    if (orgId) {
+    if (hostId) {
       supabase
         .from("cleaner_assignments")
-        .select("*, properties(name, default_checkin_time, default_checkout_time)")
+        .select("*, listings(name, default_checkin_time, default_checkout_time)")
         .eq("cleaner_user_id", user.id)
         .then(({ data }) => setAssignments(data || []));
     }
-  }, [user, orgId]);
+  }, [user, hostId]);
 
   const copyCode = () => {
     if (uniqueCode) {
@@ -66,7 +66,7 @@ export default function CleanerSettingsPage() {
         </Card>
 
         {/* Organization Status */}
-        {!orgId && (
+        {!hostId && (
           <Card className="border-dashed">
             <CardContent className="p-6 text-center">
               <p className="text-muted-foreground text-sm">
@@ -77,7 +77,7 @@ export default function CleanerSettingsPage() {
         )}
 
         {/* Assigned Listings */}
-        {orgId && (
+        {hostId && (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
@@ -92,16 +92,16 @@ export default function CleanerSettingsPage() {
                   {assignments.map((a: any) => (
                     <div key={a.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                       <div>
-                        <p className="font-medium text-sm">{a.properties?.name || "Unknown"}</p>
+                        <p className="font-medium text-sm">{a.listings?.name || "Unknown"}</p>
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <div className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          <span>In: {a.properties?.default_checkin_time?.slice(0, 5) || "N/A"}</span>
+                          <span>In: {a.listings?.default_checkin_time?.slice(0, 5) || "N/A"}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          <span>Out: {a.properties?.default_checkout_time?.slice(0, 5) || "N/A"}</span>
+                          <span>Out: {a.listings?.default_checkout_time?.slice(0, 5) || "N/A"}</span>
                         </div>
                       </div>
                     </div>

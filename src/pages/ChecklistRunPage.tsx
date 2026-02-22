@@ -49,7 +49,7 @@ const SHOPPING_TAB_ID = "__shopping__";
 export default function ChecklistRunPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
-  const { user, orgId, role } = useAuth();
+  const { user, hostId, role } = useAuth();
   const { toast } = useToast();
   const [templateId, setTemplateId] = useState<string>("");
 
@@ -86,7 +86,7 @@ export default function ChecklistRunPage() {
     const load = async () => {
       const { data: taskData } = await supabase
         .from("cleaning_tasks")
-        .select("*, properties(name, timezone), rooms(name, checklist_template_id)")
+        .select("*, listings(name, timezone)")
         .eq("id", taskId)
         .single();
       setTask(taskData);
@@ -97,7 +97,18 @@ export default function ChecklistRunPage() {
         return;
       }
 
-      const tplId = taskData?.rooms?.checklist_template_id || "00000000-0000-0000-0000-000000000001";
+      // Find template for listing
+      let tplId = "00000000-0000-0000-0000-000000000001";
+      if (taskData?.listing_id) {
+        const { data: tpl } = await supabase
+          .from("checklist_templates")
+          .select("id")
+          .eq("listing_id", taskData.listing_id)
+          .eq("active", true)
+          .limit(1)
+          .single();
+        if (tpl) tplId = tpl.id;
+      }
       setTemplateId(tplId);
 
       const { data: sectionsData } = await supabase
@@ -141,12 +152,11 @@ export default function ChecklistRunPage() {
           .from("checklist_runs")
           .insert({
             cleaning_task_id: taskId,
-            property_id: taskData?.property_id,
-            room_id: taskData?.room_id,
+            listing_id: taskData?.listing_id || null,
             cleaner_user_id: user.id,
+            host_user_id: taskData?.host_user_id,
             started_at: startedAt,
-            org_id: orgId,
-          })
+          } as any)
           .select("id")
           .single();
 
@@ -202,8 +212,8 @@ export default function ChecklistRunPage() {
         item_id: activePhotoItemId,
         photo_url: urlData.publicUrl,
         sort_order: (photos[activePhotoItemId]?.length || 0),
-        org_id: orgId,
-      });
+        host_user_id: hostId,
+      } as any);
 
       setPhotos((prev) => ({
         ...prev,
@@ -301,7 +311,7 @@ export default function ChecklistRunPage() {
         run_id: runId,
         item_id: itemId,
         yesno_value: val,
-        org_id: orgId,
+        host_user_id: hostId,
       }));
 
     if (responseEntries.length > 0) {
@@ -325,11 +335,10 @@ export default function ChecklistRunPage() {
       source: "CHECKLIST" as const,
       checklist_run_id: runId,
       cleaning_task_id: taskId,
-      property_id: task?.property_id || null,
-      room_id: task?.room_id || null,
+      listing_id: task?.listing_id || null,
       description: workNotes || null,
-      org_id: orgId,
-    }, { onConflict: "checklist_run_id" });
+      host_user_id: hostId,
+    } as any, { onConflict: "checklist_run_id" });
 
     // Create shopping list entries for missing items
     for (const item of missingItems) {
@@ -355,10 +364,9 @@ export default function ChecklistRunPage() {
           note: item.note || null,
           created_from: "CHECKLIST" as const,
           checklist_run_id: runId,
-          property_id: task?.property_id || null,
-          room_id: task?.room_id || null,
-          org_id: orgId,
-        });
+          listing_id: task?.listing_id || null,
+          host_user_id: hostId,
+        } as any);
       }
     }
 
@@ -401,7 +409,7 @@ export default function ChecklistRunPage() {
     <div className="flex flex-col h-full">
       <PageHeader
         title="Cleaning Checklist"
-        description={`${task.properties?.name} — ${task.rooms?.name || "All rooms"}`}
+        description={`${task.listings?.name || "Listing"}`}
         actions={
           <Button variant="outline" size="sm" onClick={() => navigate(`/tasks/${taskId}`)}>
             <ArrowLeft className="h-4 w-4 mr-1" /> Back
@@ -410,7 +418,7 @@ export default function ChecklistRunPage() {
       />
 
       {/* Admin controls */}
-      {(role === "admin" || role === "manager") && (
+      {role === "host" && (
         <div className="border-b border-border bg-muted/30 px-4 py-3 space-y-3">
           <div className="flex gap-2 flex-wrap">
             <TaskInlineEdit task={task} onUpdated={(updated) => setTask(updated)} />
