@@ -2,9 +2,10 @@ import { useEffect, useState, useMemo } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { format, subDays, startOfDay } from "date-fns";
+import { format } from "date-fns";
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<any[]>([]);
@@ -22,47 +23,27 @@ export default function TasksPage() {
     fetch();
   }, []);
 
-  const { activeTasks, completedTasks } = useMemo(() => {
-    const now = new Date();
-    const today = startOfDay(now);
-    const sevenDaysAgo = subDays(today, 7);
-
-    const active: any[] = [];
+  const { upcomingTasks, completedTasks } = useMemo(() => {
+    const upcoming: any[] = [];
     const completed: any[] = [];
 
     for (const task of tasks) {
-      const taskDate = task.start_at ? new Date(task.start_at) : null;
-
       if (task.status === "DONE") {
-        // Done tasks older than 7 days go to completed section
-        if (taskDate && taskDate < sevenDaysAgo) {
-          completed.push(task);
-        } else {
-          // Done within last 7 days stays in active view
-          active.push(task);
-        }
-      } else if (task.status === "CANCELLED") {
-        // Cancelled older than 7 days: skip entirely
-        if (taskDate && taskDate >= sevenDaysAgo) {
-          active.push(task);
-        }
-      } else {
-        // TODO / IN_PROGRESS: show if >= 7 days ago or future
-        if (!taskDate || taskDate >= sevenDaysAgo) {
-          active.push(task);
-        }
+        completed.push(task);
+      } else if (task.status !== "CANCELLED") {
+        upcoming.push(task);
       }
     }
 
-    // Active sorted earliest first (already sorted by query)
-    // Completed sorted most recent first
+    // Upcoming: earliest first (already sorted by query)
+    // Completed: most recent first
     completed.sort((a, b) => {
       const da = a.start_at ? new Date(a.start_at).getTime() : 0;
       const db = b.start_at ? new Date(b.start_at).getTime() : 0;
       return db - da;
     });
 
-    return { activeTasks: active, completedTasks: completed };
+    return { upcomingTasks: upcoming, completedTasks: completed };
   }, [tasks]);
 
   const TaskCard = ({ task }: { task: any }) => (
@@ -99,26 +80,29 @@ export default function TasksPage() {
         title="Checklists"
         description="Cleaning checklists for each scheduled listing task"
       />
-      <div className="p-6 space-y-6">
-        {/* Active / Upcoming */}
-        <div className="space-y-2">
-          {activeTasks.length === 0 && completedTasks.length === 0 && (
-            <p className="text-center text-muted-foreground py-8">No scheduled cleanings yet. Tasks are created automatically from bookings.</p>
-          )}
-          {activeTasks.map((task) => (
-            <TaskCard key={task.id} task={task} />
-          ))}
-        </div>
+      <div className="p-6 space-y-4">
+        <Tabs defaultValue="upcoming">
+          <TabsList className="w-full">
+            <TabsTrigger value="upcoming" className="flex-1">Upcoming</TabsTrigger>
+            <TabsTrigger value="completed" className="flex-1">Completed</TabsTrigger>
+          </TabsList>
 
-        {/* Completed (older than 7 days) */}
-        {completedTasks.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-muted-foreground px-1">Completed</h3>
-            {completedTasks.map((task) => (
-              <TaskCard key={task.id} task={task} />
-            ))}
-          </div>
-        )}
+          <TabsContent value="upcoming" className="space-y-2">
+            {upcomingTasks.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No upcoming checklists.</p>
+            ) : (
+              upcomingTasks.map((task) => <TaskCard key={task.id} task={task} />)
+            )}
+          </TabsContent>
+
+          <TabsContent value="completed" className="space-y-2">
+            {completedTasks.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No completed checklists yet.</p>
+            ) : (
+              completedTasks.map((task) => <TaskCard key={task.id} task={task} />)
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
