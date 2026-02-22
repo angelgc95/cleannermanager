@@ -17,12 +17,10 @@ Deno.serve(async (req) => {
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Get user from auth header
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "No authorization header" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -32,75 +30,38 @@ Deno.serve(async (req) => {
     const { data: { user }, error: userError } = await userClient.auth.getUser();
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "Invalid token" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const body = await req.json();
-    const { type, org_name, invite_code, cleaner_unique_code, cleaner_user_id } = body;
+    const { type, cleaner_unique_code, cleaner_user_id } = body;
 
-    // Validate input types and lengths
-    if (!type || typeof type !== "string" || !["host", "cleaner", "add_cleaner", "remove_cleaner"].includes(type)) {
+    if (!type || !["host", "cleaner", "add_cleaner", "remove_cleaner"].includes(type)) {
       return new Response(JSON.stringify({ error: "Invalid type" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    if (org_name && (typeof org_name !== "string" || org_name.length > 200)) {
-      return new Response(JSON.stringify({ error: "Invalid org_name" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    if (invite_code && (typeof invite_code !== "string" || invite_code.length > 50)) {
-      return new Response(JSON.stringify({ error: "Invalid invite_code" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    if (cleaner_unique_code && (typeof cleaner_unique_code !== "string" || cleaner_unique_code.length > 20)) {
-      return new Response(JSON.stringify({ error: "Invalid cleaner_unique_code" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (cleaner_user_id && (typeof cleaner_user_id !== "string" || !uuidRegex.test(cleaner_user_id))) {
-      return new Response(JSON.stringify({ error: "Invalid cleaner_user_id" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     if (type === "host") {
-      // Create organization
-      const orgName = org_name || user.user_metadata?.name || "My Organization";
-      const { data: org, error: orgError } = await supabase
-        .from("organizations")
-        .insert({ name: orgName })
-        .select()
-        .single();
-
-      if (orgError) throw new Error(`Failed to create organization: ${orgError.message}`);
-
-      // Update profile with org_id
-      await supabase
-        .from("profiles")
-        .update({ org_id: org.id })
-        .eq("user_id", user.id);
-
-      // Assign admin role
+      // Assign host role
       await supabase
         .from("user_roles")
-        .upsert({ user_id: user.id, role: "admin" }, { onConflict: "user_id,role" });
+        .upsert({ user_id: user.id, role: "host" }, { onConflict: "user_id,role" });
+
+      // Create default host_settings
+      await supabase
+        .from("host_settings")
+        .upsert({ host_user_id: user.id }, { onConflict: "host_user_id" });
 
       return new Response(
-        JSON.stringify({ success: true, org_id: org.id, invite_code: org.invite_code, role: "admin" }),
+        JSON.stringify({ success: true, role: "host" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+
     } else if (type === "cleaner") {
-      // Cleaner signup: no invite code required, they float without org
       // Assign cleaner role
       await supabase
         .from("user_roles")
@@ -117,111 +78,76 @@ Deno.serve(async (req) => {
         JSON.stringify({ success: true, role: "cleaner", unique_code: profile?.unique_code }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+
     } else if (type === "add_cleaner") {
-      // Admin adds a cleaner to their org by unique_code
-      if (!cleaner_unique_code) {
-        return new Response(JSON.stringify({ error: "Cleaner unique code is required" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+      if (!cleaner_unique_code || typeof cleaner_unique_code !== "string" || cleaner_unique_code.length > 20) {
+        return new Response(JSON.stringify({ error: "Invalid cleaner_unique_code" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Get admin's org
-      const { data: adminProfile } = await supabase
-        .from("profiles")
-        .select("org_id")
-        .eq("user_id", user.id)
-        .single();
-
-      if (!adminProfile?.org_id) {
-        return new Response(JSON.stringify({ error: "You must belong to an organization" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      // Check admin/manager role
-      const { data: adminRoles } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id);
-
-      const isAdmin = adminRoles?.some(r => r.role === "admin" || r.role === "manager");
-      if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Only admins can add cleaners" }), {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+      // Verify caller is host
+      const { data: isHost } = await supabase.rpc("has_role", { _user_id: user.id, _role: "host" });
+      if (!isHost) {
+        return new Response(JSON.stringify({ error: "Only hosts can add cleaners" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
       // Find cleaner by unique code
       const { data: cleanerProfile, error: cleanerErr } = await supabase
         .from("profiles")
-        .select("user_id, name, email, org_id")
+        .select("user_id, name, email")
         .eq("unique_code", cleaner_unique_code.trim().toUpperCase())
         .single();
 
       if (cleanerErr || !cleanerProfile) {
         return new Response(JSON.stringify({ error: "No cleaner found with that code" }), {
-          status: 404,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      if (cleanerProfile.org_id && cleanerProfile.org_id !== adminProfile.org_id) {
-        return new Response(JSON.stringify({ error: "This cleaner already belongs to another organization" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+      // Verify they have cleaner role
+      const { data: isCleaner } = await supabase.rpc("has_role", { _user_id: cleanerProfile.user_id, _role: "cleaner" });
+      if (!isCleaner) {
+        return new Response(JSON.stringify({ error: "This user is not a cleaner" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-
-      // Assign cleaner to org
-      await supabase
-        .from("profiles")
-        .update({ org_id: adminProfile.org_id })
-        .eq("user_id", cleanerProfile.user_id);
 
       return new Response(
-        JSON.stringify({ success: true, cleaner_name: cleanerProfile.name, cleaner_email: cleanerProfile.email }),
+        JSON.stringify({ success: true, cleaner_user_id: cleanerProfile.user_id, cleaner_name: cleanerProfile.name, cleaner_email: cleanerProfile.email }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+
     } else if (type === "remove_cleaner") {
-      if (!cleaner_user_id) {
-        return new Response(JSON.stringify({ error: "cleaner_user_id is required" }), {
+      if (!cleaner_user_id || !uuidRegex.test(cleaner_user_id)) {
+        return new Response(JSON.stringify({ error: "Invalid cleaner_user_id" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Verify caller is admin/manager
-      const { data: callerProfile } = await supabase.from("profiles").select("org_id").eq("user_id", user.id).single();
-      if (!callerProfile?.org_id) {
-        return new Response(JSON.stringify({ error: "No organization" }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const { data: callerRoles } = await supabase.from("user_roles").select("role").eq("user_id", user.id);
-      if (!callerRoles?.some(r => r.role === "admin" || r.role === "manager")) {
+      const { data: isHost } = await supabase.rpc("has_role", { _user_id: user.id, _role: "host" });
+      if (!isHost) {
         return new Response(JSON.stringify({ error: "Forbidden" }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Remove all assignments
-      await supabase.from("cleaner_assignments").delete().eq("cleaner_user_id", cleaner_user_id).eq("org_id", callerProfile.org_id);
-
-      // Set cleaner's org_id to null
-      await supabase.from("profiles").update({ org_id: null }).eq("user_id", cleaner_user_id).eq("org_id", callerProfile.org_id);
+      // Remove all assignments for this cleaner under this host
+      await supabase.from("cleaner_assignments").delete()
+        .eq("cleaner_user_id", cleaner_user_id)
+        .eq("host_user_id", user.id);
 
       return new Response(
         JSON.stringify({ success: true }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
-    } else {
-      return new Response(JSON.stringify({ error: "Invalid type" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
     }
+
+    return new Response(JSON.stringify({ error: "Invalid type" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (error) {
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),

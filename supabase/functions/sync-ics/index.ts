@@ -27,12 +27,11 @@ function parseICS(icsText: string): ICSEvent[] {
       const regex = new RegExp(`^${name}[;:](.*)$`, "m");
       const match = unfolded.match(regex);
       if (!match) return "";
-      const val = match[1];
       if (name === "DTSTART" || name === "DTEND") {
         const parts = match[0].split(":");
         return parts[parts.length - 1].trim();
       }
-      return val.trim();
+      return match[1].trim();
     };
 
     event.uid = getField("UID");
@@ -45,18 +44,15 @@ function parseICS(icsText: string): ICSEvent[] {
       events.push(event as ICSEvent);
     }
   }
-
   return events;
 }
 
 function parseICSDate(dateStr: string): string {
   if (!dateStr) return "";
   const clean = dateStr.replace(/[^0-9TZ]/g, "");
-
   if (clean.length === 8) {
     return `${clean.slice(0, 4)}-${clean.slice(4, 6)}-${clean.slice(6, 8)}`;
   }
-
   const year = clean.slice(0, 4);
   const month = clean.slice(4, 6);
   const day = clean.slice(6, 8);
@@ -64,7 +60,6 @@ function parseICSDate(dateStr: string): string {
   const min = clean.slice(11, 13) || "00";
   const sec = clean.slice(13, 15) || "00";
   const tz = dateStr.endsWith("Z") ? "Z" : "";
-
   return `${year}-${month}-${day}T${hour}:${min}:${sec}${tz}`;
 }
 
@@ -72,11 +67,11 @@ function extractDateOnly(dateStr: string): string {
   return parseICSDate(dateStr).slice(0, 10);
 }
 
-async function syncProperty(supabase: any, property: any): Promise<{ bookings: number; tasks: number }> {
+async function syncListing(supabase: any, listing: any): Promise<{ bookings: number; tasks: number }> {
   const icsUrls: { url: string; platform: string }[] = [];
-  if (property.ics_url_airbnb) icsUrls.push({ url: property.ics_url_airbnb, platform: "airbnb" });
-  if (property.ics_url_booking) icsUrls.push({ url: property.ics_url_booking, platform: "booking" });
-  if (property.ics_url_other) icsUrls.push({ url: property.ics_url_other, platform: "other" });
+  if (listing.ics_url_airbnb) icsUrls.push({ url: listing.ics_url_airbnb, platform: "airbnb" });
+  if (listing.ics_url_booking) icsUrls.push({ url: listing.ics_url_booking, platform: "booking" });
+  if (listing.ics_url_other) icsUrls.push({ url: listing.ics_url_other, platform: "other" });
 
   if (icsUrls.length === 0) return { bookings: 0, tasks: 0 };
 
@@ -86,31 +81,19 @@ async function syncProperty(supabase: any, property: any): Promise<{ bookings: n
   for (const { url, platform } of icsUrls) {
     try {
       const response = await fetch(url);
-      if (!response.ok) {
-        console.error(`Failed to fetch ICS from ${platform}: ${response.status}`);
-        continue;
-      }
+      if (!response.ok) continue;
 
-      // Limit ICS content size to 1MB
       const contentLength = response.headers.get("content-length");
-      if (contentLength && parseInt(contentLength) > 1_048_576) {
-        console.error(`ICS content too large from ${platform}: ${contentLength} bytes`);
-        continue;
-      }
+      if (contentLength && parseInt(contentLength) > 1_048_576) continue;
 
       const icsText = await response.text();
-      if (icsText.length > 1_048_576) {
-        console.error(`ICS content too large from ${platform}: ${icsText.length} chars`);
-        continue;
-      }
-      const events = parseICS(icsText);
+      if (icsText.length > 1_048_576) continue;
 
-      console.log(`Parsed ${events.length} events from ${platform} ICS for ${property.name}`);
+      const events = parseICS(icsText);
 
       for (const event of events) {
         const startDate = extractDateOnly(event.dtstart);
         const endDate = extractDateOnly(event.dtend);
-
         if (!startDate || !endDate) continue;
 
         const summary = (event.summary || "").toLowerCase();
@@ -124,51 +107,32 @@ async function syncProperty(supabase: any, property: any): Promise<{ bookings: n
 
         const { data: booking, error: bookingError } = await supabase
           .from("bookings")
-          .upsert(
-            {
-              property_id: property.id,
-              org_id: property.org_id,
-              external_uid: externalUid,
-              source_platform: platform,
-              start_date: startDate,
-              end_date: endDate,
-              nights,
-              checkin_at: `${startDate}T${property.default_checkin_time || "15:00:00"}`,
-              checkout_at: `${endDate}T${property.default_checkout_time || "11:00:00"}`,
-              raw_ics_payload: JSON.stringify(event),
-            },
-            { onConflict: "external_uid" }
-          )
+          .upsert({
+            listing_id: listing.id,
+            host_user_id: listing.host_user_id,
+            external_uid: externalUid,
+            source_platform: platform,
+            start_date: startDate,
+            end_date: endDate,
+            nights,
+            checkin_at: `${startDate}T${listing.default_checkin_time || "15:00:00"}`,
+            checkout_at: `${endDate}T${listing.default_checkout_time || "11:00:00"}`,
+            raw_ics_payload: JSON.stringify(event),
+          }, { onConflict: "external_uid" })
           .select()
           .single();
 
-        if (bookingError) {
-          console.error(`Booking upsert error: ${bookingError.message}`);
-          continue;
-        }
-
+        if (bookingError) continue;
         totalBookings++;
 
-        const cleaningMode = property.cleaning_mode || "CLEAN_ON_CHECKOUT";
-        let taskStartAt: string;
-        let taskEndAt: string;
-        let previousBookingId: string | null = null;
-        let nextBookingId: string | null = null;
-
-        if (cleaningMode === "CLEAN_ON_CHECKOUT") {
-          taskStartAt = `${endDate}T${property.default_checkout_time || "11:00:00"}`;
-          taskEndAt = `${endDate}T${property.default_checkin_time || "15:00:00"}`;
-          previousBookingId = booking.id;
-        } else {
-          taskStartAt = `${startDate}T08:00:00`;
-          taskEndAt = `${startDate}T${property.default_checkin_time || "15:00:00"}`;
-          nextBookingId = booking.id;
-        }
+        // Create cleaning task: checkout → checkin window
+        const taskStartAt = `${endDate}T${listing.default_checkout_time || "11:00:00"}`;
+        const taskEndAt = `${endDate}T${listing.default_checkin_time || "15:00:00"}`;
 
         const { data: existingTasks } = await supabase
           .from("cleaning_tasks")
           .select("id, locked")
-          .eq("property_id", property.id)
+          .eq("listing_id", listing.id)
           .or(`previous_booking_id.eq.${booking.id},next_booking_id.eq.${booking.id}`);
 
         const lockedExists = existingTasks?.some((t: any) => t.locked);
@@ -177,41 +141,33 @@ async function syncProperty(supabase: any, property: any): Promise<{ bookings: n
           const { error: taskError } = await supabase
             .from("cleaning_tasks")
             .insert({
-              property_id: property.id,
-              org_id: property.org_id,
+              listing_id: listing.id,
+              host_user_id: listing.host_user_id,
               source: "AUTO",
               status: "TODO",
               start_at: taskStartAt,
               end_at: taskEndAt,
-              previous_booking_id: previousBookingId,
-              next_booking_id: nextBookingId,
+              previous_booking_id: booking.id,
               nights_to_show: nights,
             });
-
           if (!taskError) totalTasks++;
-          else console.error(`Task creation error: ${taskError.message}`);
         } else if (!lockedExists && existingTasks && existingTasks.length > 0) {
           await supabase
             .from("cleaning_tasks")
-            .update({
-              start_at: taskStartAt,
-              end_at: taskEndAt,
-              nights_to_show: nights,
-            })
+            .update({ start_at: taskStartAt, end_at: taskEndAt, nights_to_show: nights })
             .eq("id", existingTasks[0].id)
             .eq("locked", false);
         }
       }
     } catch (err) {
-      console.error(`Error syncing ${platform} for ${property.name}:`, err);
+      console.error(`Error syncing ${platform} for ${listing.name}:`, err);
     }
   }
 
-  // Update last_synced_at
   await supabase
-    .from("properties")
+    .from("listings")
     .update({ last_synced_at: new Date().toISOString() })
-    .eq("id", property.id);
+    .eq("id", listing.id);
 
   return { bookings: totalBookings, tasks: totalTasks };
 }
@@ -226,12 +182,10 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Authenticate the caller
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -241,92 +195,56 @@ Deno.serve(async (req) => {
     const { data: { user }, error: userError } = await userClient.auth.getUser();
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "Invalid token" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Verify admin/manager role
-    const { data: hasAdmin } = await supabase.rpc("has_role", { _user_id: user.id, _role: "admin" });
-    const { data: hasManager } = await supabase.rpc("has_role", { _user_id: user.id, _role: "manager" });
-    if (!hasAdmin && !hasManager) {
+    // Verify host role
+    const { data: isHost } = await supabase.rpc("has_role", { _user_id: user.id, _role: "host" });
+    if (!isHost) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     let body: any = {};
-    try {
-      body = await req.json();
-    } catch {
-      // No body = batch mode
-    }
+    try { body = await req.json(); } catch { /* batch mode */ }
 
-    const property_id = body.property_id;
-
-    // Validate property_id format if provided
+    const listing_id = body.listing_id;
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (property_id && !uuidRegex.test(property_id)) {
-      return new Response(JSON.stringify({ error: "Invalid property_id format" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    if (listing_id && !uuidRegex.test(listing_id)) {
+      return new Response(JSON.stringify({ error: "Invalid listing_id format" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    if (property_id) {
-      // Single property sync
-      const { data: property, error: propError } = await supabase
-        .from("properties")
-        .select("*")
-        .eq("id", property_id)
-        .single();
-
-      if (propError || !property) {
-        throw new Error(`Property not found: ${propError?.message}`);
-      }
-
-      const result = await syncProperty(supabase, property);
-
+    if (listing_id) {
+      const { data: listing, error: listErr } = await supabase
+        .from("listings").select("*").eq("id", listing_id).eq("host_user_id", user.id).single();
+      if (listErr || !listing) throw new Error("Listing not found");
+      const result = await syncListing(supabase, listing);
       return new Response(
         JSON.stringify({ success: true, bookings_synced: result.bookings, tasks_created: result.tasks }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     } else {
-      // Batch mode: sync all sync_enabled properties
-      const { data: properties, error: propError } = await supabase
-        .from("properties")
-        .select("*")
-        .eq("sync_enabled", true)
-        .limit(50);
-
-      if (propError) throw new Error(propError.message);
-
-      let totalBookings = 0;
-      let totalTasks = 0;
-      let propertiesSynced = 0;
-
-      for (const property of (properties || [])) {
-        const result = await syncProperty(supabase, property);
+      const { data: listings } = await supabase
+        .from("listings").select("*").eq("host_user_id", user.id).eq("sync_enabled", true).limit(50);
+      let totalBookings = 0, totalTasks = 0, listingsSynced = 0;
+      for (const listing of (listings || [])) {
+        const result = await syncListing(supabase, listing);
         totalBookings += result.bookings;
         totalTasks += result.tasks;
-        propertiesSynced++;
+        listingsSynced++;
       }
-
       return new Response(
-        JSON.stringify({
-          success: true,
-          properties_synced: propertiesSynced,
-          bookings_synced: totalBookings,
-          tasks_created: totalTasks,
-        }),
+        JSON.stringify({ success: true, listings_synced: listingsSynced, bookings_synced: totalBookings, tasks_created: totalTasks }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
   } catch (error) {
-    console.error("Sync error:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

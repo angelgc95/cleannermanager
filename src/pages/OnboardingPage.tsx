@@ -3,8 +3,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { ClipboardCheck, Copy } from "lucide-react";
@@ -12,7 +10,6 @@ import { ClipboardCheck, Copy } from "lucide-react";
 export default function OnboardingPage() {
   const { user, refreshProfile } = useAuth();
   const [mode, setMode] = useState<"choose" | "host" | "cleaner">("choose");
-  const [orgName, setOrgName] = useState("");
   const [loading, setLoading] = useState(false);
   const [cleanerCode, setCleanerCode] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -22,10 +19,7 @@ export default function OnboardingPage() {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("onboard-user", {
-        body: {
-          type,
-          org_name: type === "host" ? (orgName || user?.user_metadata?.name || "My Organization") : undefined,
-        },
+        body: { type },
       });
 
       if (error) throw error;
@@ -41,7 +35,7 @@ export default function OnboardingPage() {
       toast({
         title: "Welcome!",
         description: type === "host"
-          ? "Your organization has been created."
+          ? "Your host account is ready."
           : "Account set up! Share your code with a host.",
       });
       navigate("/");
@@ -74,7 +68,7 @@ export default function OnboardingPage() {
             </div>
             <CardTitle className="text-2xl">Your Cleaner ID</CardTitle>
             <CardDescription>
-              Share this code with your host so they can add you to their organization.
+              Share this code with your host so they can assign you to listings.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -87,13 +81,13 @@ export default function OnboardingPage() {
               </Button>
             </div>
             <p className="text-sm text-muted-foreground text-center">
-              Once your host adds you, you'll see your assigned listings here.
+              Once your host assigns you to listings, you'll see your calendar and checklists here.
             </p>
             <Button className="w-full" onClick={async () => {
-              await supabase.auth.signOut();
-              navigate("/auth");
+              await refreshProfile();
+              navigate("/");
             }}>
-              Done — Sign Out
+              Done — Go to App
             </Button>
           </CardContent>
         </Card>
@@ -115,7 +109,7 @@ export default function OnboardingPage() {
             {mode === "choose"
               ? "How would you like to use Cleaning Manager?"
               : mode === "host"
-              ? "Create your organization"
+              ? "Set up your host account"
               : "Set up your cleaner account"}
           </CardDescription>
         </CardHeader>
@@ -123,7 +117,7 @@ export default function OnboardingPage() {
           {mode === "choose" ? (
             <div className="space-y-3">
               <Button className="w-full" size="lg" onClick={() => setMode("host")}>
-                I'm a Host — Create Organization
+                I'm a Host
               </Button>
               <Button className="w-full" size="lg" variant="outline" onClick={() => setMode("cleaner")}>
                 I'm a Cleaner
@@ -140,16 +134,11 @@ export default function OnboardingPage() {
             </div>
           ) : mode === "host" ? (
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Organization Name</Label>
-                <Input
-                  value={orgName}
-                  onChange={(e) => setOrgName(e.target.value)}
-                  placeholder="My Rental Business"
-                />
-              </div>
+              <p className="text-sm text-muted-foreground">
+                As a host, you can add listings, assign cleaners, manage checklists, and configure payouts.
+              </p>
               <Button className="w-full" disabled={loading} onClick={() => handleOnboard("host")}>
-                {loading ? "Creating..." : "Create Organization"}
+                {loading ? "Setting up..." : "Continue as Host"}
               </Button>
               <button type="button" onClick={() => setMode("choose")} className="text-sm text-primary hover:underline w-full text-center">
                 ← Back
@@ -158,13 +147,9 @@ export default function OnboardingPage() {
           ) : (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                You'll receive a unique code to share with your host. They'll use it to add you to their organization.
+                You'll receive a unique code to share with your host. They'll use it to assign you to listings.
               </p>
-              <Button
-                className="w-full"
-                disabled={loading}
-                onClick={() => handleOnboard("cleaner")}
-              >
+              <Button className="w-full" disabled={loading} onClick={() => handleOnboard("cleaner")}>
                 {loading ? "Setting up..." : "Continue as Cleaner"}
               </Button>
               <button type="button" onClick={() => setMode("choose")} className="text-sm text-primary hover:underline w-full text-center">
