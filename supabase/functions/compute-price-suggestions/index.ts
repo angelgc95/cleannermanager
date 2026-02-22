@@ -152,6 +152,9 @@ Deno.serve(async (req) => {
         });
       }
 
+      // Only create suggestions when there are actual demand signals
+      if (dayEvents.length === 0 || demandScore === 0) continue;
+
       // Normalize: a demand_score of 2.0 → maxUplift
       const normalizedScore = Math.min(demandScore / 2.0, 1.0);
       let upliftPct =
