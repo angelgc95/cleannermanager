@@ -391,8 +391,19 @@ export default function ChecklistRunPage() {
     );
   }
 
-  if (!task || sections.length === 0) {
+  if (!task) {
     return <div className="p-6 text-muted-foreground">Loading checklist...</div>;
+  }
+
+  if (sections.length === 0) {
+    return (
+      <div className="p-6 text-center space-y-4">
+        <p className="text-muted-foreground">No checklist template has been set up for this listing yet. Ask your host to create one.</p>
+        <Button variant="outline" onClick={() => navigate(`/tasks/${taskId}`)}>
+          <ArrowLeft className="h-4 w-4 mr-1" /> Back to Task
+        </Button>
+      </div>
+    );
   }
 
   const shoppingCompletion = shoppingChecked === true ? { done: 1, total: 1 } : { done: 0, total: 1 };
