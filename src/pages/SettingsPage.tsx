@@ -17,13 +17,14 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 
 function PayoutScheduleSettings({ settings, onUpdate }: { settings: any; onUpdate: () => void }) {
   const { toast } = useToast();
+  const [frequency, setFrequency] = useState<string>(settings.payout_frequency ?? "WEEKLY");
   const [weekEndDay, setWeekEndDay] = useState<string>(String(settings.payout_week_end_day ?? 0));
   const [hourlyRate, setHourlyRate] = useState<string>(String(settings.default_hourly_rate ?? 15));
 
   const handleSave = async () => {
     const { error } = await supabase
       .from("host_settings")
-      .update({ payout_week_end_day: parseInt(weekEndDay), default_hourly_rate: parseFloat(hourlyRate) })
+      .update({ payout_frequency: frequency, payout_week_end_day: parseInt(weekEndDay), default_hourly_rate: parseFloat(hourlyRate) })
       .eq("id", settings.id);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -39,7 +40,14 @@ function PayoutScheduleSettings({ settings, onUpdate }: { settings: any; onUpdat
       <CardContent className="space-y-4">
         <div className="space-y-1">
           <Label>Frequency</Label>
-          <Input value="Weekly" disabled className="max-w-[200px]" />
+          <Select value={frequency} onValueChange={setFrequency}>
+            <SelectTrigger className="max-w-[200px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="WEEKLY">Weekly</SelectItem>
+              <SelectItem value="BIWEEKLY">Bi-weekly</SelectItem>
+              <SelectItem value="MONTHLY">Monthly</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
