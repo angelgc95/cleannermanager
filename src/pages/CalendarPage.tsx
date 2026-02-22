@@ -40,7 +40,7 @@ export default function CalendarPage() {
       const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
       const { data } = await supabase
         .from("pricing_suggestions")
-        .select("*")
+        .select("*, listings(name)")
         .gte("date", format(start, "yyyy-MM-dd"))
         .lte("date", format(end, "yyyy-MM-dd"));
       setSuggestions(data || []);
@@ -153,6 +153,9 @@ export default function CalendarPage() {
           <div className="mt-4 space-y-4">
             {selectedSuggestions.map((s: any) => (
               <div key={s.id} className="border border-border rounded-lg p-4 space-y-3">
+                {s.listings?.name && (
+                  <p className="text-xs font-medium text-muted-foreground">{s.listings.name}</p>
+                )}
                 <div className="flex items-center justify-between">
                   <span className={cn("inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold", colorClasses[s.color_level] || colorClasses.green)}>
                     +{Math.round(s.uplift_pct)}%
@@ -169,20 +172,23 @@ export default function CalendarPage() {
                     <p className="font-semibold text-primary">€{s.suggested_price}</p>
                   </div>
                 </div>
-                {s.reasons && Array.isArray(s.reasons) && s.reasons.length > 0 && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Reasons:</p>
-                    <ul className="space-y-1">
+                <div>
+                  <p className="text-xs font-medium mb-1.5">Why this price:</p>
+                  {s.reasons && Array.isArray(s.reasons) && s.reasons.length > 0 ? (
+                    <ul className="space-y-1.5">
                       {(s.reasons as any[]).map((r: any, i: number) => (
                         <li key={i} className="text-xs flex items-center gap-1.5">
-                          <span className={cn("w-2 h-2 rounded-full", r.category === "bank_holiday" ? "bg-red-400" : r.category === "weekend" ? "bg-blue-400" : r.category === "festival" ? "bg-purple-400" : "bg-amber-400")} />
-                          <span className="font-medium capitalize">{r.category.replace("_", " ")}</span>
+                          <span className={cn("w-2 h-2 rounded-full shrink-0", r.category === "bank_holiday" ? "bg-red-400" : r.category === "weekend" ? "bg-blue-400" : r.category === "festival" ? "bg-purple-400" : r.category === "sports" ? "bg-green-400" : "bg-amber-400")} />
+                          <span className="font-medium capitalize">{r.category.replace(/_/g, " ")}</span>
                           <span className="text-muted-foreground">— {r.title}</span>
+                          <span className="text-muted-foreground ml-auto">(+{r.contribution})</span>
                         </li>
                       ))}
                     </ul>
-                  </div>
-                )}
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">No specific events detected — based on minimum uplift setting.</p>
+                  )}
+                </div>
               </div>
             ))}
             {selectedSuggestions.length === 0 && (
