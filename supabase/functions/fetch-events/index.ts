@@ -83,7 +83,6 @@ function generateHolidayEvents(
   const toDate = new Date(dateTo);
   const events: any[] = [];
 
-  // Generate for each year in range
   for (
     let year = fromDate.getFullYear();
     year <= toDate.getFullYear();
@@ -107,6 +106,76 @@ function generateHolidayEvents(
     }
   }
   return events;
+}
+
+// Map Ticketmaster classification to our categories
+function mapTMCategory(segment: string, genre: string): string {
+  const s = (segment || "").toLowerCase();
+  const g = (genre || "").toLowerCase();
+  if (s === "music" || g.includes("music") || g.includes("concert")) return "music";
+  if (s === "sports" || g.includes("football") || g.includes("soccer") || g.includes("basketball") || g.includes("tennis")) return "sports";
+  if (s === "arts & theatre" || g.includes("festival") || g.includes("theatre")) return "festival";
+  return "music"; // default
+}
+
+async function fetchTicketmasterEvents(
+  city: string,
+  countryCode: string,
+  dateFrom: string,
+  dateTo: string,
+  locationKey: string
+): Promise<any[]> {
+  const apiKey = Deno.env.get("TICKETMASTER_API_KEY");
+  if (!apiKey) {
+    console.log("TICKETMASTER_API_KEY not configured, skipping.");
+    return [];
+  }
+
+  try {
+    const startDateTime = `${dateFrom}T00:00:00Z`;
+    const endDateTime = `${dateTo}T23:59:59Z`;
+    const url = new URL("https://app.ticketmaster.com/discovery/v2/events.json");
+    url.searchParams.set("apikey", apiKey);
+    url.searchParams.set("city", city);
+    url.searchParams.set("countryCode", countryCode);
+    url.searchParams.set("startDateTime", startDateTime);
+    url.searchParams.set("endDateTime", endDateTime);
+    url.searchParams.set("size", "50");
+    url.searchParams.set("sort", "date,asc");
+
+    console.log(`Fetching Ticketmaster events for ${city}, ${countryCode}...`);
+    const resp = await fetch(url.toString());
+    if (!resp.ok) {
+      console.error(`Ticketmaster API error: ${resp.status}`);
+      return [];
+    }
+
+    const data = await resp.json();
+    const embedded = data?._embedded?.events || [];
+    console.log(`Found ${embedded.length} Ticketmaster events`);
+
+    return embedded.map((ev: any) => {
+      const segment = ev.classifications?.[0]?.segment?.name || "";
+      const genre = ev.classifications?.[0]?.genre?.name || "";
+      const venue = ev._embedded?.venues?.[0]?.name || null;
+      const localDate = ev.dates?.start?.localDate || dateFrom;
+
+      return {
+        location_key: locationKey,
+        date: localDate,
+        category: mapTMCategory(segment, genre),
+        title: ev.name || "Event",
+        venue,
+        start_time: ev.dates?.start?.localTime ? `${localDate}T${ev.dates.start.localTime}` : null,
+        popularity_score: Math.min((ev.popularity || 0.5), 1.0),
+        source: "ticketmaster",
+        raw: { id: ev.id, url: ev.url, segment, genre },
+      };
+    });
+  } catch (err) {
+    console.error("Ticketmaster fetch error:", err);
+    return [];
+  }
 }
 
 Deno.serve(async (req) => {
@@ -140,7 +209,6 @@ Deno.serve(async (req) => {
     }
     const userId = claimsData.claims.sub as string;
 
-    // Verify host role
     const { data: roleCheck } = await supabase.rpc("has_role", {
       _role: "host",
       _user_id: userId,
@@ -152,7 +220,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { location_key, country_code, date_from, date_to } =
+    const { location_key, country_code, date_from, date_to, city } =
       await req.json();
 
     if (!location_key || !date_from || !date_to) {
@@ -162,66 +230,77 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check cache - if we already have events for this location+range, skip
-    const { data: existing } = await supabase
+    // Delete old non-manual events for this location+range to refresh
+    await supabase
       .from("events_cache")
-      .select("id")
+      .delete()
       .eq("location_key", location_key)
+      .eq("host_user_id", userId)
+      .neq("source", "manual")
       .gte("date", date_from)
-      .lte("date", date_to)
-      .limit(1);
+      .lte("date", date_to);
+
+    // Generate bank holiday events
+    const holidayEvents = generateHolidayEvents(
+      country_code || "ES",
+      date_from,
+      date_to,
+      location_key
+    );
+
+    // Generate weekend boost events
+    const weekendEvents: any[] = [];
+    const from = new Date(date_from);
+    const to = new Date(date_to);
+    for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+      const dow = d.getDay();
+      if (dow === 5 || dow === 6) {
+        weekendEvents.push({
+          location_key,
+          date: d.toISOString().slice(0, 10),
+          category: "weekend",
+          title: dow === 5 ? "Friday" : "Saturday",
+          venue: null,
+          start_time: null,
+          popularity_score: 0.3,
+          source: "builtin",
+          raw: null,
+        });
+      }
+    }
+
+    // Fetch Ticketmaster events
+    const cityName = city || location_key.split("_")[0] || "";
+    const tmEvents = await fetchTicketmasterEvents(
+      cityName,
+      country_code || "ES",
+      date_from,
+      date_to,
+      location_key
+    );
+
+    const allEvents = [...holidayEvents, ...weekendEvents, ...tmEvents].map(
+      (e) => ({ ...e, host_user_id: userId })
+    );
 
     let eventsInserted = 0;
-
-    if (!existing || existing.length === 0) {
-      // Generate bank holiday events
-      const holidayEvents = generateHolidayEvents(
-        country_code || "ES",
-        date_from,
-        date_to,
-        location_key
-      );
-
-      // Generate weekend boost events
-      const weekendEvents: any[] = [];
-      const from = new Date(date_from);
-      const to = new Date(date_to);
-      for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
-        const dow = d.getDay();
-        if (dow === 5 || dow === 6) {
-          weekendEvents.push({
-            location_key,
-            date: d.toISOString().slice(0, 10),
-            category: "weekend",
-            title: dow === 5 ? "Friday" : "Saturday",
-            venue: null,
-            start_time: null,
-            popularity_score: 0.3,
-            source: "builtin",
-            raw: null,
-          });
-        }
-      }
-
-      const allEvents = [...holidayEvents, ...weekendEvents].map((e) => ({
-        ...e,
-        host_user_id: userId,
-      }));
-
-      if (allEvents.length > 0) {
-        const { error: insertErr } = await supabase
-          .from("events_cache")
-          .insert(allEvents);
-        if (insertErr) throw insertErr;
-        eventsInserted = allEvents.length;
-      }
+    if (allEvents.length > 0) {
+      const { error: insertErr } = await supabase
+        .from("events_cache")
+        .insert(allEvents);
+      if (insertErr) throw insertErr;
+      eventsInserted = allEvents.length;
     }
 
     return new Response(
       JSON.stringify({
         ok: true,
         events_inserted: eventsInserted,
-        cached: existing && existing.length > 0,
+        breakdown: {
+          holidays: holidayEvents.length,
+          weekends: weekendEvents.length,
+          ticketmaster: tmEvents.length,
+        },
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
