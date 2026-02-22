@@ -125,9 +125,9 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
         if (bookingError) continue;
         totalBookings++;
 
-        // Create cleaning task: checkout → checkin window
-        const taskStartAt = `${endDate}T${listing.default_checkout_time || "11:00:00"}`;
-        const taskEndAt = `${endDate}T${listing.default_checkin_time || "15:00:00"}`;
+        // Create cleaning task on CHECK-IN day: from checkout time to checkin time
+        const taskStartAt = `${startDate}T${listing.default_checkout_time || "11:00:00"}`;
+        const taskEndAt = `${startDate}T${listing.default_checkin_time || "15:00:00"}`;
 
         const { data: existingTasks } = await supabase
           .from("cleaning_tasks")
