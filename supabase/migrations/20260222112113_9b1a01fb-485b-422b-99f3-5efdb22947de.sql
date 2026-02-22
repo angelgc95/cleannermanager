@@ -1,0 +1,1 @@
+DELETE FROM events_cache WHERE source != 'manual';

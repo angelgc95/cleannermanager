@@ -13,6 +13,7 @@ import { Plus, Loader2, RefreshCw, DollarSign, Pencil, Trash2 } from "lucide-rea
 import { NotificationSettings } from "@/components/NotificationSettings";
 import { PricingSuggestionsSettings } from "@/components/PricingSuggestionsSettings";
 import { AdminCleanerManagement } from "@/components/admin/AdminCleanerManagement";
+import { ManualEventEntry } from "@/components/ManualEventEntry";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -276,6 +277,7 @@ export default function SettingsPage() {
         <AdminCleanerManagement />
         {settings && <PayoutScheduleSettings settings={settings} onUpdate={fetchSettings} />}
         {settings && <PricingSuggestionsSettings settings={settings} listings={listings} onUpdate={() => { fetchSettings(); }} />}
+        <ManualEventEntry listings={listings} />
         <NotificationSettings />
       </div>
     </div>

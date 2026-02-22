@@ -110,6 +110,7 @@ Deno.serve(async (req) => {
       body: {
         location_key: locationKey,
         country_code: listing.country_code || "ES",
+        city: listing.city || "",
         date_from: dateFrom,
         date_to: dateTo,
       },
