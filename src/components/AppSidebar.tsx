@@ -20,16 +20,16 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 const allNavItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard, roles: ["admin", "manager", "cleaner"] },
-  { title: "Calendar", url: "/calendar", icon: CalendarDays, roles: ["admin", "manager", "cleaner"] },
-  { title: "Checklists", url: "/tasks", icon: ClipboardCheck, roles: ["admin", "manager", "cleaner"] },
-  { title: "Log Hours", url: "/hours", icon: Clock, roles: ["admin", "manager", "cleaner"] },
-  { title: "Expenses", url: "/expenses", icon: Receipt, roles: ["admin", "manager", "cleaner"] },
-  { title: "Maintenance", url: "/maintenance", icon: Wrench, roles: ["admin", "manager", "cleaner"] },
-  { title: "Shopping List", url: "/shopping", icon: ShoppingCart, roles: ["admin", "manager", "cleaner"] },
-  { title: "Payouts", url: "/payouts", icon: DollarSign, roles: ["admin", "manager", "cleaner"] },
-  { title: "Guides", url: "/guides", icon: BookOpen, roles: ["admin", "manager", "cleaner"] },
-  { title: "Settings", url: "/settings", icon: Settings, roles: ["admin", "manager", "cleaner"] },
+  { title: "Dashboard", url: "/", icon: LayoutDashboard, roles: ["host", "cleaner"] },
+  { title: "Calendar", url: "/calendar", icon: CalendarDays, roles: ["host", "cleaner"] },
+  { title: "Checklists", url: "/tasks", icon: ClipboardCheck, roles: ["host", "cleaner"] },
+  { title: "Log Hours", url: "/hours", icon: Clock, roles: ["host", "cleaner"] },
+  { title: "Expenses", url: "/expenses", icon: Receipt, roles: ["host", "cleaner"] },
+  { title: "Maintenance", url: "/maintenance", icon: Wrench, roles: ["host", "cleaner"] },
+  { title: "Shopping List", url: "/shopping", icon: ShoppingCart, roles: ["host", "cleaner"] },
+  { title: "Payouts", url: "/payouts", icon: DollarSign, roles: ["host", "cleaner"] },
+  { title: "Guides", url: "/guides", icon: BookOpen, roles: ["host", "cleaner"] },
+  { title: "Settings", url: "/settings", icon: Settings, roles: ["host", "cleaner"] },
 ];
 
 export function AppSidebar() {
@@ -51,7 +51,6 @@ export function AppSidebar() {
         collapsed ? "w-16" : "w-60"
       )}
     >
-      {/* Header */}
       <div className="flex items-center gap-3 px-4 h-14 border-b border-sidebar-border">
         <button
           onClick={() => setCollapsed(!collapsed)}
@@ -65,8 +64,6 @@ export function AppSidebar() {
           </span>
         )}
       </div>
-
-      {/* Nav */}
       <nav className="flex-1 py-2 overflow-y-auto">
         {navItems.map((item) => (
           <NavLink
@@ -84,8 +81,6 @@ export function AppSidebar() {
           </NavLink>
         ))}
       </nav>
-
-      {/* Footer */}
       <div className="border-t border-sidebar-border p-2">
         <button
           onClick={handleLogout}

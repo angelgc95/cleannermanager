@@ -38,10 +38,10 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       const today = format(new Date(), "yyyy-MM-dd");
-      
+
       const { data: tasks } = await supabase
         .from("cleaning_tasks")
-        .select("*, properties(name), rooms(name)")
+        .select("*, listings(name)")
         .gte("start_at", `${today}T00:00:00`)
         .lte("start_at", `${today}T23:59:59`)
         .order("start_at");
@@ -71,15 +71,12 @@ export default function Dashboard() {
     <div>
       <PageHeader title="Dashboard" description="Overview of today's activity" />
       <div className="p-6 space-y-6">
-        {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard title="Today's Cleanings" value={todayTasks.length} icon={CalendarDays} />
           <StatCard title="Hours This Week" value={stats.hoursThisWeek} icon={Clock} />
           <StatCard title="Open Maintenance" value={stats.openMaintenance} icon={Wrench} />
           <StatCard title="Missing Items" value={stats.missingItems} icon={ShoppingCart} />
         </div>
-
-        {/* Today's Tasks */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Today's Cleaning Tasks</CardTitle>
@@ -97,12 +94,12 @@ export default function Dashboard() {
                   >
                     <div>
                       <p className="font-medium text-sm text-foreground">
-                        {task.properties?.name} — {task.rooms?.name || "All rooms"}
+                        {task.listings?.name || "Listing"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {task.start_at ? format(new Date(task.start_at), "HH:mm") : "—"} – {task.end_at ? format(new Date(task.end_at), "HH:mm") : "—"}
                         {task.nights_to_show != null && ` · ${task.nights_to_show} nights`}
-                        {task.guests_to_show != null ? ` · ${task.guests_to_show} guests` : " · Guests: N/A"}
+                        {task.guests_to_show != null ? ` · ${task.guests_to_show} guests` : ""}
                       </p>
                     </div>
                     <StatusBadge status={task.status} />
