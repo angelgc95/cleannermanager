@@ -3,14 +3,18 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
+import { Settings2 } from "lucide-react";
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const navigate = useNavigate();
-
+  const { role } = useAuth();
+  const isAdmin = role === "admin" || role === "manager";
   useEffect(() => {
     const fetch = async () => {
       const { data } = await supabase
@@ -79,6 +83,13 @@ export default function TasksPage() {
       <PageHeader
         title="Checklists"
         description="Cleaning checklists for each scheduled listing task"
+        actions={
+          isAdmin ? (
+            <Button variant="outline" size="sm" onClick={() => navigate("/settings")} className="gap-1.5">
+              <Settings2 className="h-4 w-4" /> Edit Template
+            </Button>
+          ) : undefined
+        }
       />
       <div className="p-6 space-y-4">
         <Tabs defaultValue="upcoming">
