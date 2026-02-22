@@ -25,12 +25,10 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, orgId, role } = useAuth();
+  const { user, loading, role } = useAuth();
   if (loading) return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading...</div>;
   if (!user) return <Navigate to="/auth" replace />;
-  // Cleaners without org can still access the app (settings page shows their code)
-  // Hosts without org go to onboarding
-  if (!orgId && role !== "cleaner") return <Navigate to="/onboarding" replace />;
+  if (!role) return <Navigate to="/onboarding" replace />;
   return <>{children}</>;
 }
 
@@ -42,10 +40,10 @@ function SettingsRoute() {
 }
 
 function OnboardingRoute() {
-  const { user, loading, orgId } = useAuth();
+  const { user, loading, role } = useAuth();
   if (loading) return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading...</div>;
   if (!user) return <Navigate to="/auth" replace />;
-  if (orgId) return <Navigate to="/" replace />;
+  if (role) return <Navigate to="/" replace />;
   return <OnboardingPage />;
 }
 

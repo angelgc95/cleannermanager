@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -10,16 +10,12 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { ChevronDown, ChevronRight, DollarSign, RefreshCw } from "lucide-react";
 
-interface PeriodGroup {
-  period: any;
-  payouts: any[];
-}
+interface PeriodGroup { period: any; payouts: any[]; }
 
 export default function PayoutsPage() {
-  const { role, orgId, user } = useAuth();
+  const { role, user } = useAuth();
   const { toast } = useToast();
-  const isHost = role === "admin" || role === "manager";
-
+  const isHost = role === "host";
   const [periodGroups, setPeriodGroups] = useState<PeriodGroup[]>([]);
   const [expandedPeriods, setExpandedPeriods] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -28,269 +24,110 @@ export default function PayoutsPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch periods
-      const { data: periods } = await supabase
-        .from("payout_periods")
-        .select("*")
-        .order("start_date", { ascending: false });
-
-      if (!periods || periods.length === 0) {
-        setPeriodGroups([]);
-        setLoading(false);
-        return;
-      }
-
-      // Fetch all payouts
+      const { data: periods } = await supabase.from("payout_periods").select("*").order("start_date", { ascending: false });
+      if (!periods || periods.length === 0) { setPeriodGroups([]); setLoading(false); return; }
       const periodIds = periods.map((p) => p.id);
-      const { data: payouts } = await supabase
-        .from("payouts")
-        .select("*")
-        .in("period_id", periodIds)
-        .order("created_at", { ascending: false });
-
-      // Fetch cleaner names
+      const { data: payouts } = await supabase.from("payouts").select("*").in("period_id", periodIds).order("created_at", { ascending: false });
       const cleanerIds = [...new Set((payouts || []).map((p: any) => p.cleaner_user_id))];
       let nameMap: Record<string, string> = {};
       if (cleanerIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("user_id, name")
-          .in("user_id", cleanerIds);
+        const { data: profiles } = await supabase.from("profiles").select("user_id, name").in("user_id", cleanerIds);
         nameMap = Object.fromEntries((profiles || []).map((p: any) => [p.user_id, p.name]));
       }
-
-      // Group payouts by period
       const groups: PeriodGroup[] = periods.map((period) => ({
         period,
-        payouts: (payouts || [])
-          .filter((p: any) => p.period_id === period.id)
-          .map((p: any) => ({ ...p, cleaner_name: nameMap[p.cleaner_user_id] || "Unknown" })),
+        payouts: (payouts || []).filter((p: any) => p.period_id === period.id).map((p: any) => ({ ...p, cleaner_name: nameMap[p.cleaner_user_id] || "Unknown" })),
       }));
-
-      // Filter: cleaners only see periods that have their payouts
       if (!isHost && user) {
-        const filtered = groups
-          .map((g) => ({
-            ...g,
-            payouts: g.payouts.filter((p) => p.cleaner_user_id === user.id),
-          }))
-          .filter((g) => g.payouts.length > 0);
+        const filtered = groups.map((g) => ({ ...g, payouts: g.payouts.filter((p) => p.cleaner_user_id === user.id) })).filter((g) => g.payouts.length > 0);
         setPeriodGroups(filtered);
       } else {
         setPeriodGroups(groups);
       }
-
-      // Auto-expand the most recent period
-      if (periods.length > 0) {
-        setExpandedPeriods(new Set([periods[0].id]));
-      }
-    } finally {
-      setLoading(false);
-    }
+      if (periods.length > 0) setExpandedPeriods(new Set([periods[0].id]));
+    } finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, [orgId]);
+  useEffect(() => { fetchData(); }, [user]);
 
-  const togglePeriod = (id: string) => {
-    setExpandedPeriods((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  const togglePeriod = (id: string) => { setExpandedPeriods((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); };
 
   const handleGeneratePayouts = async () => {
     setGenerating(true);
     try {
-      const { data, error } = await supabase.functions.invoke("generate-payouts", {
-        body: { org_id: orgId },
-      });
+      const { data, error } = await supabase.functions.invoke("generate-payouts");
       if (error) throw error;
-      toast({
-        title: "Payouts generated",
-        description: data?.message || "Weekly payouts have been processed.",
-      });
+      toast({ title: "Payouts generated", description: data?.message || "Weekly payouts have been processed." });
       fetchData();
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally {
-      setGenerating(false);
-    }
+    } catch (err: any) { toast({ title: "Error", description: err.message, variant: "destructive" }); }
+    finally { setGenerating(false); }
   };
 
   const handleUpdatePayoutStatus = async (payoutId: string, newStatus: "PENDING" | "PAID") => {
     const updates: any = { status: newStatus };
     if (newStatus === "PAID") updates.paid_at = new Date().toISOString();
     const { error } = await supabase.from("payouts").update(updates).eq("id", payoutId);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: `Payout marked as ${newStatus}` });
-      fetchData();
-    }
+    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
+    else { toast({ title: `Payout marked as ${newStatus}` }); fetchData(); }
   };
 
   const handleUpdatePeriodStatus = async (periodId: string, newStatus: "OPEN" | "CLOSED") => {
     const { error } = await supabase.from("payout_periods").update({ status: newStatus as any }).eq("id", periodId);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: `Period ${newStatus === "CLOSED" ? "closed" : "reopened"}` });
-      fetchData();
-    }
+    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
+    else { toast({ title: `Period ${newStatus === "CLOSED" ? "closed" : "reopened"}` }); fetchData(); }
   };
 
-  const periodTotal = (payouts: any[]) =>
-    payouts.reduce((sum, p) => sum + Number(p.total_amount || 0), 0);
-
-  const periodMinutes = (payouts: any[]) =>
-    payouts.reduce((sum, p) => sum + (p.total_minutes || 0), 0);
-
-  const allPaid = (payouts: any[]) =>
-    payouts.length > 0 && payouts.every((p) => p.status === "PAID");
+  const periodTotal = (payouts: any[]) => payouts.reduce((sum, p) => sum + Number(p.total_amount || 0), 0);
+  const periodMinutes = (payouts: any[]) => payouts.reduce((sum, p) => sum + (p.total_minutes || 0), 0);
+  const allPaid = (payouts: any[]) => payouts.length > 0 && payouts.every((p) => p.status === "PAID");
 
   return (
     <div>
-      <PageHeader
-        title="Payouts"
-        description={isHost ? "Manage weekly payout periods and payments" : "Your payout history"}
-        actions={
-          isHost ? (
-            <Button size="sm" onClick={handleGeneratePayouts} disabled={generating}>
-              <RefreshCw className={`h-4 w-4 mr-1 ${generating ? "animate-spin" : ""}`} />
-              {generating ? "Generating..." : "Generate Payouts"}
-            </Button>
-          ) : undefined
-        }
-      />
+      <PageHeader title="Payouts" description={isHost ? "Manage weekly payout periods and payments" : "Your payout history"} actions={isHost ? (<Button size="sm" onClick={handleGeneratePayouts} disabled={generating}><RefreshCw className={`h-4 w-4 mr-1 ${generating ? "animate-spin" : ""}`} />{generating ? "Generating..." : "Generate Payouts"}</Button>) : undefined} />
       <div className="p-6 space-y-4 max-w-3xl">
         {loading && <p className="text-center text-muted-foreground py-8">Loading...</p>}
-
         {!loading && periodGroups.length === 0 && (
-          <div className="text-center py-12 space-y-3">
-            <DollarSign className="h-10 w-10 mx-auto text-muted-foreground/50" />
-            <p className="text-muted-foreground">No payout periods yet.</p>
-            {isHost && (
-              <p className="text-sm text-muted-foreground">
-                Click "Generate Payouts" to create the current week's payouts, or configure the schedule in Settings.
-              </p>
-            )}
+          <div className="text-center py-12 space-y-3"><DollarSign className="h-10 w-10 mx-auto text-muted-foreground/50" /><p className="text-muted-foreground">No payout periods yet.</p>
+            {isHost && <p className="text-sm text-muted-foreground">Click "Generate Payouts" to create the current week's payouts.</p>}
           </div>
         )}
-
         {periodGroups.map(({ period, payouts }) => {
           const isExpanded = expandedPeriods.has(period.id);
           const total = periodTotal(payouts);
           const mins = periodMinutes(payouts);
           const isPaid = allPaid(payouts);
-
           return (
             <Card key={period.id}>
-              {/* Period header */}
-              <button
-                onClick={() => togglePeriod(period.id)}
-                className="w-full text-left"
-              >
+              <button onClick={() => togglePeriod(period.id)} className="w-full text-left">
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-3">
-                    {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                    )}
-                    <div>
-                      <p className="font-semibold text-sm">
-                        {format(new Date(period.start_date), "MMM d")} – {format(new Date(period.end_date), "MMM d, yyyy")}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {payouts.length} cleaner{payouts.length !== 1 ? "s" : ""} · {Math.floor(mins / 60)}h {mins % 60}m
-                      </p>
-                    </div>
+                    {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                    <div><p className="font-semibold text-sm">{format(new Date(period.start_date), "MMM d")} – {format(new Date(period.end_date), "MMM d, yyyy")}</p><p className="text-xs text-muted-foreground">{payouts.length} cleaner{payouts.length !== 1 ? "s" : ""} · {Math.floor(mins / 60)}h {mins % 60}m</p></div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <p className="font-bold text-sm">€{total.toFixed(2)}</p>
-                      <StatusBadge status={isPaid && payouts.length > 0 ? "PAID" : period.status} />
-                    </div>
-                  </div>
+                  <div className="flex items-center gap-3"><div className="text-right"><p className="font-bold text-sm">€{total.toFixed(2)}</p><StatusBadge status={isPaid && payouts.length > 0 ? "PAID" : period.status} /></div></div>
                 </CardContent>
               </button>
-
-              {/* Expanded: individual payouts */}
               {isExpanded && (
                 <div className="border-t border-border">
-                  {payouts.length === 0 && (
-                    <p className="text-sm text-muted-foreground text-center py-4">No payouts in this period.</p>
-                  )}
+                  {payouts.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No payouts in this period.</p>}
                   {payouts.map((p: any) => (
                     <div key={p.id} className="flex items-center justify-between px-6 py-3 border-b border-border last:border-b-0">
-                      <div>
-                        <p className="text-sm font-medium">{p.cleaner_name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {p.total_minutes} min @ €{Number(p.hourly_rate_used).toFixed(2)}/hr
-                        </p>
-                      </div>
+                      <div><p className="text-sm font-medium">{p.cleaner_name}</p><p className="text-xs text-muted-foreground">{p.total_minutes} min @ €{Number(p.hourly_rate_used).toFixed(2)}/hr</p></div>
                       <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <p className="font-semibold text-sm">€{Number(p.total_amount).toFixed(2)}</p>
-                          <StatusBadge status={p.status} />
-                        </div>
+                        <div className="text-right"><p className="font-semibold text-sm">€{Number(p.total_amount).toFixed(2)}</p><StatusBadge status={p.status} /></div>
                         {isHost && (
-                          <Select
-                            value={p.status}
-                            onValueChange={(v) => handleUpdatePayoutStatus(p.id, v as "PENDING" | "PAID")}
-                          >
-                            <SelectTrigger className="w-[100px] h-8 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="PENDING">Pending</SelectItem>
-                              <SelectItem value="PAID">Paid</SelectItem>
-                            </SelectContent>
+                          <Select value={p.status} onValueChange={(v) => handleUpdatePayoutStatus(p.id, v as "PENDING" | "PAID")}>
+                            <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent><SelectItem value="PENDING">Pending</SelectItem><SelectItem value="PAID">Paid</SelectItem></SelectContent>
                           </Select>
                         )}
                       </div>
                     </div>
                   ))}
-
-                  {/* Period actions for admin */}
                   {isHost && (
                     <div className="flex items-center justify-end gap-2 px-6 py-3 bg-muted/30">
-                      {period.status === "OPEN" ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => { e.stopPropagation(); handleUpdatePeriodStatus(period.id, "CLOSED"); }}
-                        >
-                          Close Period
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => { e.stopPropagation(); handleUpdatePeriodStatus(period.id, "OPEN"); }}
-                        >
-                          Reopen Period
-                        </Button>
-                      )}
-                      {payouts.length > 0 && !isPaid && (
-                        <Button
-                          size="sm"
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            for (const p of payouts) {
-                              if (p.status !== "PAID") {
-                                await handleUpdatePayoutStatus(p.id, "PAID");
-                              }
-                            }
-                          }}
-                        >
-                          Mark All Paid
-                        </Button>
-                      )}
+                      {period.status === "OPEN" ? <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleUpdatePeriodStatus(period.id, "CLOSED"); }}>Close Period</Button> : <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleUpdatePeriodStatus(period.id, "OPEN"); }}>Reopen Period</Button>}
+                      {payouts.length > 0 && !isPaid && <Button size="sm" onClick={async (e) => { e.stopPropagation(); for (const p of payouts) { if (p.status !== "PAID") await handleUpdatePayoutStatus(p.id, "PAID"); } }}>Mark All Paid</Button>}
                     </div>
                   )}
                 </div>

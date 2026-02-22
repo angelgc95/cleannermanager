@@ -2,22 +2,14 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { UserPlus, Trash2, Home, Plus, Loader2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 interface CleanerWithAssignments {
@@ -25,57 +17,45 @@ interface CleanerWithAssignments {
   name: string;
   email: string;
   unique_code: string | null;
-  assignments: { id: string; property_id: string; property_name: string }[];
+  assignments: { id: string; listing_id: string; listing_name: string }[];
 }
 
 export function AdminCleanerManagement() {
-  const { orgId } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [cleaners, setCleaners] = useState<CleanerWithAssignments[]>([]);
-  const [properties, setProperties] = useState<any[]>([]);
+  const [listings, setListings] = useState<any[]>([]);
   const [addCode, setAddCode] = useState("");
   const [adding, setAdding] = useState(false);
 
   const fetchData = async () => {
-    if (!orgId) return;
+    if (!user) return;
 
-    // Get properties
-    const { data: props } = await supabase.from("properties").select("id, name").eq("org_id", orgId).order("name");
-    setProperties(props || []);
+    const { data: listingData } = await supabase.from("listings").select("id, name").eq("host_user_id", user.id).order("name");
+    setListings(listingData || []);
 
-    // Get cleaner profiles
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("user_id, name, email, unique_code")
-      .eq("org_id", orgId);
-    if (!profiles) return;
+    // Get all assignments for this host
+    const { data: assignments } = await supabase
+      .from("cleaner_assignments")
+      .select("id, cleaner_user_id, listing_id, listings(name)")
+      .eq("host_user_id", user.id);
 
-    const cleanerList: CleanerWithAssignments[] = [];
-    for (const p of profiles) {
-      const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", p.user_id);
-      if (!roles?.some((r) => r.role === "cleaner")) continue;
+    if (!assignments || assignments.length === 0) { setCleaners([]); return; }
 
-      const { data: assigns } = await supabase
-        .from("cleaner_assignments")
-        .select("id, property_id, properties(name)")
-        .eq("cleaner_user_id", p.user_id)
-        .eq("org_id", orgId);
+    // Get unique cleaner user_ids
+    const cleanerIds = [...new Set(assignments.map((a: any) => a.cleaner_user_id))];
+    const { data: profiles } = await supabase.from("profiles").select("user_id, name, email, unique_code").in("user_id", cleanerIds);
 
-      cleanerList.push({
-        ...p,
-        assignments: (assigns || []).map((a: any) => ({
-          id: a.id,
-          property_id: a.property_id,
-          property_name: a.properties?.name || "Unknown",
-        })),
-      });
-    }
+    const cleanerList: CleanerWithAssignments[] = (profiles || []).map((p) => ({
+      ...p,
+      assignments: assignments
+        .filter((a: any) => a.cleaner_user_id === p.user_id)
+        .map((a: any) => ({ id: a.id, listing_id: a.listing_id, listing_name: (a.listings as any)?.name || "Unknown" })),
+    }));
     setCleaners(cleanerList);
   };
 
-  useEffect(() => {
-    fetchData();
-  }, [orgId]);
+  useEffect(() => { fetchData(); }, [user]);
 
   const handleAddCleaner = async () => {
     if (!addCode.trim()) return;
@@ -86,8 +66,7 @@ export function AdminCleanerManagement() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-
-      toast({ title: "Cleaner added!", description: `${data.cleaner_name} has been added to your organization.` });
+      toast({ title: "Cleaner added!", description: `${data.cleaner_name} has been added.` });
       setAddCode("");
       fetchData();
     } catch (err: any) {
@@ -96,12 +75,12 @@ export function AdminCleanerManagement() {
     setAdding(false);
   };
 
-  const handleAssignListing = async (cleanerUserId: string, propertyId: string) => {
-    if (!orgId) return;
+  const handleAssignListing = async (cleanerUserId: string, listingId: string) => {
+    if (!user) return;
     const { error } = await supabase.from("cleaner_assignments").insert({
       cleaner_user_id: cleanerUserId,
-      property_id: propertyId,
-      org_id: orgId,
+      listing_id: listingId,
+      host_user_id: user.id,
     });
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -137,29 +116,16 @@ export function AdminCleanerManagement() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <UserPlus className="h-4 w-4" /> Cleaners
-        </CardTitle>
-      </CardHeader>
+      <CardHeader><CardTitle className="text-base flex items-center gap-2"><UserPlus className="h-4 w-4" /> Cleaners</CardTitle></CardHeader>
       <CardContent className="space-y-4">
-        {/* Add cleaner by code */}
         <div className="flex gap-2">
-          <Input
-            placeholder="Enter cleaner's unique code (e.g. 123456A)"
-            value={addCode}
-            onChange={(e) => setAddCode(e.target.value.toUpperCase())}
-            className="flex-1 font-mono"
-            maxLength={7}
-          />
+          <Input placeholder="Enter cleaner's unique code (e.g. 123456A)" value={addCode} onChange={(e) => setAddCode(e.target.value.toUpperCase())} className="flex-1 font-mono" maxLength={7} />
           <Button onClick={handleAddCleaner} disabled={adding || addCode.trim().length < 7} size="sm">
             {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Plus className="h-4 w-4 mr-1" /> Add</>}
           </Button>
         </div>
-
-        {/* Cleaners list */}
         {cleaners.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No cleaners in your organization yet.</p>
+          <p className="text-sm text-muted-foreground">No cleaners added yet.</p>
         ) : (
           <div className="space-y-3">
             {cleaners.map((cleaner) => (
@@ -168,65 +134,31 @@ export function AdminCleanerManagement() {
                   <div>
                     <p className="font-medium text-sm">{cleaner.name}</p>
                     <p className="text-xs text-muted-foreground">{cleaner.email}</p>
-                    {cleaner.unique_code && (
-                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{cleaner.unique_code}</code>
-                    )}
+                    {cleaner.unique_code && <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{cleaner.unique_code}</code>}
                   </div>
                   <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </AlertDialogTrigger>
+                    <AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button></AlertDialogTrigger>
                     <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Remove cleaner?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will remove all listing assignments for {cleaner.name}.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => handleRemoveCleaner(cleaner.user_id)}>
-                          Remove
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
+                      <AlertDialogHeader><AlertDialogTitle>Remove cleaner?</AlertDialogTitle><AlertDialogDescription>This will remove all listing assignments for {cleaner.name}.</AlertDialogDescription></AlertDialogHeader>
+                      <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => handleRemoveCleaner(cleaner.user_id)}>Remove</AlertDialogAction></AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
                 </div>
-
-                {/* Assigned listings */}
                 <div className="space-y-1">
                   {cleaner.assignments.map((a) => (
                     <div key={a.id} className="flex items-center justify-between bg-muted/50 rounded px-2 py-1.5 text-sm">
-                      <div className="flex items-center gap-1.5">
-                        <Home className="h-3 w-3 text-muted-foreground" />
-                        <span>{a.property_name}</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-destructive"
-                        onClick={() => handleRemoveAssignment(a.id)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                      <div className="flex items-center gap-1.5"><Home className="h-3 w-3 text-muted-foreground" /><span>{a.listing_name}</span></div>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleRemoveAssignment(a.id)}><Trash2 className="h-3 w-3" /></Button>
                     </div>
                   ))}
                 </div>
-
-                {/* Assign new listing */}
-                {properties.length > 0 && (
+                {listings.length > 0 && (
                   <Select onValueChange={(v) => handleAssignListing(cleaner.user_id, v)}>
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Assign a listing..." />
-                    </SelectTrigger>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Assign a listing..." /></SelectTrigger>
                     <SelectContent>
-                      {properties
-                        .filter((p) => !cleaner.assignments.some((a) => a.property_id === p.id))
-                        .map((p) => (
-                          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                        ))}
+                      {listings.filter((l) => !cleaner.assignments.some((a) => a.listing_id === l.id)).map((l) => (
+                        <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 )}
