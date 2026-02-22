@@ -156,9 +156,10 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
             });
           if (!taskError) totalTasks++;
         } else if (!lockedExists && existingTasks && existingTasks.length > 0) {
+          const reference = event.uid || externalUid;
           await supabase
             .from("cleaning_tasks")
-            .update({ start_at: taskStartAt, end_at: taskEndAt, nights_to_show: nights })
+            .update({ start_at: taskStartAt, end_at: taskEndAt, nights_to_show: nights, reference })
             .eq("id", existingTasks[0].id)
             .eq("locked", false);
         }
