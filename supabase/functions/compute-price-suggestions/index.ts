@@ -172,7 +172,7 @@ Deno.serve(async (req) => {
       else if (upliftPct >= 10) colorLevel = "orange";
       else if (upliftPct < 1) colorLevel = "none";
 
-      if (upliftPct > 0) {
+      if (upliftPct > 0 && confidence >= 0.1) {
         suggestions.push({
           host_user_id: userId,
           listing_id,
