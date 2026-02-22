@@ -27,6 +27,7 @@ export function AdminCleanerManagement() {
   const [listings, setListings] = useState<any[]>([]);
   const [addCode, setAddCode] = useState("");
   const [adding, setAdding] = useState(false);
+  const [knownCleanerIds, setKnownCleanerIds] = useState<string[]>([]);
 
   const fetchData = async () => {
     if (!user) return;
@@ -40,15 +41,20 @@ export function AdminCleanerManagement() {
       .select("id, cleaner_user_id, listing_id, listings(name)")
       .eq("host_user_id", user.id);
 
-    if (!assignments || assignments.length === 0) { setCleaners([]); return; }
+    // Get unique cleaner user_ids from assignments
+    const cleanerIdsFromAssignments = [...new Set((assignments || []).map((a: any) => a.cleaner_user_id))];
+    
+    // Also get cleaners who have the cleaner role and a profile, that this host has previously added
+    // We track them via knownCleanerIds in state after add_cleaner succeeds
+    const allCleanerIds = [...new Set([...cleanerIdsFromAssignments, ...knownCleanerIds])];
+    
+    if (allCleanerIds.length === 0) { setCleaners([]); return; }
 
-    // Get unique cleaner user_ids
-    const cleanerIds = [...new Set(assignments.map((a: any) => a.cleaner_user_id))];
-    const { data: profiles } = await supabase.from("profiles").select("user_id, name, email, unique_code").in("user_id", cleanerIds);
+    const { data: profiles } = await supabase.from("profiles").select("user_id, name, email, unique_code").in("user_id", allCleanerIds);
 
     const cleanerList: CleanerWithAssignments[] = (profiles || []).map((p) => ({
       ...p,
-      assignments: assignments
+      assignments: (assignments || [])
         .filter((a: any) => a.cleaner_user_id === p.user_id)
         .map((a: any) => ({ id: a.id, listing_id: a.listing_id, listing_name: (a.listings as any)?.name || "Unknown" })),
     }));
@@ -66,6 +72,9 @@ export function AdminCleanerManagement() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+      if (data?.cleaner_user_id) {
+        setKnownCleanerIds(prev => [...new Set([...prev, data.cleaner_user_id])]);
+      }
       toast({ title: "Cleaner added!", description: `${data.cleaner_name} has been added.` });
       setAddCode("");
       fetchData();
