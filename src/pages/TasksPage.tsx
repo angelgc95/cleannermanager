@@ -7,24 +7,107 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { Settings2 } from "lucide-react";
+import { Settings2, Plus, Loader2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ChecklistTemplateEditor } from "@/components/admin/ChecklistTemplateEditor";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 interface TemplateOption { id: string; name: string; }
 interface Section { id: string; title: string; sort_order: number; items: { id: string; item_key: string | null; label: string; type: string; required: boolean; sort_order: number; help_text: string | null; }[]; }
 
+const DEFAULT_TEMPLATE_SECTIONS = [
+  {
+    title: "Arrival & Check-In",
+    sort_order: 1,
+    items: [
+      { label: "Check-in time logged", type: "YESNO", required: true, sort_order: 1, help_text: null },
+      { label: "Previous guest has checked out", type: "YESNO", required: true, sort_order: 2, help_text: "Confirm the property is vacated" },
+      { label: "Keys / lockbox in place", type: "YESNO", required: true, sort_order: 3, help_text: null },
+      { label: "Photo of entrance on arrival", type: "PHOTO", required: false, sort_order: 4, help_text: null },
+    ],
+  },
+  {
+    title: "Kitchen",
+    sort_order: 2,
+    items: [
+      { label: "Surfaces wiped & clean", type: "YESNO", required: true, sort_order: 1, help_text: null },
+      { label: "Appliances clean (oven, microwave, fridge)", type: "YESNO", required: true, sort_order: 2, help_text: null },
+      { label: "Dishes washed & put away", type: "YESNO", required: true, sort_order: 3, help_text: null },
+      { label: "Bins emptied", type: "YESNO", required: true, sort_order: 4, help_text: null },
+      { label: "Supplies restocked (soap, sponge, bags)", type: "YESNO", required: true, sort_order: 5, help_text: null },
+      { label: "Photo of kitchen", type: "PHOTO", required: false, sort_order: 6, help_text: null },
+    ],
+  },
+  {
+    title: "Bathroom(s)",
+    sort_order: 3,
+    items: [
+      { label: "Toilet cleaned & sanitized", type: "YESNO", required: true, sort_order: 1, help_text: null },
+      { label: "Shower / bathtub cleaned", type: "YESNO", required: true, sort_order: 2, help_text: null },
+      { label: "Mirror & sink cleaned", type: "YESNO", required: true, sort_order: 3, help_text: null },
+      { label: "Fresh towels set out", type: "YESNO", required: true, sort_order: 4, help_text: "Check towel count matches guest number" },
+      { label: "Toiletries restocked", type: "YESNO", required: true, sort_order: 5, help_text: "Shampoo, conditioner, body wash, toilet paper" },
+      { label: "Photo of bathroom", type: "PHOTO", required: false, sort_order: 6, help_text: null },
+    ],
+  },
+  {
+    title: "Bedroom(s)",
+    sort_order: 4,
+    items: [
+      { label: "Bed made with fresh linen", type: "YESNO", required: true, sort_order: 1, help_text: null },
+      { label: "Surfaces dusted", type: "YESNO", required: true, sort_order: 2, help_text: null },
+      { label: "Wardrobe / drawers empty & clean", type: "YESNO", required: true, sort_order: 3, help_text: null },
+      { label: "Photo of bedroom", type: "PHOTO", required: false, sort_order: 4, help_text: null },
+    ],
+  },
+  {
+    title: "Living Area",
+    sort_order: 5,
+    items: [
+      { label: "Floors vacuumed / mopped", type: "YESNO", required: true, sort_order: 1, help_text: null },
+      { label: "Furniture wiped down", type: "YESNO", required: true, sort_order: 2, help_text: null },
+      { label: "Windows & glass clean", type: "YESNO", required: false, sort_order: 3, help_text: null },
+      { label: "TV remote & controls in place", type: "YESNO", required: true, sort_order: 4, help_text: null },
+    ],
+  },
+  {
+    title: "Final Checks & Checkout",
+    sort_order: 6,
+    items: [
+      { label: "All lights & appliances off", type: "YESNO", required: true, sort_order: 1, help_text: null },
+      { label: "Thermostat / AC set correctly", type: "YESNO", required: false, sort_order: 2, help_text: null },
+      { label: "Doors & windows locked", type: "YESNO", required: true, sort_order: 3, help_text: null },
+      { label: "Any damage or issues found?", type: "TEXT", required: false, sort_order: 4, help_text: "Describe any issues noticed" },
+      { label: "Overall notes", type: "TEXT", required: false, sort_order: 5, help_text: null },
+      { label: "Check-out time logged", type: "YESNO", required: true, sort_order: 6, help_text: null },
+    ],
+  },
+];
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const navigate = useNavigate();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
+  const { toast } = useToast();
   const isHost = role === "host";
   const [editorOpen, setEditorOpen] = useState(false);
   const [templates, setTemplates] = useState<TemplateOption[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     const fetch = async () => {
@@ -38,13 +121,18 @@ export default function TasksPage() {
     fetch();
   }, []);
 
-  const openEditor = useCallback(async () => {
-    setEditorOpen(true);
+  const fetchTemplates = useCallback(async () => {
     const { data } = await supabase.from("checklist_templates").select("id, name").eq("active", true).order("name");
     const tpls = data || [];
     setTemplates(tpls);
+    return tpls;
+  }, []);
+
+  const openEditor = useCallback(async () => {
+    setEditorOpen(true);
+    const tpls = await fetchTemplates();
     if (tpls.length > 0 && !selectedTemplateId) setSelectedTemplateId(tpls[0].id);
-  }, [selectedTemplateId]);
+  }, [selectedTemplateId, fetchTemplates]);
 
   useEffect(() => {
     if (!selectedTemplateId) { setSections([]); return; }
@@ -57,6 +145,52 @@ export default function TasksPage() {
     };
     fetchSections();
   }, [selectedTemplateId]);
+
+  const createTemplate = async (withSuggestions: boolean) => {
+    if (!newTemplateName.trim() || !user?.id) return;
+    setCreating(true);
+    try {
+      const { data: tpl, error: tplErr } = await supabase
+        .from("checklist_templates")
+        .insert({ name: newTemplateName.trim(), host_user_id: user.id })
+        .select("id, name")
+        .single();
+      if (tplErr || !tpl) throw tplErr;
+
+      if (withSuggestions) {
+        for (const sec of DEFAULT_TEMPLATE_SECTIONS) {
+          const { data: secData, error: secErr } = await supabase
+            .from("checklist_sections")
+            .insert({ template_id: tpl.id, title: sec.title, sort_order: sec.sort_order, host_user_id: user.id })
+            .select("id")
+            .single();
+          if (secErr || !secData) continue;
+
+          const itemsToInsert = sec.items.map((item) => ({
+            section_id: secData.id,
+            label: item.label,
+            type: item.type as any,
+            required: item.required,
+            sort_order: item.sort_order,
+            help_text: item.help_text,
+            host_user_id: user.id,
+          }));
+          await supabase.from("checklist_items").insert(itemsToInsert);
+        }
+      }
+
+      toast({ title: "Template created", description: withSuggestions ? "Pre-filled with suggested items — customize as needed." : "Empty template created." });
+      setCreateDialogOpen(false);
+      setNewTemplateName("");
+      setSelectedTemplateId(tpl.id);
+      await fetchTemplates();
+      if (!editorOpen) setEditorOpen(true);
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.message || "Failed to create template", variant: "destructive" });
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const { upcomingTasks, completedTasks } = useMemo(() => {
     const upcoming: any[] = []; const completed: any[] = [];
@@ -90,7 +224,18 @@ export default function TasksPage() {
 
   return (
     <div>
-      <PageHeader title="Checklists" description="Cleaning checklists for each scheduled listing task" actions={isHost ? (<Button variant="outline" size="sm" onClick={openEditor} className="gap-1.5"><Settings2 className="h-4 w-4" /> Edit Template</Button>) : undefined} />
+      <PageHeader title="Checklists" description="Cleaning checklists for each scheduled listing task" actions={isHost ? (
+        <div className="flex gap-2">
+          <Button variant="default" size="sm" onClick={() => setCreateDialogOpen(true)} className="gap-1.5">
+            <Plus className="h-4 w-4" /> Create Template
+          </Button>
+          {templates.length > 0 && (
+            <Button variant="outline" size="sm" onClick={openEditor} className="gap-1.5">
+              <Settings2 className="h-4 w-4" /> Edit Template
+            </Button>
+          )}
+        </div>
+      ) : undefined} />
       <div className="p-6 space-y-4">
         <Tabs defaultValue="upcoming">
           <TabsList className="w-full"><TabsTrigger value="upcoming" className="flex-1">Upcoming</TabsTrigger><TabsTrigger value="completed" className="flex-1">Completed</TabsTrigger></TabsList>
@@ -98,11 +243,35 @@ export default function TasksPage() {
           <TabsContent value="completed" className="space-y-2">{completedTasks.length === 0 ? <p className="text-center text-muted-foreground py-8">No completed checklists yet.</p> : completedTasks.map((task) => <TaskCard key={task.id} task={task} />)}</TabsContent>
         </Tabs>
       </div>
+
+      {/* Create Template Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Create Checklist Template</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>Template Name</Label>
+              <Input value={newTemplateName} onChange={(e) => setNewTemplateName(e.target.value)} placeholder="e.g. Standard Cleaning, Deep Clean..." />
+            </div>
+            <p className="text-xs text-muted-foreground">You can create an empty template or start with suggested sections (Arrival, Kitchen, Bathroom, Bedroom, Living Area, Final Checks) pre-filled with common items.</p>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => createTemplate(false)} disabled={!newTemplateName.trim() || creating}>
+              {creating ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null} Empty Template
+            </Button>
+            <Button onClick={() => createTemplate(true)} disabled={!newTemplateName.trim() || creating}>
+              {creating ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null} With Suggestions
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Template Sheet */}
       <Sheet open={editorOpen} onOpenChange={setEditorOpen}>
         <SheetContent className="sm:max-w-lg overflow-y-auto">
           <SheetHeader><SheetTitle>Edit Checklist Template</SheetTitle></SheetHeader>
           <div className="mt-4 space-y-4">
-            {templates.length > 0 ? (<><Select value={selectedTemplateId || ""} onValueChange={setSelectedTemplateId}><SelectTrigger><SelectValue placeholder="Select template" /></SelectTrigger><SelectContent>{templates.map((t) => (<SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>))}</SelectContent></Select>{selectedTemplateId && <ChecklistTemplateEditor sections={sections} templateId={selectedTemplateId} onSectionsUpdated={setSections} />}</>) : (<p className="text-sm text-muted-foreground text-center py-8">No checklist templates found.</p>)}
+            {templates.length > 0 ? (<><Select value={selectedTemplateId || ""} onValueChange={setSelectedTemplateId}><SelectTrigger><SelectValue placeholder="Select template" /></SelectTrigger><SelectContent>{templates.map((t) => (<SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>))}</SelectContent></Select>{selectedTemplateId && <ChecklistTemplateEditor sections={sections} templateId={selectedTemplateId} onSectionsUpdated={setSections} />}</>) : (<div className="text-center py-8 space-y-3"><p className="text-sm text-muted-foreground">No checklist templates found.</p><Button onClick={() => { setEditorOpen(false); setCreateDialogOpen(true); }} className="gap-1.5"><Plus className="h-4 w-4" /> Create Template</Button></div>)}
           </div>
         </SheetContent>
       </Sheet>
