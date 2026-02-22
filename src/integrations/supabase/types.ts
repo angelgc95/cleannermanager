@@ -462,6 +462,51 @@ export type Database = {
           },
         ]
       }
+      events_cache: {
+        Row: {
+          category: string
+          created_at: string
+          date: string
+          host_user_id: string
+          id: string
+          location_key: string
+          popularity_score: number | null
+          raw: Json | null
+          source: string
+          start_time: string | null
+          title: string
+          venue: string | null
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          date: string
+          host_user_id: string
+          id?: string
+          location_key: string
+          popularity_score?: number | null
+          raw?: Json | null
+          source: string
+          start_time?: string | null
+          title: string
+          venue?: string | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          date?: string
+          host_user_id?: string
+          id?: string
+          location_key?: string
+          popularity_score?: number | null
+          raw?: Json | null
+          source?: string
+          start_time?: string | null
+          title?: string
+          venue?: string | null
+        }
+        Relationships: []
+      }
       expenses: {
         Row: {
           amount: number
@@ -577,27 +622,48 @@ export type Database = {
           default_hourly_rate: number
           host_user_id: string
           id: string
+          last_refreshed_at: string | null
+          max_uplift_pct: number
+          min_uplift_pct: number
+          nightly_price_suggestions_enabled: boolean
           payout_frequency: string
           payout_week_end_day: number
+          suggestion_days_ahead: number
+          suggestion_radius_km: number
           timezone: string
+          weights_json: Json
         }
         Insert: {
           created_at?: string
           default_hourly_rate?: number
           host_user_id: string
           id?: string
+          last_refreshed_at?: string | null
+          max_uplift_pct?: number
+          min_uplift_pct?: number
+          nightly_price_suggestions_enabled?: boolean
           payout_frequency?: string
           payout_week_end_day?: number
+          suggestion_days_ahead?: number
+          suggestion_radius_km?: number
           timezone?: string
+          weights_json?: Json
         }
         Update: {
           created_at?: string
           default_hourly_rate?: number
           host_user_id?: string
           id?: string
+          last_refreshed_at?: string | null
+          max_uplift_pct?: number
+          min_uplift_pct?: number
+          nightly_price_suggestions_enabled?: boolean
           payout_frequency?: string
           payout_week_end_day?: number
+          suggestion_days_ahead?: number
+          suggestion_radius_km?: number
           timezone?: string
+          weights_json?: Json
         }
         Relationships: []
       }
@@ -647,6 +713,9 @@ export type Database = {
       }
       listings: {
         Row: {
+          base_nightly_price: number | null
+          city: string | null
+          country_code: string | null
           created_at: string
           currency: string | null
           default_checkin_time: string | null
@@ -657,12 +726,17 @@ export type Database = {
           ics_url_other: string | null
           id: string
           last_synced_at: string | null
+          lat: number | null
+          lng: number | null
           name: string
           sync_enabled: boolean | null
           timezone: string | null
           updated_at: string
         }
         Insert: {
+          base_nightly_price?: number | null
+          city?: string | null
+          country_code?: string | null
           created_at?: string
           currency?: string | null
           default_checkin_time?: string | null
@@ -673,12 +747,17 @@ export type Database = {
           ics_url_other?: string | null
           id?: string
           last_synced_at?: string | null
+          lat?: number | null
+          lng?: number | null
           name: string
           sync_enabled?: boolean | null
           timezone?: string | null
           updated_at?: string
         }
         Update: {
+          base_nightly_price?: number | null
+          city?: string | null
+          country_code?: string | null
           created_at?: string
           currency?: string | null
           default_checkin_time?: string | null
@@ -689,6 +768,8 @@ export type Database = {
           ics_url_other?: string | null
           id?: string
           last_synced_at?: string | null
+          lat?: number | null
+          lng?: number | null
           name?: string
           sync_enabled?: boolean | null
           timezone?: string | null
@@ -1026,6 +1107,62 @@ export type Database = {
             columns: ["period_id"]
             isOneToOne: false
             referencedRelation: "payout_periods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pricing_suggestions: {
+        Row: {
+          base_price: number
+          color_level: string
+          confidence: number
+          created_at: string
+          date: string
+          host_user_id: string
+          id: string
+          listing_id: string
+          reasons: Json
+          reviewed: boolean
+          suggested_price: number
+          updated_at: string
+          uplift_pct: number
+        }
+        Insert: {
+          base_price: number
+          color_level?: string
+          confidence?: number
+          created_at?: string
+          date: string
+          host_user_id: string
+          id?: string
+          listing_id: string
+          reasons?: Json
+          reviewed?: boolean
+          suggested_price: number
+          updated_at?: string
+          uplift_pct?: number
+        }
+        Update: {
+          base_price?: number
+          color_level?: string
+          confidence?: number
+          created_at?: string
+          date?: string
+          host_user_id?: string
+          id?: string
+          listing_id?: string
+          reasons?: Json
+          reviewed?: boolean
+          suggested_price?: number
+          updated_at?: string
+          uplift_pct?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pricing_suggestions_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "listings"
             referencedColumns: ["id"]
           },
         ]

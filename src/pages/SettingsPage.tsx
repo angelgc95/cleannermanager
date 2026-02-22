@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Loader2, RefreshCw, DollarSign } from "lucide-react";
 import { NotificationSettings } from "@/components/NotificationSettings";
+import { PricingSuggestionsSettings } from "@/components/PricingSuggestionsSettings";
 import { AdminCleanerManagement } from "@/components/admin/AdminCleanerManagement";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -74,7 +75,7 @@ export default function SettingsPage() {
   const [listings, setListings] = useState<any[]>([]);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [newListing, setNewListing] = useState({ name: "", default_checkin_time: "15:00", default_checkout_time: "11:00", ics_url_airbnb: "", ics_url_booking: "" });
+  const [newListing, setNewListing] = useState({ name: "", default_checkin_time: "15:00", default_checkout_time: "11:00", ics_url_airbnb: "", ics_url_booking: "", city: "", country_code: "", base_nightly_price: "" });
   const [settings, setSettings] = useState<any>(null);
 
   const fetchSettings = async () => {
@@ -98,7 +99,14 @@ export default function SettingsPage() {
     e.preventDefault();
     if (!user) return;
     const { error } = await supabase.from("listings").insert([{
-      ...newListing,
+      name: newListing.name,
+      default_checkin_time: newListing.default_checkin_time,
+      default_checkout_time: newListing.default_checkout_time,
+      ics_url_airbnb: newListing.ics_url_airbnb || null,
+      ics_url_booking: newListing.ics_url_booking || null,
+      city: newListing.city || null,
+      country_code: newListing.country_code || null,
+      base_nightly_price: newListing.base_nightly_price ? parseFloat(newListing.base_nightly_price) : null,
       host_user_id: user.id,
     }]);
     if (error) {
@@ -106,7 +114,7 @@ export default function SettingsPage() {
     } else {
       toast({ title: "Listing added" });
       setShowAdd(false);
-      setNewListing({ name: "", default_checkin_time: "15:00", default_checkout_time: "11:00", ics_url_airbnb: "", ics_url_booking: "" });
+      setNewListing({ name: "", default_checkin_time: "15:00", default_checkout_time: "11:00", ics_url_airbnb: "", ics_url_booking: "", city: "", country_code: "", base_nightly_price: "" });
       fetchListings();
     }
   };
@@ -144,6 +152,11 @@ export default function SettingsPage() {
                   <div className="space-y-1"><Label>Check-in Time</Label><Input type="time" value={newListing.default_checkin_time} onChange={(e) => setNewListing({ ...newListing, default_checkin_time: e.target.value })} /></div>
                   <div className="space-y-1"><Label>Check-out Time</Label><Input type="time" value={newListing.default_checkout_time} onChange={(e) => setNewListing({ ...newListing, default_checkout_time: e.target.value })} /></div>
                 </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1"><Label>City</Label><Input placeholder="e.g. Barcelona" value={newListing.city} onChange={(e) => setNewListing({ ...newListing, city: e.target.value })} /></div>
+                  <div className="space-y-1"><Label>Country Code</Label><Input placeholder="e.g. ES" maxLength={2} value={newListing.country_code} onChange={(e) => setNewListing({ ...newListing, country_code: e.target.value.toUpperCase() })} /></div>
+                  <div className="space-y-1"><Label>Base Nightly Price</Label><Input type="number" step="1" placeholder="e.g. 120" value={newListing.base_nightly_price} onChange={(e) => setNewListing({ ...newListing, base_nightly_price: e.target.value })} /></div>
+                </div>
                 <div className="space-y-2">
                   <Label>iCalendar URLs (optional)</Label>
                   <Input placeholder="Airbnb iCal URL" value={newListing.ics_url_airbnb} onChange={(e) => setNewListing({ ...newListing, ics_url_airbnb: e.target.value })} className="text-xs" />
@@ -161,9 +174,12 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold">{p.name}</h3>
               </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                 <div><p className="text-muted-foreground">Check-in</p><p className="font-medium">{p.default_checkin_time?.slice(0, 5)}</p></div>
                 <div><p className="text-muted-foreground">Check-out</p><p className="font-medium">{p.default_checkout_time?.slice(0, 5)}</p></div>
+                <div><p className="text-muted-foreground">City</p><p className="font-medium">{p.city || "—"}</p></div>
+                <div><p className="text-muted-foreground">Country</p><p className="font-medium">{p.country_code || "—"}</p></div>
+                <div><p className="text-muted-foreground">Base Price</p><p className="font-medium">{p.base_nightly_price ? `€${p.base_nightly_price}` : "—"}</p></div>
               </div>
               <div className="mt-3 pt-3 border-t border-border">
                 <Label className="text-xs text-muted-foreground mb-1 block">ICS URLs</Label>
@@ -188,6 +204,7 @@ export default function SettingsPage() {
 
         <AdminCleanerManagement />
         {settings && <PayoutScheduleSettings settings={settings} onUpdate={fetchSettings} />}
+        {settings && <PricingSuggestionsSettings settings={settings} listings={listings} onUpdate={() => { fetchSettings(); }} />}
         <NotificationSettings />
       </div>
     </div>
