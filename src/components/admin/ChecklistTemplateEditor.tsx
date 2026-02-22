@@ -42,7 +42,7 @@ interface ChecklistTemplateEditorProps {
 }
 
 export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdated }: ChecklistTemplateEditorProps) {
-  const { orgId } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [editMode, setEditMode] = useState(false);
   const [editingSection, setEditingSection] = useState<{ id: string; title: string } | null>(null);
@@ -61,7 +61,7 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
     const maxSort = Math.max(0, ...sections.map((s) => s.sort_order));
     const { data, error } = await supabase
       .from("checklist_sections")
-      .insert({ template_id: templateId, title: newSectionTitle.trim(), sort_order: maxSort + 1, org_id: orgId })
+      .insert({ template_id: templateId, title: newSectionTitle.trim(), sort_order: maxSort + 1, host_user_id: user?.id })
       .select("id, title, sort_order")
       .single();
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
@@ -106,7 +106,7 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
         required: newItemRequired,
         help_text: newItemHelpText.trim() || null,
         sort_order: maxSort + 1,
-        org_id: orgId,
+        host_user_id: user?.id,
       })
       .select("id, item_key, label, type, required, sort_order, help_text")
       .single();

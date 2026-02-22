@@ -28,15 +28,15 @@ interface ShoppingItem {
 }
 interface Submission {
   id: string; created_by_user_id: string; created_at: string; status: string; notes: string | null;
-  org_id: string | null;
+  host_user_id: string | null;
 }
 interface SelectedProduct { productId: string; quantity: number; note: string; }
 
 /* ═══════════════════════════════════════════ */
 export default function ShoppingPage() {
-  const { user, orgId, role } = useAuth();
+  const { user, hostId, role } = useAuth();
   const { toast } = useToast();
-  const isAdmin = role === "admin" || role === "manager";
+  const isAdmin = role === "host";
 
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [items, setItems] = useState<ShoppingItem[]>([]);
@@ -61,14 +61,14 @@ export default function ShoppingPage() {
   if (loading) return <div className="p-6 text-muted-foreground">Loading...</div>;
 
   return isAdmin
-    ? <AdminShoppingView submissions={submissions} items={items} products={products} user={user} orgId={orgId} toast={toast} onRefresh={fetchAll} />
-    : <CleanerShoppingView submissions={submissions} items={items} products={products} user={user} orgId={orgId} toast={toast} onRefresh={fetchAll} />;
+    ? <AdminShoppingView submissions={submissions} items={items} products={products} user={user} hostId={hostId} toast={toast} onRefresh={fetchAll} />
+    : <CleanerShoppingView submissions={submissions} items={items} products={products} user={user} hostId={hostId} toast={toast} onRefresh={fetchAll} />;
 }
 
 /* ═══════════════════════════════════════════
    CLEANER VIEW
    ═══════════════════════════════════════════ */
-function CleanerShoppingView({ submissions, items, products, user, orgId, toast, onRefresh }: any) {
+function CleanerShoppingView({ submissions, items, products, user, hostId, toast, onRefresh }: any) {
   const [selected, setSelected] = useState<SelectedProduct[]>([]);
   const [search, setSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -97,7 +97,7 @@ function CleanerShoppingView({ submissions, items, products, user, orgId, toast,
     // 1. Create submission
     const { data: sub, error: subErr } = await supabase
       .from("shopping_submissions")
-      .insert({ created_by_user_id: user.id, org_id: orgId, status: "PENDING" })
+      .insert({ created_by_user_id: user.id, host_user_id: hostId, status: "PENDING" } as any)
       .select("id")
       .single();
 
@@ -112,13 +112,13 @@ function CleanerShoppingView({ submissions, items, products, user, orgId, toast,
       product_id: s.productId,
       created_by_user_id: user.id,
       status: "MISSING" as const,
-      org_id: orgId,
+      host_user_id: hostId,
       quantity_needed: s.quantity,
       note: s.note || null,
       created_from: "MANUAL" as const,
       submission_id: sub.id,
     }));
-    const { error } = await supabase.from("shopping_list").insert(rows);
+    const { error } = await supabase.from("shopping_list").insert(rows as any);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
@@ -261,7 +261,7 @@ function SubmissionCard({ submission, items, actions }: { submission: Submission
 /* ═══════════════════════════════════════════
    ADMIN VIEW
    ═══════════════════════════════════════════ */
-function AdminShoppingView({ submissions, items, products, user, orgId, toast, onRefresh }: any) {
+function AdminShoppingView({ submissions, items, products, user, hostId, toast, onRefresh }: any) {
   const [clearing, setClearing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState(1);
@@ -327,14 +327,14 @@ function AdminShoppingView({ submissions, items, products, user, orgId, toast, o
     if (!user || adminSelected.length === 0) return;
     // Create a submission for admin-added items too
     const { data: sub } = await supabase.from("shopping_submissions")
-      .insert({ created_by_user_id: user.id, org_id: orgId, status: "PENDING" })
+      .insert({ created_by_user_id: user.id, host_user_id: hostId, status: "PENDING" } as any)
       .select("id").single();
     if (!sub) return;
     const rows = adminSelected.map((s) => ({
       product_id: s.productId, created_by_user_id: user.id, status: "MISSING" as const,
-      org_id: orgId, quantity_needed: s.quantity, created_from: "MANUAL" as const, submission_id: sub.id,
+      host_user_id: hostId, quantity_needed: s.quantity, created_from: "MANUAL" as const, submission_id: sub.id,
     }));
-    await supabase.from("shopping_list").insert(rows);
+    await supabase.from("shopping_list").insert(rows as any);
     setAdminSelected([]);
     toast({ title: "Added", description: `${rows.length} item(s) added.` });
     onRefresh();
@@ -356,7 +356,7 @@ function AdminShoppingView({ submissions, items, products, user, orgId, toast, o
 
   const handleAddProduct = async () => {
     if (!newProductName.trim()) return;
-    await supabase.from("products").insert({ name: newProductName.trim(), category: newProductCategory.trim() || null, org_id: orgId, active: true });
+    await supabase.from("products").insert({ name: newProductName.trim(), category: newProductCategory.trim() || null, host_user_id: hostId, active: true } as any);
     setNewProductName("");
     setNewProductCategory("");
     toast({ title: "Product added" });
