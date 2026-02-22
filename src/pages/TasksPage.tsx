@@ -9,10 +9,11 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { Settings2, Plus, Loader2 } from "lucide-react";
+import { Settings2, Plus, Loader2, Sparkles } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { ChecklistTemplateEditor } from "@/components/admin/ChecklistTemplateEditor";
 import {
@@ -26,7 +27,13 @@ import {
 interface TemplateOption { id: string; name: string; }
 interface Section { id: string; title: string; sort_order: number; items: { id: string; item_key: string | null; label: string; type: string; required: boolean; sort_order: number; help_text: string | null; }[]; }
 
-const DEFAULT_TEMPLATE_SECTIONS = [
+interface SectionSuggestion {
+  title: string;
+  sort_order: number;
+  items: { label: string; type: string; required: boolean; sort_order: number; help_text: string | null; }[];
+}
+
+const DEFAULT_TEMPLATE_SECTIONS: SectionSuggestion[] = [
   {
     title: "Arrival & Check-In",
     sort_order: 1,
@@ -107,6 +114,7 @@ export default function TasksPage() {
   const [sections, setSections] = useState<Section[]>([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState("");
+  const [listingDescription, setListingDescription] = useState("");
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -146,10 +154,44 @@ export default function TasksPage() {
     fetchSections();
   }, [selectedTemplateId]);
 
-  const createTemplate = async (withSuggestions: boolean) => {
+  const insertSectionsAndItems = async (templateId: string, sectionsData: SectionSuggestion[]) => {
+    for (const sec of sectionsData) {
+      const { data: secData, error: secErr } = await supabase
+        .from("checklist_sections")
+        .insert({ template_id: templateId, title: sec.title, sort_order: sec.sort_order, host_user_id: user!.id })
+        .select("id")
+        .single();
+      if (secErr || !secData) continue;
+
+      const itemsToInsert = sec.items.map((item) => ({
+        section_id: secData.id,
+        label: item.label,
+        type: item.type as any,
+        required: item.required,
+        sort_order: item.sort_order,
+        help_text: item.help_text,
+        host_user_id: user!.id,
+      }));
+      await supabase.from("checklist_items").insert(itemsToInsert);
+    }
+  };
+
+  const createTemplate = async (mode: "empty" | "default" | "ai") => {
     if (!newTemplateName.trim() || !user?.id) return;
     setCreating(true);
     try {
+      let aiSections: SectionSuggestion[] | null = null;
+      if (mode === "ai") {
+        const { data: aiData, error: aiErr } = await supabase.functions.invoke("generate-checklist-suggestions", {
+          body: { description: listingDescription.trim() },
+        });
+        if (aiErr || !aiData?.sections) {
+          toast({ title: "AI suggestions failed", description: "Falling back to default suggestions.", variant: "destructive" });
+        } else {
+          aiSections = aiData.sections;
+        }
+      }
+
       const { data: tpl, error: tplErr } = await supabase
         .from("checklist_templates")
         .insert({ name: newTemplateName.trim(), host_user_id: user.id })
@@ -157,31 +199,19 @@ export default function TasksPage() {
         .single();
       if (tplErr || !tpl) throw tplErr;
 
-      if (withSuggestions) {
-        for (const sec of DEFAULT_TEMPLATE_SECTIONS) {
-          const { data: secData, error: secErr } = await supabase
-            .from("checklist_sections")
-            .insert({ template_id: tpl.id, title: sec.title, sort_order: sec.sort_order, host_user_id: user.id })
-            .select("id")
-            .single();
-          if (secErr || !secData) continue;
-
-          const itemsToInsert = sec.items.map((item) => ({
-            section_id: secData.id,
-            label: item.label,
-            type: item.type as any,
-            required: item.required,
-            sort_order: item.sort_order,
-            help_text: item.help_text,
-            host_user_id: user.id,
-          }));
-          await supabase.from("checklist_items").insert(itemsToInsert);
-        }
+      if (mode !== "empty") {
+        await insertSectionsAndItems(tpl.id, aiSections || DEFAULT_TEMPLATE_SECTIONS);
       }
 
-      toast({ title: "Template created", description: withSuggestions ? "Pre-filled with suggested items — customize as needed." : "Empty template created." });
+      const desc = mode === "ai" && aiSections
+        ? "AI-generated suggestions based on your description — customize as needed."
+        : mode === "default"
+        ? "Pre-filled with default items — customize as needed."
+        : "Empty template created.";
+      toast({ title: "Template created", description: desc });
       setCreateDialogOpen(false);
       setNewTemplateName("");
+      setListingDescription("");
       setSelectedTemplateId(tpl.id);
       await fetchTemplates();
       if (!editorOpen) setEditorOpen(true);
@@ -245,22 +275,41 @@ export default function TasksPage() {
       </div>
 
       {/* Create Template Dialog */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent>
+      <Dialog open={createDialogOpen} onOpenChange={(open) => { setCreateDialogOpen(open); if (!open) { setNewTemplateName(""); setListingDescription(""); } }}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>Create Checklist Template</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
+          <div className="space-y-4">
+            <div className="space-y-1.5">
               <Label>Template Name</Label>
               <Input value={newTemplateName} onChange={(e) => setNewTemplateName(e.target.value)} placeholder="e.g. Standard Cleaning, Deep Clean..." />
             </div>
-            <p className="text-xs text-muted-foreground">You can create an empty template or start with suggested sections (Arrival, Kitchen, Bathroom, Bedroom, Living Area, Final Checks) pre-filled with common items.</p>
+            <div className="space-y-1.5">
+              <Label>Describe your listing <span className="text-muted-foreground font-normal">(for smart suggestions)</span></Label>
+              <Textarea
+                value={listingDescription}
+                onChange={(e) => setListingDescription(e.target.value)}
+                placeholder="e.g. Double bedroom with shared bathroom, small kitchen, no garden, balcony with outdoor furniture..."
+                rows={3}
+                className="resize-none"
+              />
+              <p className="text-xs text-muted-foreground">
+                {listingDescription.trim().length >= 5
+                  ? "✨ AI will generate a tailored checklist based on your description."
+                  : "Add a description to get AI-tailored suggestions, or leave empty for generic defaults."}
+              </p>
+            </div>
           </div>
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" onClick={() => createTemplate(false)} disabled={!newTemplateName.trim() || creating}>
-              {creating ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null} Empty Template
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            <Button
+              onClick={() => createTemplate(listingDescription.trim().length >= 5 ? "ai" : "default")}
+              disabled={!newTemplateName.trim() || creating}
+              className="w-full gap-1.5"
+            >
+              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {listingDescription.trim().length >= 5 ? "Generate Smart Suggestions" : "Use Default Suggestions"}
             </Button>
-            <Button onClick={() => createTemplate(true)} disabled={!newTemplateName.trim() || creating}>
-              {creating ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null} With Suggestions
+            <Button variant="outline" onClick={() => createTemplate("empty")} disabled={!newTemplateName.trim() || creating} className="w-full">
+              {creating && <Loader2 className="h-4 w-4 animate-spin mr-1" />} Start Empty
             </Button>
           </DialogFooter>
         </DialogContent>
