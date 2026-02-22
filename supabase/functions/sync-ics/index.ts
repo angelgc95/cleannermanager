@@ -138,6 +138,16 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
         const lockedExists = existingTasks?.some((t: any) => t.locked);
 
         if (!lockedExists && (!existingTasks || existingTasks.length === 0)) {
+          // Generate reference number: CLN-YYYYMMDD-NNN
+          const refDate = endDate.replace(/-/g, "");
+          const { count } = await supabase
+            .from("cleaning_tasks")
+            .select("id", { count: "exact", head: true })
+            .eq("host_user_id", listing.host_user_id)
+            .like("reference", `CLN-${refDate}-%`);
+          const seq = String((count || 0) + 1).padStart(3, "0");
+          const reference = `CLN-${refDate}-${seq}`;
+
           const { error: taskError } = await supabase
             .from("cleaning_tasks")
             .insert({
@@ -149,6 +159,7 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
               end_at: taskEndAt,
               previous_booking_id: booking.id,
               nights_to_show: nights,
+              reference,
             });
           if (!taskError) totalTasks++;
         } else if (!lockedExists && existingTasks && existingTasks.length > 0) {
