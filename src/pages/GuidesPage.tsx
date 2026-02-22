@@ -107,7 +107,12 @@ export default function GuidesPage() {
 
   return (
     <div>
-      <PageHeader title="Guides" description="Standard operating procedures and reference documents" actions={isHost ? <Button size="sm" onClick={openNewFolder}><Plus className="h-4 w-4 mr-1" /> New Folder</Button> : undefined} />
+      <PageHeader title="Guides" description="Standard operating procedures and reference documents" actions={isHost ? (
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => { if (folders.length > 0) { setUploadFolderId(folders[0].id); setGuideTitle(""); setSelectedFile(null); } else { toast({ title: "Create a folder first", description: "You need at least one folder to upload files into." }); } }}><Upload className="h-4 w-4 mr-1" /> Upload File</Button>
+          <Button size="sm" onClick={openNewFolder}><Plus className="h-4 w-4 mr-1" /> New Folder</Button>
+        </div>
+      ) : undefined} />
       <div className="p-6 space-y-4 max-w-2xl">
         {guidesByFolder.length === 0 && <p className="text-center text-muted-foreground py-8">No guides uploaded yet.</p>}
         {guidesByFolder.map((folder) => (
