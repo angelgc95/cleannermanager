@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -9,12 +9,53 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import { Settings2 } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ChecklistTemplateEditor } from "@/components/admin/ChecklistTemplateEditor";
+
+interface TemplateOption {
+  id: string;
+  name: string;
+}
+
+interface Section {
+  id: string;
+  title: string;
+  sort_order: number;
+  items: {
+    id: string;
+    item_key: string | null;
+    label: string;
+    type: string;
+    required: boolean;
+    sort_order: number;
+    help_text: string | null;
+  }[];
+}
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const navigate = useNavigate();
   const { role } = useAuth();
   const isAdmin = role === "admin" || role === "manager";
+
+  // Template editor state
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [templates, setTemplates] = useState<TemplateOption[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [sections, setSections] = useState<Section[]>([]);
+
   useEffect(() => {
     const fetch = async () => {
       const { data } = await supabase
@@ -26,6 +67,57 @@ export default function TasksPage() {
     };
     fetch();
   }, []);
+
+  // Fetch templates when editor opens
+  const openEditor = useCallback(async () => {
+    setEditorOpen(true);
+    const { data } = await supabase
+      .from("checklist_templates")
+      .select("id, name")
+      .eq("active", true)
+      .order("name");
+    const tpls = data || [];
+    setTemplates(tpls);
+    if (tpls.length > 0 && !selectedTemplateId) {
+      setSelectedTemplateId(tpls[0].id);
+    }
+  }, [selectedTemplateId]);
+
+  // Fetch sections when selected template changes
+  useEffect(() => {
+    if (!selectedTemplateId) {
+      setSections([]);
+      return;
+    }
+    const fetchSections = async () => {
+      const { data } = await supabase
+        .from("checklist_sections")
+        .select("id, title, sort_order")
+        .eq("template_id", selectedTemplateId)
+        .order("sort_order");
+      const secs = data || [];
+
+      if (secs.length === 0) {
+        setSections([]);
+        return;
+      }
+
+      const { data: items } = await supabase
+        .from("checklist_items")
+        .select("id, item_key, label, type, required, sort_order, help_text, section_id")
+        .in("section_id", secs.map((s) => s.id))
+        .order("sort_order");
+
+      const mapped: Section[] = secs.map((s) => ({
+        ...s,
+        items: (items || [])
+          .filter((i: any) => i.section_id === s.id)
+          .map(({ section_id, ...rest }: any) => rest),
+      }));
+      setSections(mapped);
+    };
+    fetchSections();
+  }, [selectedTemplateId]);
 
   const { upcomingTasks, completedTasks } = useMemo(() => {
     const upcoming: any[] = [];
@@ -39,8 +131,6 @@ export default function TasksPage() {
       }
     }
 
-    // Upcoming: earliest first (already sorted by query)
-    // Completed: most recent first
     completed.sort((a, b) => {
       const da = a.start_at ? new Date(a.start_at).getTime() : 0;
       const db = b.start_at ? new Date(b.start_at).getTime() : 0;
@@ -85,7 +175,7 @@ export default function TasksPage() {
         description="Cleaning checklists for each scheduled listing task"
         actions={
           isAdmin ? (
-            <Button variant="outline" size="sm" onClick={() => navigate("/settings")} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={openEditor} className="gap-1.5">
               <Settings2 className="h-4 w-4" /> Edit Template
             </Button>
           ) : undefined
@@ -115,6 +205,48 @@ export default function TasksPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Template Editor Sheet */}
+      <Sheet open={editorOpen} onOpenChange={setEditorOpen}>
+        <SheetContent className="sm:max-w-lg overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Edit Checklist Template</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 space-y-4">
+            {templates.length > 0 ? (
+              <>
+                <Select
+                  value={selectedTemplateId || ""}
+                  onValueChange={setSelectedTemplateId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templates.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {selectedTemplateId && (
+                  <ChecklistTemplateEditor
+                    sections={sections}
+                    templateId={selectedTemplateId}
+                    onSectionsUpdated={setSections}
+                  />
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No checklist templates found.
+              </p>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
