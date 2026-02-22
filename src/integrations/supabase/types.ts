@@ -388,6 +388,7 @@ export type Database = {
           nights_to_show: number | null
           notes: string | null
           previous_booking_id: string | null
+          reference: string | null
           source: Database["public"]["Enums"]["cleaning_source"] | null
           start_at: string | null
           status: Database["public"]["Enums"]["cleaning_status"] | null
@@ -407,6 +408,7 @@ export type Database = {
           nights_to_show?: number | null
           notes?: string | null
           previous_booking_id?: string | null
+          reference?: string | null
           source?: Database["public"]["Enums"]["cleaning_source"] | null
           start_at?: string | null
           status?: Database["public"]["Enums"]["cleaning_status"] | null
@@ -426,6 +428,7 @@ export type Database = {
           nights_to_show?: number | null
           notes?: string | null
           previous_booking_id?: string | null
+          reference?: string | null
           source?: Database["public"]["Enums"]["cleaning_source"] | null
           start_at?: string | null
           status?: Database["public"]["Enums"]["cleaning_status"] | null

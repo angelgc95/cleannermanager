@@ -72,7 +72,7 @@ export default function TasksPage() {
     <Card key={task.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/tasks/${task.id}`)}>
       <CardContent className="flex items-center justify-between p-4">
         <div className="min-w-0">
-          <p className="font-medium text-sm truncate">{task.listings?.name || "Listing"}</p>
+          <p className="font-medium text-sm truncate">{task.listings?.name || "Listing"}{task.reference ? ` · ${task.reference}` : ""}</p>
           <p className="text-xs text-muted-foreground">
             {task.start_at ? format(new Date(task.start_at), "MMM d, HH:mm") : "No date"}
             {task.end_at ? ` – ${format(new Date(task.end_at), "HH:mm")}` : ""}
