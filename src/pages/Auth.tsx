@@ -15,7 +15,6 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [orgName, setOrgName] = useState("");
   const [loading, setLoading] = useState(false);
   const [cleanerCode, setCleanerCode] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -60,10 +59,7 @@ export default function Auth() {
 
     try {
       const { data, error } = await supabase.functions.invoke("onboard-user", {
-        body: {
-          type,
-          org_name: type === "host" ? (orgName || name) : undefined,
-        },
+        body: { type },
       });
 
       if (error) throw error;
@@ -76,7 +72,7 @@ export default function Auth() {
         return;
       }
 
-      toast({ title: "Welcome!", description: type === "host" ? "Your organization has been created." : "Account created! Share your code with a host to get added." });
+      toast({ title: "Welcome!", description: type === "host" ? "Your host account is ready." : "Account created! Share your code with a host to get added." });
       navigate("/");
     } catch (err: any) {
       toast({ title: "Onboarding failed", description: err.message || "Please try again.", variant: "destructive" });
@@ -106,7 +102,7 @@ export default function Auth() {
             </div>
             <CardTitle className="text-2xl">Welcome, Cleaner!</CardTitle>
             <CardDescription>
-              Your unique ID has been generated. Share it with your host so they can add you to their organization.
+              Your unique ID has been generated. Share it with your host so they can assign you to listings.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -177,10 +173,6 @@ export default function Auth() {
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" required />
               </div>
               <div className="space-y-2">
-                <Label>Organization Name</Label>
-                <Input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="My Rental Business" />
-              </div>
-              <div className="space-y-2">
                 <Label>Email</Label>
                 <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
               </div>
@@ -210,7 +202,7 @@ export default function Auth() {
                 <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
               </div>
               <p className="text-xs text-muted-foreground">
-                After signing up, you'll receive a unique code. Share it with your host to get added to their organization.
+                After signing up, you'll receive a unique code. Share it with your host to get assigned to listings.
               </p>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "Creating..." : "Sign Up as Cleaner"}
