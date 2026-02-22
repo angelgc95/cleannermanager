@@ -1,0 +1,1 @@
+DELETE FROM pricing_suggestions WHERE confidence < 0.1;
