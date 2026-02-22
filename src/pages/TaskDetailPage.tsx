@@ -180,6 +180,12 @@ export default function TaskDetailPage() {
                 <p className="font-medium">{task.guests_to_show ?? "N/A"}</p>
               </div>
             </div>
+            {task.reference && (
+              <div>
+                <p className="text-muted-foreground">Reference</p>
+                <p className="font-medium font-mono text-xs">{task.reference}</p>
+              </div>
+            )}
             {task.notes && (
               <div>
                 <p className="text-muted-foreground">Notes</p>
