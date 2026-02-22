@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Loader2, RefreshCw, DollarSign } from "lucide-react";
+import { Plus, Loader2, RefreshCw, DollarSign, Pencil, Trash2 } from "lucide-react";
 import { NotificationSettings } from "@/components/NotificationSettings";
 import { PricingSuggestionsSettings } from "@/components/PricingSuggestionsSettings";
 import { AdminCleanerManagement } from "@/components/admin/AdminCleanerManagement";
@@ -77,6 +77,8 @@ export default function SettingsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [newListing, setNewListing] = useState({ name: "", default_checkin_time: "15:00", default_checkout_time: "11:00", ics_url_airbnb: "", ics_url_booking: "", city: "", country_code: "", base_nightly_price: "" });
   const [settings, setSettings] = useState<any>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
 
   const fetchSettings = async () => {
     if (!user) return;
@@ -122,6 +124,48 @@ export default function SettingsPage() {
   const updateListing = async (id: string, updates: any) => {
     await supabase.from("listings").update(updates).eq("id", id);
     fetchListings();
+  };
+
+  const deleteListing = async (id: string) => {
+    if (!confirm("Delete this listing? This will also remove associated tasks and bookings.")) return;
+    const { error } = await supabase.from("listings").delete().eq("id", id);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Listing deleted" });
+      fetchListings();
+    }
+  };
+
+  const startEditing = (p: any) => {
+    setEditingId(p.id);
+    setEditForm({
+      name: p.name || "",
+      default_checkin_time: p.default_checkin_time?.slice(0, 5) || "15:00",
+      default_checkout_time: p.default_checkout_time?.slice(0, 5) || "11:00",
+      city: p.city || "",
+      country_code: p.country_code || "",
+      base_nightly_price: p.base_nightly_price ?? "",
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editingId) return;
+    const { error } = await supabase.from("listings").update({
+      name: editForm.name,
+      default_checkin_time: editForm.default_checkin_time,
+      default_checkout_time: editForm.default_checkout_time,
+      city: editForm.city || null,
+      country_code: editForm.country_code || null,
+      base_nightly_price: editForm.base_nightly_price ? parseFloat(editForm.base_nightly_price) : null,
+    }).eq("id", editingId);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Listing updated" });
+      setEditingId(null);
+      fetchListings();
+    }
   };
 
   const syncListing = async (id: string) => {
@@ -173,14 +217,41 @@ export default function SettingsPage() {
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold">{p.name}</h3>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => startEditing(p)}><Pencil className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => deleteListing(p.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                <div><p className="text-muted-foreground">Check-in</p><p className="font-medium">{p.default_checkin_time?.slice(0, 5)}</p></div>
-                <div><p className="text-muted-foreground">Check-out</p><p className="font-medium">{p.default_checkout_time?.slice(0, 5)}</p></div>
-                <div><p className="text-muted-foreground">City</p><p className="font-medium">{p.city || "—"}</p></div>
-                <div><p className="text-muted-foreground">Country</p><p className="font-medium">{p.country_code || "—"}</p></div>
-                <div><p className="text-muted-foreground">Base Price</p><p className="font-medium">{p.base_nightly_price ? `€${p.base_nightly_price}` : "—"}</p></div>
-              </div>
+
+              {editingId === p.id ? (
+                <div className="space-y-3">
+                  <div className="space-y-1"><Label>Name</Label><Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1"><Label>Check-in</Label><Input type="time" value={editForm.default_checkin_time} onChange={(e) => setEditForm({ ...editForm, default_checkin_time: e.target.value })} /></div>
+                    <div className="space-y-1"><Label>Check-out</Label><Input type="time" value={editForm.default_checkout_time} onChange={(e) => setEditForm({ ...editForm, default_checkout_time: e.target.value })} /></div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1"><Label>City</Label><Input value={editForm.city} onChange={(e) => setEditForm({ ...editForm, city: e.target.value })} /></div>
+                    <div className="space-y-1"><Label>Country</Label><Input maxLength={2} value={editForm.country_code} onChange={(e) => setEditForm({ ...editForm, country_code: e.target.value.toUpperCase() })} /></div>
+                    <div className="space-y-1"><Label>Base Price</Label><Input type="number" value={editForm.base_nightly_price} onChange={(e) => setEditForm({ ...editForm, base_nightly_price: e.target.value })} /></div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={saveEdit}>Save</Button>
+                    <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                    <div><p className="text-muted-foreground">Check-in</p><p className="font-medium">{p.default_checkin_time?.slice(0, 5)}</p></div>
+                    <div><p className="text-muted-foreground">Check-out</p><p className="font-medium">{p.default_checkout_time?.slice(0, 5)}</p></div>
+                    <div><p className="text-muted-foreground">City</p><p className="font-medium">{p.city || "—"}</p></div>
+                    <div><p className="text-muted-foreground">Country</p><p className="font-medium">{p.country_code || "—"}</p></div>
+                    <div><p className="text-muted-foreground">Base Price</p><p className="font-medium">{p.base_nightly_price ? `€${p.base_nightly_price}` : "—"}</p></div>
+                  </div>
+                </>
+              )}
+
               <div className="mt-3 pt-3 border-t border-border">
                 <Label className="text-xs text-muted-foreground mb-1 block">ICS URLs</Label>
                 <div className="space-y-2">
