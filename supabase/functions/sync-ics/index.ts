@@ -105,6 +105,15 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
 
         const externalUid = `${platform}:${event.uid}`;
 
+        // Extract confirmation code from description (e.g. Airbnb reservation URL)
+        let confirmationCode = "";
+        if (event.description) {
+          const urlMatch = event.description.match(/airbnb\.com\/hosting\/reservations\/details\/([A-Za-z0-9]+)/);
+          if (urlMatch) {
+            confirmationCode = urlMatch[1];
+          }
+        }
+
         const { data: booking, error: bookingError } = await supabase
           .from("bookings")
           .upsert({
@@ -138,8 +147,7 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
         const lockedExists = existingTasks?.some((t: any) => t.locked);
 
         if (!lockedExists && (!existingTasks || existingTasks.length === 0)) {
-          // Use the booking's external UID as reference (e.g. reservation/confirmation code)
-          const reference = event.uid || externalUid;
+          const reference = confirmationCode || event.uid || externalUid;
 
           const { error: taskError } = await supabase
             .from("cleaning_tasks")
@@ -156,7 +164,7 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
             });
           if (!taskError) totalTasks++;
         } else if (!lockedExists && existingTasks && existingTasks.length > 0) {
-          const reference = event.uid || externalUid;
+          const reference = confirmationCode || event.uid || externalUid;
           await supabase
             .from("cleaning_tasks")
             .update({ start_at: taskStartAt, end_at: taskEndAt, nights_to_show: nights, reference })
