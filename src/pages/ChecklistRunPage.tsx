@@ -11,28 +11,11 @@ import { ArrowLeft, Check, Camera, X, Loader2, Clock, LogIn, LogOut, AlarmClock,
 import { cn } from "@/lib/utils";
 import { ShoppingCheckSection } from "@/components/checklist/ShoppingCheckSection";
 import { ChecklistTemplateEditor } from "@/components/admin/ChecklistTemplateEditor";
+import type { Section, ChecklistItem } from "@/components/admin/ChecklistTemplateEditor";
 import { EventInlineEdit } from "@/components/admin/EventInlineEdit";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-
-interface Section {
-  id: string;
-  title: string;
-  sort_order: number;
-  items: ChecklistItem[];
-}
-
-interface ChecklistItem {
-  id: string;
-  item_key: string | null;
-  label: string;
-  type: string;
-  required: boolean;
-  sort_order: number;
-  help_text: string | null;
-  timer_minutes: number | null;
-}
 
 interface PhotoEntry {
   id?: string;
@@ -52,7 +35,6 @@ const CLOCK_IN_TAB_ID = "__clock_in__";
 const CLOCK_OUT_TAB_ID = "__clock_out__";
 
 export default function ChecklistRunPage() {
-  // Route uses eventId now (was taskId)
   const { eventId } = useParams();
   const navigate = useNavigate();
   const { user, hostId, role } = useAuth();
@@ -85,10 +67,9 @@ export default function ChecklistRunPage() {
   const [missingItems, setMissingItems] = useState<MissingItem[]>([]);
   const [shoppingError, setShoppingError] = useState<string | null>(null);
 
-  // Timer alarm state: itemId -> seconds remaining (null = not started)
+  // Timer alarm state: itemId -> seconds remaining
   const [activeTimers, setActiveTimers] = useState<Record<string, number>>({});
   const [expiredTimers, setExpiredTimers] = useState<Set<string>>(new Set());
-  const timerAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Tick all active timers every second
   useEffect(() => {
@@ -131,6 +112,32 @@ export default function ChecklistRunPage() {
     const s = seconds % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
   };
+
+  // Start any TIMER items that depend on the given item
+  const startDependentTimers = useCallback((triggeredItemId: string) => {
+    const allItems = sections.flatMap(s => s.items);
+    const timerItems = allItems.filter(
+      i => i.type === "TIMER" && i.depends_on_item_id === triggeredItemId && i.timer_minutes && i.timer_minutes > 0
+    );
+    for (const timer of timerItems) {
+      if (!activeTimers[timer.id] && !expiredTimers.has(timer.id)) {
+        setActiveTimers(prev => ({ ...prev, [timer.id]: timer.timer_minutes! * 60 }));
+        toast({ title: `⏰ Timer started`, description: `${timer.label} — ${timer.timer_minutes} min` });
+      }
+    }
+  }, [sections, activeTimers, expiredTimers, toast]);
+
+  // Cancel any TIMER items that depend on the given item
+  const cancelDependentTimers = useCallback((triggeredItemId: string) => {
+    const allItems = sections.flatMap(s => s.items);
+    const timerItems = allItems.filter(
+      i => i.type === "TIMER" && i.depends_on_item_id === triggeredItemId
+    );
+    for (const timer of timerItems) {
+      dismissTimer(timer.id);
+    }
+  }, [sections, dismissTimer]);
+
   useEffect(() => {
     if (!eventId || !user) return;
 
@@ -147,7 +154,6 @@ export default function ChecklistRunPage() {
         return;
       }
 
-      // Use event's stored template, fallback to listing lookup
       let tplId = eventData?.checklist_template_id || "";
       if (!tplId && eventData?.listing_id) {
         const { data: tpl } = await supabase
@@ -173,19 +179,18 @@ export default function ChecklistRunPage() {
       const sectionIds = sectionsData.map((s) => s.id);
       const { data: itemsData } = await supabase
         .from("checklist_items")
-        .select("id, item_key, label, type, required, sort_order, help_text, section_id, timer_minutes")
+        .select("id, item_key, label, type, required, sort_order, help_text, section_id, timer_minutes, depends_on_item_id")
         .in("section_id", sectionIds)
         .order("sort_order");
 
       const fullSections: Section[] = sectionsData.map((s) => ({
         ...s,
-        items: (itemsData || []).filter((i: any) => i.section_id === s.id),
+        items: (itemsData || []).filter((i: any) => i.section_id === s.id) as ChecklistItem[],
       }));
 
       setSections(fullSections);
       if (fullSections.length > 0) setActiveTab(CLOCK_IN_TAB_ID);
 
-      // Check for existing unfinished run
       const { data: existingRuns } = await supabase
         .from("checklist_runs")
         .select("id")
@@ -227,16 +232,11 @@ export default function ChecklistRunPage() {
       [itemId]: newVal,
     }));
 
-    // Auto-start timer if item has timer_minutes and is being marked done
+    // When an item is marked done, start any TIMER items that depend on it
     if (newVal === true) {
-      const item = sections.flatMap(s => s.items).find(i => i.id === itemId);
-      if (item?.timer_minutes && item.timer_minutes > 0 && !activeTimers[itemId]) {
-        setActiveTimers(prev => ({ ...prev, [itemId]: item.timer_minutes! * 60 }));
-        toast({ title: `⏰ Timer started`, description: `${item.label} — ${item.timer_minutes} min countdown` });
-      }
+      startDependentTimers(itemId);
     } else {
-      // If unchecked, cancel the timer
-      dismissTimer(itemId);
+      cancelDependentTimers(itemId);
     }
   };
 
@@ -308,7 +308,8 @@ export default function ChecklistRunPage() {
   };
 
   const getSectionCompletion = (section: Section) => {
-    const required = section.items.filter((i) => i.required);
+    // TIMER items are not required for section completion
+    const required = section.items.filter((i) => i.required && i.type !== "TIMER");
     const completed = required.filter((i) => {
       if (i.type === "PHOTO") return (photos[i.id]?.filter((p) => !p.uploading).length || 0) > 0;
       return responses[i.id] === true;
@@ -381,7 +382,6 @@ export default function ChecklistRunPage() {
       duration_minutes: durationMinutes,
     }).eq("id", runId);
 
-    // Log hours linked to cleaning_event_id
     await supabase.from("log_hours").upsert({
       user_id: user.id,
       date: today,
@@ -425,7 +425,6 @@ export default function ChecklistRunPage() {
       }
     }
 
-    // Mark event as DONE
     await supabase.from("cleaning_events").update({
       status: "DONE",
       checklist_run_id: runId,
@@ -467,6 +466,55 @@ export default function ChecklistRunPage() {
     if (currentIdx < allTabs.length - 1) {
       setActiveTab(allTabs[currentIdx + 1]);
     }
+  };
+
+  // Render a TIMER item card
+  const renderTimerItem = (item: ChecklistItem) => {
+    const isRunning = activeTimers[item.id] !== undefined && activeTimers[item.id] > 0;
+    const isExpired = expiredTimers.has(item.id);
+    const depItem = item.depends_on_item_id
+      ? sections.flatMap(s => s.items).find(i => i.id === item.depends_on_item_id)
+      : null;
+    const depDone = item.depends_on_item_id ? responses[item.depends_on_item_id] === true : false;
+    const isWaiting = !isRunning && !isExpired && !depDone;
+    const isIdle = !isRunning && !isExpired && depDone && !activeTimers[item.id];
+
+    return (
+      <div className="w-full space-y-2">
+        <div className="flex items-center gap-3">
+          <div className={cn(
+            "h-10 w-10 rounded-lg border-2 flex items-center justify-center shrink-0 transition-colors",
+            isExpired ? "bg-destructive border-destructive text-destructive-foreground animate-pulse" :
+            isRunning ? "bg-primary/10 border-primary text-primary" :
+            "border-border"
+          )}>
+            {isExpired ? <Bell className="h-5 w-5" /> :
+             isRunning ? <AlarmClock className="h-5 w-5" /> :
+             <AlarmClock className="h-5 w-5 text-muted-foreground" />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">{item.label}</p>
+            {isWaiting && depItem && (
+              <p className="text-xs text-muted-foreground">Waiting for: {depItem.label}</p>
+            )}
+            {isRunning && (
+              <p className="text-lg font-mono font-bold text-primary">{formatTimer(activeTimers[item.id])}</p>
+            )}
+            {isExpired && (
+              <p className="text-xs font-semibold text-destructive animate-pulse">⏰ Time's up!</p>
+            )}
+            {isIdle && (
+              <p className="text-xs text-muted-foreground">{item.timer_minutes}min — ready to start</p>
+            )}
+          </div>
+          {isExpired && (
+            <Button size="sm" variant="destructive" onClick={() => dismissTimer(item.id)} className="gap-1 shrink-0">
+              <Check className="h-3 w-3" /> Done
+            </Button>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -517,7 +565,7 @@ export default function ChecklistRunPage() {
                   ⏰ Timer expired: {item?.label || "Unknown item"}
                 </div>
                 <Button size="sm" variant="destructive" onClick={() => dismissTimer(itemId)} className="gap-1 shrink-0">
-                  <Check className="h-3 w-3" /> Dismiss
+                  <Check className="h-3 w-3" /> Done
                 </Button>
               </div>
             );
@@ -543,15 +591,18 @@ export default function ChecklistRunPage() {
               {sections.map((section) => {
                 const { done, total } = getSectionCompletion(section);
                 const isComplete = done >= total && total > 0;
+                const hasActiveTimer = section.items.some(i => i.type === "TIMER" && (activeTimers[i.id] > 0 || expiredTimers.has(i.id)));
                 return (
                   <TabsTrigger
                     key={section.id}
                     value={section.id}
                     className={cn(
                       "px-3 py-2.5 text-xs rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent whitespace-nowrap",
-                      isComplete && "text-[hsl(var(--status-done))]"
+                      isComplete && !hasActiveTimer && "text-[hsl(var(--status-done))]",
+                      hasActiveTimer && "text-primary"
                     )}
                   >
+                    {hasActiveTimer && <AlarmClock className="h-3 w-3 mr-1" />}
                     {section.title}
                     <span className="ml-1 text-[10px] text-muted-foreground">
                       {done}/{total}
@@ -625,7 +676,9 @@ export default function ChecklistRunPage() {
                 {section.items.map((item) => (
                   <Card key={item.id}>
                     <CardContent className="p-3">
-                      {item.type === "YESNO" ? (
+                      {item.type === "TIMER" ? (
+                        renderTimerItem(item)
+                      ) : item.type === "YESNO" ? (
                         <button
                           onClick={() => toggleYesNo(item.id)}
                           className="w-full flex items-center gap-3 text-left"
@@ -650,22 +703,6 @@ export default function ChecklistRunPage() {
                             </p>
                             {item.help_text && (
                               <p className="text-xs text-muted-foreground mt-0.5">{item.help_text}</p>
-                            )}
-                            {/* Timer indicator */}
-                            {item.timer_minutes && activeTimers[item.id] !== undefined && activeTimers[item.id] > 0 && (
-                              <p className="text-xs text-primary mt-0.5 flex items-center gap-1 font-mono">
-                                <AlarmClock className="h-3 w-3" /> {formatTimer(activeTimers[item.id])}
-                              </p>
-                            )}
-                            {item.timer_minutes && expiredTimers.has(item.id) && (
-                              <p className="text-xs text-destructive mt-0.5 flex items-center gap-1 font-semibold animate-pulse">
-                                <Bell className="h-3 w-3" /> Timer expired!
-                              </p>
-                            )}
-                            {item.timer_minutes && !activeTimers[item.id] && !expiredTimers.has(item.id) && responses[item.id] !== true && (
-                              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                                <AlarmClock className="h-3 w-3" /> {item.timer_minutes}min timer
-                              </p>
                             )}
                           </div>
                         </button>
@@ -736,7 +773,10 @@ export default function ChecklistRunPage() {
                           className="flex-1"
                           onClick={() => {
                             const updates: Record<string, boolean> = {};
-                            uncheckedYesNo.forEach((i) => { updates[i.id] = true; });
+                            uncheckedYesNo.forEach((i) => {
+                              updates[i.id] = true;
+                              startDependentTimers(i.id);
+                            });
                             setResponses((prev) => ({ ...prev, ...updates }));
                           }}
                         >

@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Pencil, Plus, Trash2, Save, X, GripVertical, Settings2 } from "lucide-react";
+import { Pencil, Plus, Trash2, Save, X, Settings2, AlarmClock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -18,7 +18,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-interface ChecklistItem {
+export interface ChecklistItem {
   id: string;
   item_key: string | null;
   label: string;
@@ -27,9 +27,10 @@ interface ChecklistItem {
   sort_order: number;
   help_text: string | null;
   timer_minutes: number | null;
+  depends_on_item_id: string | null;
 }
 
-interface Section {
+export interface Section {
   id: string;
   title: string;
   sort_order: number;
@@ -56,6 +57,14 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
   const [newItemRequired, setNewItemRequired] = useState(true);
   const [newItemHelpText, setNewItemHelpText] = useState("");
   const [newItemTimerMinutes, setNewItemTimerMinutes] = useState<string>("");
+  const [newItemDependsOn, setNewItemDependsOn] = useState<string>("");
+
+  // Get items from the current section for dependency dropdown (exclude TIMER items)
+  const getSectionItemsForDependency = (sectionId: string, excludeItemId?: string) => {
+    const section = sections.find(s => s.id === sectionId);
+    if (!section) return [];
+    return section.items.filter(i => i.type !== "TIMER" && i.id !== excludeItemId);
+  };
 
   // --- Section CRUD ---
   const addSection = async () => {
@@ -99,19 +108,21 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
     if (!addingItemToSection || !newItemLabel.trim()) return;
     const section = sections.find((s) => s.id === addingItemToSection);
     const maxSort = Math.max(0, ...(section?.items.map((i) => i.sort_order) || [0]));
+    const isTimer = newItemType === "TIMER";
     const { data, error } = await supabase
       .from("checklist_items")
       .insert({
         section_id: addingItemToSection,
         label: newItemLabel.trim(),
         type: newItemType as any,
-        required: newItemRequired,
+        required: isTimer ? false : newItemRequired,
         help_text: newItemHelpText.trim() || null,
-        timer_minutes: newItemTimerMinutes ? parseInt(newItemTimerMinutes) : null,
+        timer_minutes: isTimer && newItemTimerMinutes ? parseInt(newItemTimerMinutes) : null,
+        depends_on_item_id: isTimer && newItemDependsOn ? newItemDependsOn : null,
         sort_order: maxSort + 1,
         host_user_id: user?.id,
       })
-      .select("id, item_key, label, type, required, sort_order, help_text, timer_minutes")
+      .select("id, item_key, label, type, required, sort_order, help_text, timer_minutes, depends_on_item_id")
       .single();
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
     onSectionsUpdated(
@@ -124,17 +135,19 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
   const updateItem = async () => {
     if (!editingItem) return;
     const { sectionId, ...item } = editingItem;
+    const isTimer = item.type === "TIMER";
     const { error } = await supabase.from("checklist_items").update({
       label: item.label,
       type: item.type as any,
-      required: item.required,
+      required: isTimer ? false : item.required,
       help_text: item.help_text,
-      timer_minutes: item.timer_minutes,
+      timer_minutes: isTimer ? item.timer_minutes : null,
+      depends_on_item_id: isTimer ? item.depends_on_item_id : null,
     }).eq("id", item.id);
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
     onSectionsUpdated(
       sections.map((s) => s.id === sectionId
-        ? { ...s, items: s.items.map((i) => i.id === item.id ? { ...i, label: item.label, type: item.type, required: item.required, help_text: item.help_text, timer_minutes: item.timer_minutes } : i) }
+        ? { ...s, items: s.items.map((i) => i.id === item.id ? { ...i, ...item } : i) }
         : s
       )
     );
@@ -158,7 +171,14 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
     setNewItemRequired(true);
     setNewItemHelpText("");
     setNewItemTimerMinutes("");
+    setNewItemDependsOn("");
   };
+
+  // Current type for the dialog
+  const currentType = editingItem ? editingItem.type : newItemType;
+  const isTimerType = currentType === "TIMER";
+  const currentSectionId = editingItem ? editingItem.sectionId : addingItemToSection;
+  const dependencyItems = currentSectionId ? getSectionItemsForDependency(currentSectionId, editingItem?.id) : [];
 
   if (!editMode) {
     return (
@@ -213,22 +233,31 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
               )}
             </div>
 
-            {section.items.map((item) => (
-              <div key={item.id} className="flex items-center gap-2 pl-3 py-1 border-l-2 border-muted text-sm">
-                <span className="flex-1 truncate">
-                  {item.label}
-                  <span className="text-xs text-muted-foreground ml-1">({item.type})</span>
-                  {item.required && <span className="text-destructive ml-0.5">*</span>}
-                  {item.timer_minutes && <span className="text-xs text-muted-foreground ml-1">⏰ {item.timer_minutes}min</span>}
-                </span>
-                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingItem({ ...item, sectionId: section.id })}>
-                  <Pencil className="h-3 w-3" />
-                </Button>
-                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => deleteItem(section.id, item.id)}>
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </div>
-            ))}
+            {section.items.map((item) => {
+              const depItem = item.depends_on_item_id ? section.items.find(i => i.id === item.depends_on_item_id) : null;
+              return (
+                <div key={item.id} className="flex items-center gap-2 pl-3 py-1 border-l-2 border-muted text-sm">
+                  <span className="flex-1 truncate">
+                    {item.type === "TIMER" && <AlarmClock className="h-3 w-3 inline mr-1 text-primary" />}
+                    {item.label}
+                    <span className="text-xs text-muted-foreground ml-1">({item.type})</span>
+                    {item.required && <span className="text-destructive ml-0.5">*</span>}
+                    {item.type === "TIMER" && item.timer_minutes && (
+                      <span className="text-xs text-muted-foreground ml-1">⏰ {item.timer_minutes}min</span>
+                    )}
+                    {item.type === "TIMER" && depItem && (
+                      <span className="text-xs text-muted-foreground ml-1">→ {depItem.label}</span>
+                    )}
+                  </span>
+                  <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingItem({ ...item, sectionId: section.id })}>
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => deleteItem(section.id, item.id)}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              );
+            })}
 
             <Button
               variant="ghost"
@@ -260,18 +289,17 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
           <DialogHeader><DialogTitle>{editingItem ? "Edit Item" : "Add Item"}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label className="text-xs">Label</Label>
-              <Input
-                value={editingItem ? editingItem.label : newItemLabel}
-                onChange={(e) => editingItem ? setEditingItem({ ...editingItem, label: e.target.value }) : setNewItemLabel(e.target.value)}
-                placeholder="Item label..."
-              />
-            </div>
-            <div className="space-y-1">
               <Label className="text-xs">Type</Label>
               <Select
-                value={editingItem ? editingItem.type : newItemType}
-                onValueChange={(v) => editingItem ? setEditingItem({ ...editingItem, type: v }) : setNewItemType(v)}
+                value={currentType}
+                onValueChange={(v) => {
+                  if (editingItem) {
+                    setEditingItem({ ...editingItem, type: v, timer_minutes: v === "TIMER" ? editingItem.timer_minutes : null, depends_on_item_id: v === "TIMER" ? editingItem.depends_on_item_id : null });
+                  } else {
+                    setNewItemType(v);
+                    if (v !== "TIMER") { setNewItemTimerMinutes(""); setNewItemDependsOn(""); }
+                  }
+                }}
               >
                 <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -279,46 +307,92 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
                   <SelectItem value="PHOTO">Photo</SelectItem>
                   <SelectItem value="TEXT">Text</SelectItem>
                   <SelectItem value="NUMBER">Number</SelectItem>
+                  <SelectItem value="TIMER">⏰ Timer</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={editingItem ? editingItem.required : newItemRequired}
-                onCheckedChange={(v) => editingItem ? setEditingItem({ ...editingItem, required: v }) : setNewItemRequired(v)}
-              />
-              <Label className="text-xs">Required</Label>
-            </div>
             <div className="space-y-1">
-              <Label className="text-xs">Help text (optional)</Label>
+              <Label className="text-xs">Label</Label>
               <Input
-                value={editingItem ? (editingItem.help_text || "") : newItemHelpText}
-                onChange={(e) => editingItem ? setEditingItem({ ...editingItem, help_text: e.target.value || null }) : setNewItemHelpText(e.target.value)}
-                placeholder="Help text..."
+                value={editingItem ? editingItem.label : newItemLabel}
+                onChange={(e) => editingItem ? setEditingItem({ ...editingItem, label: e.target.value }) : setNewItemLabel(e.target.value)}
+                placeholder={isTimerType ? "e.g. Washing machine cycle" : "Item label..."}
               />
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Timer (minutes, optional)</Label>
-              <Input
-                type="number"
-                min="1"
-                value={editingItem ? (editingItem.timer_minutes ?? "") : newItemTimerMinutes}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (editingItem) {
-                    setEditingItem({ ...editingItem, timer_minutes: val ? parseInt(val) : null });
-                  } else {
-                    setNewItemTimerMinutes(val);
-                  }
-                }}
-                placeholder="e.g. 60 for washing machine"
-              />
-              <p className="text-[10px] text-muted-foreground">When done, a countdown starts. At 0 a persistent alarm shows.</p>
-            </div>
+
+            {isTimerType && (
+              <>
+                <div className="space-y-1">
+                  <Label className="text-xs">Duration (minutes)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={editingItem ? (editingItem.timer_minutes ?? "") : newItemTimerMinutes}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (editingItem) {
+                        setEditingItem({ ...editingItem, timer_minutes: val ? parseInt(val) : null });
+                      } else {
+                        setNewItemTimerMinutes(val);
+                      }
+                    }}
+                    placeholder="e.g. 60"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Starts when this item is done</Label>
+                  <Select
+                    value={editingItem ? (editingItem.depends_on_item_id || "") : newItemDependsOn}
+                    onValueChange={(v) => {
+                      if (editingItem) {
+                        setEditingItem({ ...editingItem, depends_on_item_id: v || null });
+                      } else {
+                        setNewItemDependsOn(v);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select trigger item..." /></SelectTrigger>
+                    <SelectContent>
+                      {dependencyItems.map(dep => (
+                        <SelectItem key={dep.id} value={dep.id}>{dep.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground">Timer auto-starts when the selected item is marked done. At 0 a persistent alarm shows.</p>
+                </div>
+              </>
+            )}
+
+            {!isTimerType && (
+              <>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={editingItem ? editingItem.required : newItemRequired}
+                    onCheckedChange={(v) => editingItem ? setEditingItem({ ...editingItem, required: v }) : setNewItemRequired(v)}
+                  />
+                  <Label className="text-xs">Required</Label>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Help text (optional)</Label>
+                  <Input
+                    value={editingItem ? (editingItem.help_text || "") : newItemHelpText}
+                    onChange={(e) => editingItem ? setEditingItem({ ...editingItem, help_text: e.target.value || null }) : setNewItemHelpText(e.target.value)}
+                    placeholder="Help text..."
+                  />
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { resetItemForm(); setEditingItem(null); }}>Cancel</Button>
-            <Button onClick={editingItem ? updateItem : addItem} disabled={editingItem ? !editingItem.label.trim() : !newItemLabel.trim()}>
+            <Button
+              onClick={editingItem ? updateItem : addItem}
+              disabled={
+                editingItem
+                  ? !editingItem.label.trim() || (editingItem.type === "TIMER" && (!editingItem.timer_minutes || !editingItem.depends_on_item_id))
+                  : !newItemLabel.trim() || (newItemType === "TIMER" && (!newItemTimerMinutes || !newItemDependsOn))
+              }
+            >
               {editingItem ? "Save" : "Add"}
             </Button>
           </DialogFooter>
