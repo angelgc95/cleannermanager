@@ -26,6 +26,7 @@ interface ChecklistItem {
   required: boolean;
   sort_order: number;
   help_text: string | null;
+  timer_minutes: number | null;
 }
 
 interface Section {
@@ -54,6 +55,7 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
   const [newItemType, setNewItemType] = useState("YESNO");
   const [newItemRequired, setNewItemRequired] = useState(true);
   const [newItemHelpText, setNewItemHelpText] = useState("");
+  const [newItemTimerMinutes, setNewItemTimerMinutes] = useState<string>("");
 
   // --- Section CRUD ---
   const addSection = async () => {
@@ -105,10 +107,11 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
         type: newItemType as any,
         required: newItemRequired,
         help_text: newItemHelpText.trim() || null,
+        timer_minutes: newItemTimerMinutes ? parseInt(newItemTimerMinutes) : null,
         sort_order: maxSort + 1,
         host_user_id: user?.id,
       })
-      .select("id, item_key, label, type, required, sort_order, help_text")
+      .select("id, item_key, label, type, required, sort_order, help_text, timer_minutes")
       .single();
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
     onSectionsUpdated(
@@ -126,11 +129,12 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
       type: item.type as any,
       required: item.required,
       help_text: item.help_text,
+      timer_minutes: item.timer_minutes,
     }).eq("id", item.id);
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
     onSectionsUpdated(
       sections.map((s) => s.id === sectionId
-        ? { ...s, items: s.items.map((i) => i.id === item.id ? { ...i, label: item.label, type: item.type, required: item.required, help_text: item.help_text } : i) }
+        ? { ...s, items: s.items.map((i) => i.id === item.id ? { ...i, label: item.label, type: item.type, required: item.required, help_text: item.help_text, timer_minutes: item.timer_minutes } : i) }
         : s
       )
     );
@@ -153,6 +157,7 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
     setNewItemType("YESNO");
     setNewItemRequired(true);
     setNewItemHelpText("");
+    setNewItemTimerMinutes("");
   };
 
   if (!editMode) {
@@ -214,6 +219,7 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
                   {item.label}
                   <span className="text-xs text-muted-foreground ml-1">({item.type})</span>
                   {item.required && <span className="text-destructive ml-0.5">*</span>}
+                  {item.timer_minutes && <span className="text-xs text-muted-foreground ml-1">⏰ {item.timer_minutes}min</span>}
                 </span>
                 <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingItem({ ...item, sectionId: section.id })}>
                   <Pencil className="h-3 w-3" />
@@ -290,6 +296,24 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
                 onChange={(e) => editingItem ? setEditingItem({ ...editingItem, help_text: e.target.value || null }) : setNewItemHelpText(e.target.value)}
                 placeholder="Help text..."
               />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Timer (minutes, optional)</Label>
+              <Input
+                type="number"
+                min="1"
+                value={editingItem ? (editingItem.timer_minutes ?? "") : newItemTimerMinutes}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (editingItem) {
+                    setEditingItem({ ...editingItem, timer_minutes: val ? parseInt(val) : null });
+                  } else {
+                    setNewItemTimerMinutes(val);
+                  }
+                }}
+                placeholder="e.g. 60 for washing machine"
+              />
+              <p className="text-[10px] text-muted-foreground">When done, a countdown starts. At 0 a persistent alarm shows.</p>
             </div>
           </div>
           <DialogFooter>
