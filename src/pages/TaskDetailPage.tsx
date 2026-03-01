@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { format } from "date-fns";
-import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, UserPlus, AlertTriangle } from "lucide-react";
+import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { EventInlineEdit } from "@/components/admin/EventInlineEdit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -33,14 +33,13 @@ export default function TaskDetailPage() {
 
   const [checklistRun, setChecklistRun] = useState<any>(null);
   const [runPhotos, setRunPhotos] = useState<any[]>([]);
-  const [hasTemplate, setHasTemplate] = useState<boolean | null>(null);
   const [runShoppingItems, setRunShoppingItems] = useState<any[]>([]);
 
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [assigningCleaner, setAssigningCleaner] = useState<string>("");
+  const [templateName, setTemplateName] = useState<string | null>(null);
 
   const isAdmin = role === "host";
-
   const details = event?.event_details_json || {};
 
   useEffect(() => {
@@ -55,22 +54,32 @@ export default function TaskDetailPage() {
         if (data?.assigned_cleaner_id) {
           setAssigningCleaner(data.assigned_cleaner_id);
         }
-        // Check if event has a template
+        // Load template name
         if (data?.checklist_template_id) {
-          setHasTemplate(true);
-        } else if (data?.listing_id) {
-          // Fallback: check listing's default template
           supabase
             .from("checklist_templates")
-            .select("id")
+            .select("name")
+            .eq("id", data.checklist_template_id)
+            .single()
+            .then(({ data: tpl }) => {
+              setTemplateName(tpl?.name || "Assigned");
+            });
+        } else if (data?.listing_id) {
+          supabase
+            .from("checklist_templates")
+            .select("id, name")
             .eq("listing_id", data.listing_id)
             .eq("active", true)
             .limit(1)
             .then(({ data: tpls }) => {
-              setHasTemplate(!!(tpls && tpls.length > 0));
+              if (tpls && tpls.length > 0) {
+                setTemplateName(tpls[0].name);
+              } else {
+                setTemplateName(null);
+              }
             });
         } else {
-          setHasTemplate(false);
+          setTemplateName(null);
         }
       });
   }, [id]);
@@ -91,7 +100,6 @@ export default function TaskDetailPage() {
         .select("user_id, name, email")
         .in("user_id", cleanerIds);
       if (!profiles) return;
-
       setCleaners(profiles);
 
       if (!event.assigned_cleaner_id && event.listing_id) {
@@ -176,10 +184,13 @@ export default function TaskDetailPage() {
 
   if (!event) return <div className="p-6 text-muted-foreground">Loading...</div>;
 
+  const hasTemplate = !!event.checklist_template_id || templateName !== null;
+  const canStartChecklist = hasTemplate && (event.status === "TODO" || event.status === "IN_PROGRESS");
+
   return (
     <div>
       <PageHeader
-        title={`${event.listings?.name || "Listing"}`}
+        title={event.listings?.name || "Listing"}
         actions={
           <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-4 w-4 mr-1" /> Back
@@ -187,84 +198,135 @@ export default function TaskDetailPage() {
         }
       />
       <div className="p-6 space-y-4 max-w-2xl">
+        {/* === UNIFIED CLEANING EVENT CARD === */}
         <Card>
-          <CardHeader>
+          <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Event Details</CardTitle>
+              <CardTitle className="text-lg">Cleaning Event</CardTitle>
               <StatusBadge status={event.status} />
             </div>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-muted-foreground">Nights</p>
-                <p className="font-medium">{details.nights ?? "N/A"}</p>
+          <CardContent className="space-y-5">
+            {/* --- Details Section --- */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Details</p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-muted-foreground">Nights</p>
+                  <p className="font-medium">{details.nights ?? "N/A"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Guests</p>
+                  <p className="font-medium">{details.guests ?? "N/A"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Reference</p>
+                  <p className="font-medium font-mono text-xs">{event.reference || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Cleaning Window</p>
+                  <p className="font-medium text-xs">
+                    {event.start_at
+                      ? new Date(event.start_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+                      : "—"}
+                    {" → "}
+                    {event.end_at
+                      ? new Date(event.end_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+                      : "—"}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-muted-foreground">Guests</p>
-                <p className="font-medium">{details.guests ?? "N/A"}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Reference</p>
-                <p className="font-medium font-mono text-xs">{event.reference || "—"}</p>
-              </div>
+              {event.notes && (
+                <div className="mt-2 text-sm">
+                  <p className="text-muted-foreground">Notes</p>
+                  <p className="font-medium">{event.notes}</p>
+                </div>
+              )}
             </div>
-            {event.notes && (
-              <div>
-                <p className="text-muted-foreground">Notes</p>
-                <p className="font-medium">{event.notes}</p>
-              </div>
-            )}
+
+            <Separator />
+
+            {/* --- Assignment Section --- */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Assignment</p>
+              {isAdmin ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Assigned Cleaner</Label>
+                    <Select value={assigningCleaner} onValueChange={handleAssignCleaner}>
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Select cleaner..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cleaners.map((c) => (
+                          <SelectItem key={c.user_id} value={c.user_id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Status</Label>
+                    <Select value={event.status} onValueChange={handleStatusChange}>
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="TODO">To-do</SelectItem>
+                        <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                        <SelectItem value="DONE">Done</SelectItem>
+                        <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm">
+                  <p className="text-muted-foreground">Assigned Cleaner</p>
+                  <p className="font-medium">
+                    {assigningCleaner
+                      ? cleaners.find(c => c.user_id === assigningCleaner)?.name || "Assigned"
+                      : "Unassigned"}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* --- Checklist Section --- */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Checklist</p>
+              {hasTemplate ? (
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  <span className="font-medium">{templateName || "Template"}</span>
+                  <span className="text-muted-foreground">— Assigned</span>
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300">No checklist template assigned</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
+                      {isAdmin
+                        ? "Go to Checklists → Manage Templates to create and assign a template to this listing."
+                        : "Ask your host to assign a checklist template to this listing."}
+                    </p>
+                    {isAdmin && (
+                      <Button variant="outline" size="sm" className="mt-2 gap-1.5" onClick={() => navigate("/tasks")}>
+                        <ClipboardList className="h-3.5 w-3.5" /> Manage Templates
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
-        {isAdmin && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <UserPlus className="h-4 w-4" /> Manage Event
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">Assign Cleaner</Label>
-                  <Select value={assigningCleaner} onValueChange={handleAssignCleaner}>
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue placeholder="Select cleaner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {cleaners.map((c) => (
-                        <SelectItem key={c.user_id} value={c.user_id}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Status</Label>
-                  <Select value={event.status} onValueChange={handleStatusChange}>
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="TODO">To-do</SelectItem>
-                      <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                      <SelectItem value="DONE">Done</SelectItem>
-                      <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {isAdmin && (
-          <EventInlineEdit event={event} onUpdated={(updated) => setEvent(updated)} />
-        )}
-
+        {/* === CHECKLIST RUN SUMMARY (admin only, if completed) === */}
         {isAdmin && checklistRun && (
           <Card>
             <CardHeader className="pb-3">
@@ -340,34 +402,13 @@ export default function TaskDetailPage() {
           </Card>
         )}
 
-        {hasTemplate === false && (event.status === "TODO" || event.status === "IN_PROGRESS") && (
-          <Card className="border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
-            <CardContent className="flex items-start gap-3 p-4">
-              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Action Required: No checklist template assigned</p>
-                <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
-                  {isAdmin
-                    ? "Go to Checklists → Manage Templates to create and assign a template to this listing."
-                    : "Ask your host to assign a checklist template to this listing."}
-                </p>
-                {isAdmin && (
-                  <Button variant="outline" size="sm" className="mt-2 gap-1.5" onClick={() => navigate("/tasks")}>
-                    <ClipboardList className="h-3.5 w-3.5" /> Manage Templates
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
+        {/* === Action Buttons === */}
         <div className="flex gap-2 flex-wrap">
-          {(event.status === "TODO" || event.status === "IN_PROGRESS") && (
+          {canStartChecklist && (
             <Button
               onClick={() => navigate(`/events/${id}/checklist`)}
               className="gap-2"
               size="lg"
-              disabled={hasTemplate === false}
             >
               <ClipboardList className="h-4 w-4" /> Start Cleaning Checklist
             </Button>
