@@ -24,8 +24,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-interface TemplateOption { id: string; name: string; listing_id: string | null; }
-interface ListingOption { id: string; name: string; }
+interface TemplateOption { id: string; name: string; }
+interface ListingOption { id: string; name: string; default_checklist_template_id: string | null; }
 interface Section { id: string; title: string; sort_order: number; items: { id: string; item_key: string | null; label: string; type: string; required: boolean; sort_order: number; help_text: string | null; }[]; }
 
 interface SectionSuggestion {
@@ -119,7 +119,7 @@ export default function TasksPage() {
   const [creating, setCreating] = useState(false);
   const [listings, setListings] = useState<ListingOption[]>([]);
   const [assigningListing, setAssigningListing] = useState(false);
-  const [pendingListingId, setPendingListingId] = useState<string | null>(null);
+  const [pendingAssignments, setPendingAssignments] = useState<Record<string, string | null>>({});
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -135,7 +135,7 @@ export default function TasksPage() {
   }, []);
 
   const fetchTemplates = useCallback(async () => {
-    const { data } = await supabase.from("checklist_templates").select("id, name, listing_id").eq("active", true).order("name");
+    const { data } = await supabase.from("checklist_templates").select("id, name").eq("active", true).order("name");
     const tpls = data || [];
     setTemplates(tpls);
     return tpls;
@@ -143,28 +143,25 @@ export default function TasksPage() {
 
   const fetchListings = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase.from("listings").select("id, name").eq("host_user_id", user.id).order("name");
-    setListings(data || []);
+    const { data } = await supabase.from("listings").select("id, name, default_checklist_template_id").eq("host_user_id", user.id).order("name");
+    setListings((data || []) as ListingOption[]);
   }, [user]);
 
-  const handleSaveAssignment = async () => {
-    if (!selectedTemplateId || pendingListingId === null) return;
+  const handleSaveAssignments = async () => {
+    if (!selectedTemplateId) return;
     setAssigningListing(true);
     setSaved(false);
     try {
-      const listingId = pendingListingId;
-      if (listingId && listingId !== "__none__") {
-        await supabase.from("checklist_templates").update({ listing_id: null }).eq("listing_id", listingId).neq("id", selectedTemplateId);
-        await supabase.from("checklist_templates").update({ listing_id: listingId }).eq("id", selectedTemplateId);
-        // Also update listing's default_checklist_template_id
-        await supabase.from("listings").update({ default_checklist_template_id: selectedTemplateId } as any).eq("id", listingId);
-      } else {
-        await supabase.from("checklist_templates").update({ listing_id: null }).eq("id", selectedTemplateId);
+      for (const [listingId, templateId] of Object.entries(pendingAssignments)) {
+        await supabase
+          .from("listings")
+          .update({ default_checklist_template_id: templateId } as any)
+          .eq("id", listingId);
       }
-      await fetchTemplates();
-      setPendingListingId(null);
+      await fetchListings();
+      setPendingAssignments({});
       setSaved(true);
-      toast({ title: "Saved", description: "Template assignment updated." });
+      toast({ title: "Saved", description: "Listing assignments updated." });
     } catch (err: any) {
       toast({ title: "Error", description: err?.message, variant: "destructive" });
     } finally {
@@ -175,7 +172,7 @@ export default function TasksPage() {
   const openEditor = useCallback(async (templateId?: string) => {
     setManageOpen(true);
     setSaved(false);
-    setPendingListingId(null);
+    setPendingAssignments({});
     const tpls = await fetchTemplates();
     fetchListings();
     if (templateId) {
@@ -364,76 +361,75 @@ export default function TasksPage() {
                 <Plus className="h-4 w-4" /> Create Template
               </Button>
             </div>
-            {templates.length > 0 ? (
+             {templates.length > 0 ? (
               <>
-                <Select value={selectedTemplateId || ""} onValueChange={(v) => { setSelectedTemplateId(v); setPendingListingId(null); setSaved(false); }}>
+                <Select value={selectedTemplateId || ""} onValueChange={(v) => { setSelectedTemplateId(v); setPendingAssignments({}); setSaved(false); }}>
                   <SelectTrigger><SelectValue placeholder="Select template to edit" /></SelectTrigger>
-                  <SelectContent>{templates.map((t) => {
-                    const assignedListing = listings.find(l => l.id === t.listing_id);
-                    return (
-                      <SelectItem key={t.id} value={t.id}>
-                        <span className="flex items-center gap-2">
-                          <span>{t.name}</span>
-                          {assignedListing && (
-                            <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{assignedListing.name}</span>
-                          )}
-                        </span>
-                      </SelectItem>
-                    );
-                  })}</SelectContent>
+                  <SelectContent>{templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}</SelectContent>
                 </Select>
 
                 {selectedTemplateId && (
                   <div className="space-y-3">
-                    {/* Assign to Listing */}
+                    {/* Assign to Listings */}
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-medium">Assign to Listing</Label>
-                      <Select
-                        value={pendingListingId ?? templates.find(t => t.id === selectedTemplateId)?.listing_id ?? "__none__"}
-                        onValueChange={(v) => { setPendingListingId(v); setSaved(false); }}
-                        disabled={assigningListing}
-                      >
-                        <SelectTrigger className="h-9 text-sm">
-                          <SelectValue placeholder="Select listing..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">— No listing —</SelectItem>
-                          {listings.map((l) => {
-                            const otherTpl = templates.find(t => t.listing_id === l.id && t.id !== selectedTemplateId);
-                            return (
-                              <SelectItem key={l.id} value={l.id}>
-                                {l.name}{otherTpl ? ` (used by: ${otherTpl.name})` : ""}
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectContent>
-                      </Select>
+                      <Label className="text-xs font-medium">Assigned Listings</Label>
+                      <div className="space-y-1.5 rounded-md border border-border p-2">
+                        {listings.length === 0 ? (
+                          <p className="text-xs text-muted-foreground py-2 text-center">No listings found.</p>
+                        ) : listings.map((l) => {
+                          const currentTemplateId = pendingAssignments.hasOwnProperty(l.id)
+                            ? pendingAssignments[l.id]
+                            : l.default_checklist_template_id;
+                          const isAssigned = currentTemplateId === selectedTemplateId;
+                          const otherTpl = !isAssigned && currentTemplateId
+                            ? templates.find(t => t.id === currentTemplateId)
+                            : null;
+                          return (
+                            <label key={l.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/50 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={isAssigned}
+                                onChange={(e) => {
+                                  setPendingAssignments(prev => ({
+                                    ...prev,
+                                    [l.id]: e.target.checked ? selectedTemplateId : null,
+                                  }));
+                                  setSaved(false);
+                                }}
+                                className="rounded border-border"
+                              />
+                              <span className="flex-1">{l.name}</span>
+                              {otherTpl && (
+                                <span className="text-xs text-muted-foreground">using: {otherTpl.name}</span>
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
 
-                      {pendingListingId !== null && !saved && (
-                        <Button size="sm" onClick={handleSaveAssignment} disabled={assigningListing} className="w-full gap-1.5">
+                      {Object.keys(pendingAssignments).length > 0 && !saved && (
+                        <Button size="sm" onClick={handleSaveAssignments} disabled={assigningListing} className="w-full gap-1.5">
                           {assigningListing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                          Save Assignment
+                          Save Assignments
                         </Button>
                       )}
 
                       {saved && (
                         <p className="text-xs text-[hsl(var(--status-done))] flex items-center gap-1">
-                          <Check className="h-3.5 w-3.5" /> Assignment saved successfully.
+                          <Check className="h-3.5 w-3.5" /> Assignments saved successfully.
                         </p>
-                      )}
-
-                      {!saved && !(pendingListingId !== null) && !templates.find(t => t.id === selectedTemplateId)?.listing_id && (
-                        <p className="text-xs text-amber-600">⚠ This template is not assigned to any listing. Cleaners won't see it.</p>
                       )}
                     </div>
 
                     {(() => {
-                      const assignedListingIds = templates.filter(t => t.listing_id).map(t => t.listing_id);
+                      const assignedListingIds = listings.filter(l => l.default_checklist_template_id).map(l => l.id);
                       const unassigned = listings.filter(l => !assignedListingIds.includes(l.id));
                       if (unassigned.length === 0) return null;
                       return (
                         <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3">
-                          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">⚠ Listings without a template:</p>
+                          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">⚠ Listings without any template:</p>
                           <ul className="text-xs text-amber-600 dark:text-amber-500 mt-1 space-y-0.5">
                             {unassigned.map(l => <li key={l.id}>• {l.name}</li>)}
                           </ul>
