@@ -191,6 +191,7 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
               end_at: eventEndAt,
               event_details_json: eventDetailsJson,
               reference,
+              checklist_template_id: templateId,
             })
             .eq("id", existingEvent.id);
         }
