@@ -119,7 +119,8 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
 
         let confirmationCode = "";
         if (icsEvent.description) {
-          const urlMatch = icsEvent.description.match(/airbnb\.com\/hosting\/reservations\/details\/([A-Za-z0-9]+)/);
+          const desc = icsEvent.description.replace(/\\n/g, "\n");
+          const urlMatch = desc.match(/airbnb\.com\/hosting\/reservations\/details\/([A-Za-z0-9]+)/);
           if (urlMatch) {
             confirmationCode = urlMatch[1];
           }
