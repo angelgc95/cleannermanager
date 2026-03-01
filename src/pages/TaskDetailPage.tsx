@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, UserPlus, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { TaskInlineEdit } from "@/components/admin/TaskInlineEdit";
+import { EventInlineEdit } from "@/components/admin/EventInlineEdit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import {
@@ -27,36 +27,39 @@ export default function TaskDetailPage() {
   const navigate = useNavigate();
   const { user, role, hostId } = useAuth();
   const { toast } = useToast();
-  const [task, setTask] = useState<any>(null);
+  const [event, setEvent] = useState<any>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
 
-  // Admin: checklist summary
   const [checklistRun, setChecklistRun] = useState<any>(null);
   const [runPhotos, setRunPhotos] = useState<any[]>([]);
   const [hasTemplate, setHasTemplate] = useState<boolean | null>(null);
   const [runShoppingItems, setRunShoppingItems] = useState<any[]>([]);
 
-  // Admin: assign cleaner
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [assigningCleaner, setAssigningCleaner] = useState<string>("");
 
   const isAdmin = role === "host";
 
+  const details = event?.event_details_json || {};
+
   useEffect(() => {
     if (!id) return;
     supabase
-      .from("cleaning_tasks")
+      .from("cleaning_events")
       .select("*, listings(name)")
       .eq("id", id)
       .single()
       .then(({ data }) => {
-        setTask(data);
-        if (data?.assigned_cleaner_user_id) {
-          setAssigningCleaner(data.assigned_cleaner_user_id);
+        setEvent(data);
+        if (data?.assigned_cleaner_id) {
+          setAssigningCleaner(data.assigned_cleaner_id);
         }
-        // Check if listing has a template assigned
-        if (data?.listing_id) {
+        // Check if event has a template
+        if (data?.checklist_template_id) {
+          setHasTemplate(true);
+        } else if (data?.listing_id) {
+          // Fallback: check listing's default template
           supabase
             .from("checklist_templates")
             .select("id")
@@ -72,11 +75,9 @@ export default function TaskDetailPage() {
       });
   }, [id]);
 
-  // Load admin data: checklist summary, cleaners list
   useEffect(() => {
-    if (!isAdmin || !task || !hostId) return;
+    if (!isAdmin || !event || !hostId) return;
 
-    // Load cleaners for assignment
     const loadCleaners = async () => {
       const { data: assignments } = await supabase
         .from("cleaner_assignments")
@@ -93,73 +94,68 @@ export default function TaskDetailPage() {
 
       setCleaners(profiles);
 
-      // Auto-select the cleaner assigned to this listing if none set on the task
-      if (!task.assigned_cleaner_user_id && task.listing_id) {
-        const listingAssignment = assignments.find(a => a.listing_id === task.listing_id);
+      if (!event.assigned_cleaner_id && event.listing_id) {
+        const listingAssignment = assignments.find(a => a.listing_id === event.listing_id);
         if (listingAssignment) {
           setAssigningCleaner(listingAssignment.cleaner_user_id);
-          // Persist the default assignment to the task
           await supabase
-            .from("cleaning_tasks")
-            .update({ assigned_cleaner_user_id: listingAssignment.cleaner_user_id })
-            .eq("id", task.id);
-          setTask((prev: any) => ({ ...prev, assigned_cleaner_user_id: listingAssignment.cleaner_user_id }));
+            .from("cleaning_events")
+            .update({ assigned_cleaner_id: listingAssignment.cleaner_user_id })
+            .eq("id", event.id);
+          setEvent((prev: any) => ({ ...prev, assigned_cleaner_id: listingAssignment.cleaner_user_id }));
         }
       }
     };
     loadCleaners();
 
-    // Load checklist run summary if task is DONE
-    if (task.checklist_run_id) {
+    if (event.checklist_run_id) {
       const loadRunSummary = async () => {
         const { data: run } = await supabase
           .from("checklist_runs")
           .select("*")
-          .eq("id", task.checklist_run_id)
+          .eq("id", event.checklist_run_id)
           .single();
         setChecklistRun(run);
 
-        // Load photos
         const { data: photos } = await supabase
           .from("checklist_photos")
           .select("photo_url, item_id")
-          .eq("run_id", task.checklist_run_id);
+          .eq("run_id", event.checklist_run_id);
         setRunPhotos(photos || []);
 
-        // Load shopping items from this run
         const { data: shopItems } = await supabase
           .from("shopping_list")
           .select("*, products(name)")
-          .eq("checklist_run_id", task.checklist_run_id);
+          .eq("checklist_run_id", event.checklist_run_id);
         setRunShoppingItems(shopItems || []);
       };
       loadRunSummary();
     }
-  }, [isAdmin, task, hostId]);
+  }, [isAdmin, event, hostId]);
 
-  const cancelTask = async () => {
+  const cancelEvent = async () => {
     if (!id || !cancelReason.trim()) return;
     await supabase
-      .from("cleaning_tasks")
-      .update({ status: "CANCELLED" as const, notes: cancelReason.trim() })
+      .from("cleaning_events")
+      .update({ status: "CANCELLED", notes: cancelReason.trim() })
       .eq("id", id);
-    setTask((prev: any) => ({ ...prev, status: "CANCELLED", notes: cancelReason.trim() }));
+    setEvent((prev: any) => ({ ...prev, status: "CANCELLED", notes: cancelReason.trim() }));
     setCancelOpen(false);
     setCancelReason("");
-    toast({ title: "Task cancelled" });
+    toast({ title: "Event cancelled" });
   };
 
   const handleAssignCleaner = async (userId: string) => {
     if (!id) return;
     setAssigningCleaner(userId);
     const { error } = await supabase
-      .from("cleaning_tasks")
-      .update({ assigned_cleaner_user_id: userId || null })
+      .from("cleaning_events")
+      .update({ assigned_cleaner_id: userId || null })
       .eq("id", id);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      setTask((prev: any) => ({ ...prev, assigned_cleaner_user_id: userId || null }));
+      setEvent((prev: any) => ({ ...prev, assigned_cleaner_id: userId || null }));
       toast({ title: "Cleaner assigned" });
     }
   };
@@ -167,23 +163,23 @@ export default function TaskDetailPage() {
   const handleStatusChange = async (newStatus: string) => {
     if (!id) return;
     const { error } = await supabase
-      .from("cleaning_tasks")
-      .update({ status: newStatus as any })
+      .from("cleaning_events")
+      .update({ status: newStatus })
       .eq("id", id);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      setTask((prev: any) => ({ ...prev, status: newStatus }));
+      setEvent((prev: any) => ({ ...prev, status: newStatus }));
       toast({ title: `Status updated to ${newStatus}` });
     }
   };
 
-  if (!task) return <div className="p-6 text-muted-foreground">Loading...</div>;
+  if (!event) return <div className="p-6 text-muted-foreground">Loading...</div>;
 
   return (
     <div>
       <PageHeader
-        title={`${task.listings?.name || "Listing"}`}
+        title={`${event.listings?.name || "Listing"}`}
         actions={
           <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-4 w-4 mr-1" /> Back
@@ -195,39 +191,38 @@ export default function TaskDetailPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">Event Details</CardTitle>
-              <StatusBadge status={task.status} />
+              <StatusBadge status={event.status} />
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <p className="text-muted-foreground">Nights</p>
-                <p className="font-medium">{task.nights_to_show ?? "N/A"}</p>
+                <p className="font-medium">{details.nights ?? "N/A"}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Guests</p>
-                <p className="font-medium">{task.guests_to_show ?? "N/A"}</p>
+                <p className="font-medium">{details.guests ?? "N/A"}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Reference</p>
-                <p className="font-medium font-mono text-xs">{task.reference || "—"}</p>
+                <p className="font-medium font-mono text-xs">{event.reference || "—"}</p>
               </div>
             </div>
-            {task.notes && (
+            {event.notes && (
               <div>
                 <p className="text-muted-foreground">Notes</p>
-                <p className="font-medium">{task.notes}</p>
+                <p className="font-medium">{event.notes}</p>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Admin: Assign Cleaner + Change Status */}
         {isAdmin && (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
-                <UserPlus className="h-4 w-4" /> Manage Task
+                <UserPlus className="h-4 w-4" /> Manage Event
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -249,7 +244,7 @@ export default function TaskDetailPage() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Status</Label>
-                  <Select value={task.status} onValueChange={handleStatusChange}>
+                  <Select value={event.status} onValueChange={handleStatusChange}>
                     <SelectTrigger className="h-9 text-sm">
                       <SelectValue />
                     </SelectTrigger>
@@ -266,12 +261,10 @@ export default function TaskDetailPage() {
           </Card>
         )}
 
-        {/* Admin: Inline Edit */}
         {isAdmin && (
-          <TaskInlineEdit task={task} onUpdated={(updated) => setTask(updated)} />
+          <EventInlineEdit event={event} onUpdated={(updated) => setEvent(updated)} />
         )}
 
-        {/* Admin: Checklist Summary (when checklist run exists) */}
         {isAdmin && checklistRun && (
           <Card>
             <CardHeader className="pb-3">
@@ -281,7 +274,7 @@ export default function TaskDetailPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-muted-foreground">Listing</p>
-                  <p className="font-medium">{task.listings?.name || "N/A"}</p>
+                  <p className="font-medium">{event.listings?.name || "N/A"}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Clock className="h-4 w-4 text-muted-foreground" />
@@ -347,8 +340,7 @@ export default function TaskDetailPage() {
           </Card>
         )}
 
-        {/* Warning: no template assigned */}
-        {hasTemplate === false && (task.status === "TODO" || task.status === "IN_PROGRESS") && (
+        {hasTemplate === false && (event.status === "TODO" || event.status === "IN_PROGRESS") && (
           <Card className="border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
             <CardContent className="flex items-start gap-3 p-4">
               <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -369,11 +361,10 @@ export default function TaskDetailPage() {
           </Card>
         )}
 
-        {/* Action buttons */}
         <div className="flex gap-2 flex-wrap">
-          {(task.status === "TODO" || task.status === "IN_PROGRESS") && (
+          {(event.status === "TODO" || event.status === "IN_PROGRESS") && (
             <Button
-              onClick={() => navigate(`/tasks/${id}/checklist`)}
+              onClick={() => navigate(`/events/${id}/checklist`)}
               className="gap-2"
               size="lg"
               disabled={hasTemplate === false}
@@ -381,7 +372,7 @@ export default function TaskDetailPage() {
               <ClipboardList className="h-4 w-4" /> Start Cleaning Checklist
             </Button>
           )}
-          {task.status !== "CANCELLED" && task.status !== "DONE" && (
+          {event.status !== "CANCELLED" && event.status !== "DONE" && (
             <Button variant="outline" onClick={() => setCancelOpen(true)} className="gap-2">
               <XCircle className="h-4 w-4" /> Cancel
             </Button>
@@ -392,7 +383,7 @@ export default function TaskDetailPage() {
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cancel this cleaning?</DialogTitle>
+            <DialogTitle>Cancel this cleaning event?</DialogTitle>
             <DialogDescription>Please provide a reason for cancelling.</DialogDescription>
           </DialogHeader>
           <Textarea
@@ -404,7 +395,7 @@ export default function TaskDetailPage() {
             <Button variant="outline" onClick={() => setCancelOpen(false)}>
               Go back
             </Button>
-            <Button variant="destructive" disabled={!cancelReason.trim()} onClick={cancelTask}>
+            <Button variant="destructive" disabled={!cancelReason.trim()} onClick={cancelEvent}>
               Confirm Cancel
             </Button>
           </DialogFooter>
