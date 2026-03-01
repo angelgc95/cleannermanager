@@ -418,7 +418,7 @@ export default function TaskDetailPage() {
 
         {/* === Action Buttons === */}
         <div className="flex gap-2 flex-wrap">
-          {canStartChecklist && (
+          {!isAdmin && canStartChecklist && (
             <Button
               onClick={() => navigate(`/events/${id}/checklist`)}
               className="gap-2"
