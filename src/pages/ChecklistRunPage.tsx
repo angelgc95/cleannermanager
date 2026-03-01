@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Check, Camera, X, Loader2, Clock, LogIn, LogOut } from "lucide-react";
+import { ArrowLeft, Check, Camera, X, Loader2, Clock, LogIn, LogOut, AlarmClock, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ShoppingCheckSection } from "@/components/checklist/ShoppingCheckSection";
 import { ChecklistTemplateEditor } from "@/components/admin/ChecklistTemplateEditor";
@@ -31,6 +31,7 @@ interface ChecklistItem {
   required: boolean;
   sort_order: number;
   help_text: string | null;
+  timer_minutes: number | null;
 }
 
 interface PhotoEntry {
@@ -84,6 +85,52 @@ export default function ChecklistRunPage() {
   const [missingItems, setMissingItems] = useState<MissingItem[]>([]);
   const [shoppingError, setShoppingError] = useState<string | null>(null);
 
+  // Timer alarm state: itemId -> seconds remaining (null = not started)
+  const [activeTimers, setActiveTimers] = useState<Record<string, number>>({});
+  const [expiredTimers, setExpiredTimers] = useState<Set<string>>(new Set());
+  const timerAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Tick all active timers every second
+  useEffect(() => {
+    const hasActive = Object.keys(activeTimers).some(id => activeTimers[id] > 0);
+    if (!hasActive) return;
+
+    const interval = setInterval(() => {
+      setActiveTimers(prev => {
+        const next = { ...prev };
+        for (const id of Object.keys(next)) {
+          if (next[id] > 0) {
+            next[id] = next[id] - 1;
+            if (next[id] <= 0) {
+              setExpiredTimers(s => new Set(s).add(id));
+            }
+          }
+        }
+        return next;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [Object.keys(activeTimers).length]);
+
+  const dismissTimer = useCallback((itemId: string) => {
+    setExpiredTimers(s => {
+      const next = new Set(s);
+      next.delete(itemId);
+      return next;
+    });
+    setActiveTimers(prev => {
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  }, []);
+
+  const formatTimer = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  };
   useEffect(() => {
     if (!eventId || !user) return;
 
@@ -126,7 +173,7 @@ export default function ChecklistRunPage() {
       const sectionIds = sectionsData.map((s) => s.id);
       const { data: itemsData } = await supabase
         .from("checklist_items")
-        .select("id, item_key, label, type, required, sort_order, help_text, section_id")
+        .select("id, item_key, label, type, required, sort_order, help_text, section_id, timer_minutes")
         .in("section_id", sectionIds)
         .order("sort_order");
 
@@ -174,10 +221,23 @@ export default function ChecklistRunPage() {
   }, [eventId, user]);
 
   const toggleYesNo = (itemId: string) => {
+    const newVal = responses[itemId] === true ? null : true;
     setResponses((prev) => ({
       ...prev,
-      [itemId]: prev[itemId] === true ? null : true,
+      [itemId]: newVal,
     }));
+
+    // Auto-start timer if item has timer_minutes and is being marked done
+    if (newVal === true) {
+      const item = sections.flatMap(s => s.items).find(i => i.id === itemId);
+      if (item?.timer_minutes && item.timer_minutes > 0 && !activeTimers[itemId]) {
+        setActiveTimers(prev => ({ ...prev, [itemId]: item.timer_minutes! * 60 }));
+        toast({ title: `⏰ Timer started`, description: `${item.label} — ${item.timer_minutes} min countdown` });
+      }
+    } else {
+      // If unchecked, cancel the timer
+      dismissTimer(itemId);
+    }
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -445,6 +505,26 @@ export default function ChecklistRunPage() {
         onChange={handlePhotoUpload}
       />
 
+      {/* Persistent Alarm Notifications */}
+      {expiredTimers.size > 0 && (
+        <div className="bg-destructive/10 border-b border-destructive px-4 py-2 space-y-1">
+          {Array.from(expiredTimers).map(itemId => {
+            const item = sections.flatMap(s => s.items).find(i => i.id === itemId);
+            return (
+              <div key={itemId} className="flex items-center justify-between gap-2 animate-pulse">
+                <div className="flex items-center gap-2 text-sm font-semibold text-destructive">
+                  <Bell className="h-4 w-4" />
+                  ⏰ Timer expired: {item?.label || "Unknown item"}
+                </div>
+                <Button size="sm" variant="destructive" onClick={() => dismissTimer(itemId)} className="gap-1 shrink-0">
+                  <Check className="h-3 w-3" /> Dismiss
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <div className="flex-1 flex flex-col overflow-hidden">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
           <div className="border-b border-border bg-card px-4 overflow-x-auto">
@@ -570,6 +650,22 @@ export default function ChecklistRunPage() {
                             </p>
                             {item.help_text && (
                               <p className="text-xs text-muted-foreground mt-0.5">{item.help_text}</p>
+                            )}
+                            {/* Timer indicator */}
+                            {item.timer_minutes && activeTimers[item.id] !== undefined && activeTimers[item.id] > 0 && (
+                              <p className="text-xs text-primary mt-0.5 flex items-center gap-1 font-mono">
+                                <AlarmClock className="h-3 w-3" /> {formatTimer(activeTimers[item.id])}
+                              </p>
+                            )}
+                            {item.timer_minutes && expiredTimers.has(item.id) && (
+                              <p className="text-xs text-destructive mt-0.5 flex items-center gap-1 font-semibold animate-pulse">
+                                <Bell className="h-3 w-3" /> Timer expired!
+                              </p>
+                            )}
+                            {item.timer_minutes && !activeTimers[item.id] && !expiredTimers.has(item.id) && responses[item.id] !== true && (
+                              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                                <AlarmClock className="h-3 w-3" /> {item.timer_minutes}min timer
+                              </p>
                             )}
                           </div>
                         </button>

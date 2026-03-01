@@ -83,6 +83,7 @@ export type Database = {
           required: boolean | null
           section_id: string
           sort_order: number | null
+          timer_minutes: number | null
           type: Database["public"]["Enums"]["checklist_item_type"] | null
         }
         Insert: {
@@ -94,6 +95,7 @@ export type Database = {
           required?: boolean | null
           section_id: string
           sort_order?: number | null
+          timer_minutes?: number | null
           type?: Database["public"]["Enums"]["checklist_item_type"] | null
         }
         Update: {
@@ -105,6 +107,7 @@ export type Database = {
           required?: boolean | null
           section_id?: string
           sort_order?: number | null
+          timer_minutes?: number | null
           type?: Database["public"]["Enums"]["checklist_item_type"] | null
         }
         Relationships: [
