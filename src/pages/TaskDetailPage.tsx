@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, AlertTriangle, CheckCircle2, Loader2, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -39,8 +39,14 @@ export default function TaskDetailPage() {
   const [assigningCleaner, setAssigningCleaner] = useState<string>("");
   const [templateName, setTemplateName] = useState<string | null>(null);
 
+  // Pending edits for explicit save
+  const [pendingCleaner, setPendingCleaner] = useState<string | null>(null);
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
   const isAdmin = role === "host";
   const details = event?.event_details_json || {};
+  const hasPendingChanges = pendingCleaner !== null || pendingStatus !== null;
 
   useEffect(() => {
     if (!id) return;
@@ -153,32 +159,26 @@ export default function TaskDetailPage() {
     toast({ title: "Event cancelled" });
   };
 
-  const handleAssignCleaner = async (userId: string) => {
+  const handleSave = async () => {
     if (!id) return;
-    setAssigningCleaner(userId);
-    const { error } = await supabase
-      .from("cleaning_events")
-      .update({ assigned_cleaner_id: userId || null })
-      .eq("id", id);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      setEvent((prev: any) => ({ ...prev, assigned_cleaner_id: userId || null }));
-      toast({ title: "Cleaner assigned" });
-    }
-  };
+    setSaving(true);
+    const updates: any = {};
+    if (pendingCleaner !== null) updates.assigned_cleaner_id = pendingCleaner || null;
+    if (pendingStatus !== null) updates.status = pendingStatus;
 
-  const handleStatusChange = async (newStatus: string) => {
-    if (!id) return;
     const { error } = await supabase
       .from("cleaning_events")
-      .update({ status: newStatus })
+      .update(updates)
       .eq("id", id);
+    setSaving(false);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      setEvent((prev: any) => ({ ...prev, status: newStatus }));
-      toast({ title: `Status updated to ${newStatus}` });
+      setEvent((prev: any) => ({ ...prev, ...updates }));
+      if (pendingCleaner !== null) setAssigningCleaner(pendingCleaner);
+      setPendingCleaner(null);
+      setPendingStatus(null);
+      toast({ title: "Event updated" });
     }
   };
 
@@ -250,36 +250,50 @@ export default function TaskDetailPage() {
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Assignment</p>
               {isAdmin ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Assigned Cleaner</Label>
-                    <Select value={assigningCleaner} onValueChange={handleAssignCleaner}>
-                      <SelectTrigger className="h-9 text-sm">
-                        <SelectValue placeholder="Select cleaner..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {cleaners.map((c) => (
-                          <SelectItem key={c.user_id} value={c.user_id}>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Assigned Cleaner</Label>
+                      <Select
+                        value={pendingCleaner ?? assigningCleaner}
+                        onValueChange={(v) => setPendingCleaner(v)}
+                      >
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue placeholder="Select cleaner..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {cleaners.map((c) => (
+                            <SelectItem key={c.user_id} value={c.user_id}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Status</Label>
+                      <Select
+                        value={pendingStatus ?? event.status}
+                        onValueChange={(v) => setPendingStatus(v)}
+                      >
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="TODO">To-do</SelectItem>
+                          <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                          <SelectItem value="DONE">Done</SelectItem>
+                          <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Status</Label>
-                    <Select value={event.status} onValueChange={handleStatusChange}>
-                      <SelectTrigger className="h-9 text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="TODO">To-do</SelectItem>
-                        <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                        <SelectItem value="DONE">Done</SelectItem>
-                        <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {hasPendingChanges && (
+                    <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5">
+                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Save Changes
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <div className="text-sm">
