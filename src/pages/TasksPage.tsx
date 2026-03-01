@@ -9,7 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { Settings2, Plus, Loader2, Sparkles } from "lucide-react";
+import { Settings2, Plus, Loader2, Sparkles, Save, Check } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -119,6 +119,8 @@ export default function TasksPage() {
   const [creating, setCreating] = useState(false);
   const [listings, setListings] = useState<ListingOption[]>([]);
   const [assigningListing, setAssigningListing] = useState(false);
+  const [pendingListingId, setPendingListingId] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     const fetch = async () => {
@@ -145,11 +147,12 @@ export default function TasksPage() {
     setListings(data || []);
   }, [user]);
 
-  const handleAssignListing = async (listingId: string) => {
-    if (!selectedTemplateId) return;
+  const handleSaveAssignment = async () => {
+    if (!selectedTemplateId || pendingListingId === null) return;
     setAssigningListing(true);
+    setSaved(false);
     try {
-      // Clear any other template assigned to this listing (one template per listing)
+      const listingId = pendingListingId;
       if (listingId && listingId !== "__none__") {
         await supabase.from("checklist_templates").update({ listing_id: null }).eq("listing_id", listingId).neq("id", selectedTemplateId);
         await supabase.from("checklist_templates").update({ listing_id: listingId }).eq("id", selectedTemplateId);
@@ -157,7 +160,9 @@ export default function TasksPage() {
         await supabase.from("checklist_templates").update({ listing_id: null }).eq("id", selectedTemplateId);
       }
       await fetchTemplates();
-      toast({ title: "Listing assignment saved" });
+      setPendingListingId(null);
+      setSaved(true);
+      toast({ title: "Saved", description: "Template assignment updated." });
     } catch (err: any) {
       toast({ title: "Error", description: err?.message, variant: "destructive" });
     } finally {
@@ -167,6 +172,8 @@ export default function TasksPage() {
 
   const openEditor = useCallback(async (templateId?: string) => {
     setManageOpen(true);
+    setSaved(false);
+    setPendingListingId(null);
     const tpls = await fetchTemplates();
     fetchListings();
     if (templateId) {
@@ -355,7 +362,7 @@ export default function TasksPage() {
             </div>
             {templates.length > 0 ? (
               <>
-                <Select value={selectedTemplateId || ""} onValueChange={setSelectedTemplateId}>
+                <Select value={selectedTemplateId || ""} onValueChange={(v) => { setSelectedTemplateId(v); setPendingListingId(null); setSaved(false); }}>
                   <SelectTrigger><SelectValue placeholder="Select template to edit" /></SelectTrigger>
                   <SelectContent>{templates.map((t) => {
                     const assignedListing = listings.find(l => l.id === t.listing_id);
@@ -373,8 +380,8 @@ export default function TasksPage() {
                     <div className="space-y-1.5">
                       <Label className="text-xs font-medium">Assign to Listing</Label>
                       <Select
-                        value={templates.find(t => t.id === selectedTemplateId)?.listing_id || "__none__"}
-                        onValueChange={handleAssignListing}
+                        value={pendingListingId ?? templates.find(t => t.id === selectedTemplateId)?.listing_id ?? "__none__"}
+                        onValueChange={(v) => { setPendingListingId(v); setSaved(false); }}
                         disabled={assigningListing}
                       >
                         <SelectTrigger className="h-9 text-sm">
@@ -392,7 +399,24 @@ export default function TasksPage() {
                           })}
                         </SelectContent>
                       </Select>
-                      {!templates.find(t => t.id === selectedTemplateId)?.listing_id && (
+
+                      {/* Save button */}
+                      {pendingListingId !== null && !saved && (
+                        <Button size="sm" onClick={handleSaveAssignment} disabled={assigningListing} className="w-full gap-1.5">
+                          {assigningListing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                          Save Assignment
+                        </Button>
+                      )}
+
+                      {/* Saved confirmation */}
+                      {saved && (
+                        <p className="text-xs text-[hsl(var(--status-done))] flex items-center gap-1">
+                          <Check className="h-3.5 w-3.5" /> Assignment saved successfully.
+                        </p>
+                      )}
+
+                      {/* Warning if not assigned */}
+                      {!saved && !(pendingListingId !== null) && !templates.find(t => t.id === selectedTemplateId)?.listing_id && (
                         <p className="text-xs text-amber-600">⚠ This template is not assigned to any listing. Cleaners won't see it.</p>
                       )}
                     </div>
