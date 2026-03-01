@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
-import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, UserPlus } from "lucide-react";
+import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, UserPlus, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { TaskInlineEdit } from "@/components/admin/TaskInlineEdit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -34,6 +34,7 @@ export default function TaskDetailPage() {
   // Admin: checklist summary
   const [checklistRun, setChecklistRun] = useState<any>(null);
   const [runPhotos, setRunPhotos] = useState<any[]>([]);
+  const [hasTemplate, setHasTemplate] = useState<boolean | null>(null);
   const [runShoppingItems, setRunShoppingItems] = useState<any[]>([]);
 
   // Admin: assign cleaner
@@ -53,6 +54,20 @@ export default function TaskDetailPage() {
         setTask(data);
         if (data?.assigned_cleaner_user_id) {
           setAssigningCleaner(data.assigned_cleaner_user_id);
+        }
+        // Check if listing has a template assigned
+        if (data?.listing_id) {
+          supabase
+            .from("checklist_templates")
+            .select("id")
+            .eq("listing_id", data.listing_id)
+            .eq("active", true)
+            .limit(1)
+            .then(({ data: tpls }) => {
+              setHasTemplate(!!(tpls && tpls.length > 0));
+            });
+        } else {
+          setHasTemplate(false);
         }
       });
   }, [id]);
@@ -332,10 +347,37 @@ export default function TaskDetailPage() {
           </Card>
         )}
 
+        {/* Warning: no template assigned */}
+        {hasTemplate === false && (task.status === "TODO" || task.status === "IN_PROGRESS") && (
+          <Card className="border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
+            <CardContent className="flex items-start gap-3 p-4">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Action Required: No checklist template assigned</p>
+                <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
+                  {isAdmin
+                    ? "Go to Checklists → Manage Templates to create and assign a template to this listing."
+                    : "Ask your host to assign a checklist template to this listing."}
+                </p>
+                {isAdmin && (
+                  <Button variant="outline" size="sm" className="mt-2 gap-1.5" onClick={() => navigate("/tasks")}>
+                    <ClipboardList className="h-3.5 w-3.5" /> Manage Templates
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Action buttons */}
         <div className="flex gap-2 flex-wrap">
           {(task.status === "TODO" || task.status === "IN_PROGRESS") && (
-            <Button onClick={() => navigate(`/tasks/${id}/checklist`)} className="gap-2" size="lg">
+            <Button
+              onClick={() => navigate(`/tasks/${id}/checklist`)}
+              className="gap-2"
+              size="lg"
+              disabled={hasTemplate === false}
+            >
               <ClipboardList className="h-4 w-4" /> Start Cleaning Checklist
             </Button>
           )}
