@@ -24,7 +24,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-interface TemplateOption { id: string; name: string; }
+interface TemplateOption { id: string; name: string; listing_id: string | null; }
+interface ListingOption { id: string; name: string; }
 interface Section { id: string; title: string; sort_order: number; items: { id: string; item_key: string | null; label: string; type: string; required: boolean; sort_order: number; help_text: string | null; }[]; }
 
 interface SectionSuggestion {
@@ -116,6 +117,8 @@ export default function TasksPage() {
   const [newTemplateName, setNewTemplateName] = useState("");
   const [listingDescription, setListingDescription] = useState("");
   const [creating, setCreating] = useState(false);
+  const [listings, setListings] = useState<ListingOption[]>([]);
+  const [assigningListing, setAssigningListing] = useState(false);
 
   useEffect(() => {
     const fetch = async () => {
@@ -130,21 +133,48 @@ export default function TasksPage() {
   }, []);
 
   const fetchTemplates = useCallback(async () => {
-    const { data } = await supabase.from("checklist_templates").select("id, name").eq("active", true).order("name");
+    const { data } = await supabase.from("checklist_templates").select("id, name, listing_id").eq("active", true).order("name");
     const tpls = data || [];
     setTemplates(tpls);
     return tpls;
   }, []);
 
+  const fetchListings = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase.from("listings").select("id, name").eq("host_user_id", user.id).order("name");
+    setListings(data || []);
+  }, [user]);
+
+  const handleAssignListing = async (listingId: string) => {
+    if (!selectedTemplateId) return;
+    setAssigningListing(true);
+    try {
+      // Clear any other template assigned to this listing (one template per listing)
+      if (listingId && listingId !== "__none__") {
+        await supabase.from("checklist_templates").update({ listing_id: null }).eq("listing_id", listingId).neq("id", selectedTemplateId);
+        await supabase.from("checklist_templates").update({ listing_id: listingId }).eq("id", selectedTemplateId);
+      } else {
+        await supabase.from("checklist_templates").update({ listing_id: null }).eq("id", selectedTemplateId);
+      }
+      await fetchTemplates();
+      toast({ title: "Listing assignment saved" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.message, variant: "destructive" });
+    } finally {
+      setAssigningListing(false);
+    }
+  };
+
   const openEditor = useCallback(async (templateId?: string) => {
     setManageOpen(true);
     const tpls = await fetchTemplates();
+    fetchListings();
     if (templateId) {
       setSelectedTemplateId(templateId);
     } else if (tpls.length > 0 && !selectedTemplateId) {
       setSelectedTemplateId(tpls[0].id);
     }
-  }, [selectedTemplateId, fetchTemplates]);
+  }, [selectedTemplateId, fetchTemplates, fetchListings]);
 
   useEffect(() => {
     if (!selectedTemplateId) { setSections([]); return; }
@@ -327,9 +357,64 @@ export default function TasksPage() {
               <>
                 <Select value={selectedTemplateId || ""} onValueChange={setSelectedTemplateId}>
                   <SelectTrigger><SelectValue placeholder="Select template to edit" /></SelectTrigger>
-                  <SelectContent>{templates.map((t) => (<SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>))}</SelectContent>
+                  <SelectContent>{templates.map((t) => {
+                    const assignedListing = listings.find(l => l.id === t.listing_id);
+                    return (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name}{assignedListing ? ` → ${assignedListing.name}` : ""}
+                      </SelectItem>
+                    );
+                  })}</SelectContent>
                 </Select>
-                {selectedTemplateId && <ChecklistTemplateEditor sections={sections} templateId={selectedTemplateId} onSectionsUpdated={setSections} />}
+
+                {selectedTemplateId && (
+                  <div className="space-y-3">
+                    {/* Assign to Listing */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Assign to Listing</Label>
+                      <Select
+                        value={templates.find(t => t.id === selectedTemplateId)?.listing_id || "__none__"}
+                        onValueChange={handleAssignListing}
+                        disabled={assigningListing}
+                      >
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue placeholder="Select listing..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— No listing —</SelectItem>
+                          {listings.map((l) => {
+                            const otherTpl = templates.find(t => t.listing_id === l.id && t.id !== selectedTemplateId);
+                            return (
+                              <SelectItem key={l.id} value={l.id}>
+                                {l.name}{otherTpl ? ` (used by: ${otherTpl.name})` : ""}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      {!templates.find(t => t.id === selectedTemplateId)?.listing_id && (
+                        <p className="text-xs text-amber-600">⚠ This template is not assigned to any listing. Cleaners won't see it.</p>
+                      )}
+                    </div>
+
+                    {/* Listings without template warning */}
+                    {(() => {
+                      const assignedListingIds = templates.filter(t => t.listing_id).map(t => t.listing_id);
+                      const unassigned = listings.filter(l => !assignedListingIds.includes(l.id));
+                      if (unassigned.length === 0) return null;
+                      return (
+                        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3">
+                          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">⚠ Listings without a template:</p>
+                          <ul className="text-xs text-amber-600 dark:text-amber-500 mt-1 space-y-0.5">
+                            {unassigned.map(l => <li key={l.id}>• {l.name}</li>)}
+                          </ul>
+                        </div>
+                      );
+                    })()}
+
+                    <ChecklistTemplateEditor sections={sections} templateId={selectedTemplateId} onSectionsUpdated={setSections} />
+                  </div>
+                )}
               </>
             ) : (
               <div className="text-center py-8">
