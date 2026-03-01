@@ -65,7 +65,7 @@ export default function TaskDetailPage() {
     const loadCleaners = async () => {
       const { data: assignments } = await supabase
         .from("cleaner_assignments")
-        .select("cleaner_user_id")
+        .select("cleaner_user_id, listing_id")
         .eq("host_user_id", hostId);
       if (!assignments) return;
       const cleanerIds = [...new Set(assignments.map(a => a.cleaner_user_id))];
@@ -76,7 +76,21 @@ export default function TaskDetailPage() {
         .in("user_id", cleanerIds);
       if (!profiles) return;
 
-      if (profiles) setCleaners(profiles);
+      setCleaners(profiles);
+
+      // Auto-select the cleaner assigned to this listing if none set on the task
+      if (!task.assigned_cleaner_user_id && task.listing_id) {
+        const listingAssignment = assignments.find(a => a.listing_id === task.listing_id);
+        if (listingAssignment) {
+          setAssigningCleaner(listingAssignment.cleaner_user_id);
+          // Persist the default assignment to the task
+          await supabase
+            .from("cleaning_tasks")
+            .update({ assigned_cleaner_user_id: listingAssignment.cleaner_user_id })
+            .eq("id", task.id);
+          setTask((prev: any) => ({ ...prev, assigned_cleaner_user_id: listingAssignment.cleaner_user_id }));
+        }
+      }
     };
     loadCleaners();
 
