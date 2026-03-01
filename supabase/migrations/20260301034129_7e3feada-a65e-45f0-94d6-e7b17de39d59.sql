@@ -1,0 +1,1 @@
+DROP POLICY "Cleaner can delete own hours" ON public.log_hours;
