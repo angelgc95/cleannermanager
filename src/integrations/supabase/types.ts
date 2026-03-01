@@ -213,7 +213,7 @@ export type Database = {
       checklist_runs: {
         Row: {
           cleaner_user_id: string
-          cleaning_task_id: string | null
+          cleaning_event_id: string | null
           created_at: string
           duration_minutes: number | null
           finished_at: string | null
@@ -226,7 +226,7 @@ export type Database = {
         }
         Insert: {
           cleaner_user_id: string
-          cleaning_task_id?: string | null
+          cleaning_event_id?: string | null
           created_at?: string
           duration_minutes?: number | null
           finished_at?: string | null
@@ -239,7 +239,7 @@ export type Database = {
         }
         Update: {
           cleaner_user_id?: string
-          cleaning_task_id?: string | null
+          cleaning_event_id?: string | null
           created_at?: string
           duration_minutes?: number | null
           finished_at?: string | null
@@ -252,10 +252,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "checklist_runs_cleaning_task_id_fkey"
-            columns: ["cleaning_task_id"]
+            foreignKeyName: "checklist_runs_cleaning_event_id_fkey"
+            columns: ["cleaning_event_id"]
             isOneToOne: true
-            referencedRelation: "cleaning_tasks"
+            referencedRelation: "cleaning_events"
             referencedColumns: ["id"]
           },
           {
@@ -373,94 +373,101 @@ export type Database = {
           },
         ]
       }
-      cleaning_tasks: {
+      cleaning_events: {
         Row: {
-          assigned_cleaner_user_id: string | null
+          assigned_cleaner_id: string | null
+          booking_id: string | null
           checklist_run_id: string | null
+          checklist_template_id: string | null
           created_at: string
           end_at: string | null
-          guests_to_show: number | null
+          event_details_json: Json | null
           host_user_id: string
           id: string
           listing_id: string
           locked: boolean | null
           next_booking_id: string | null
-          nights_to_show: number | null
           notes: string | null
-          previous_booking_id: string | null
           reference: string | null
-          source: Database["public"]["Enums"]["cleaning_source"] | null
+          source: string | null
           start_at: string | null
-          status: Database["public"]["Enums"]["cleaning_status"] | null
+          status: string
           updated_at: string
         }
         Insert: {
-          assigned_cleaner_user_id?: string | null
+          assigned_cleaner_id?: string | null
+          booking_id?: string | null
           checklist_run_id?: string | null
+          checklist_template_id?: string | null
           created_at?: string
           end_at?: string | null
-          guests_to_show?: number | null
+          event_details_json?: Json | null
           host_user_id: string
           id?: string
           listing_id: string
           locked?: boolean | null
           next_booking_id?: string | null
-          nights_to_show?: number | null
           notes?: string | null
-          previous_booking_id?: string | null
           reference?: string | null
-          source?: Database["public"]["Enums"]["cleaning_source"] | null
+          source?: string | null
           start_at?: string | null
-          status?: Database["public"]["Enums"]["cleaning_status"] | null
+          status?: string
           updated_at?: string
         }
         Update: {
-          assigned_cleaner_user_id?: string | null
+          assigned_cleaner_id?: string | null
+          booking_id?: string | null
           checklist_run_id?: string | null
+          checklist_template_id?: string | null
           created_at?: string
           end_at?: string | null
-          guests_to_show?: number | null
+          event_details_json?: Json | null
           host_user_id?: string
           id?: string
           listing_id?: string
           locked?: boolean | null
           next_booking_id?: string | null
-          nights_to_show?: number | null
           notes?: string | null
-          previous_booking_id?: string | null
           reference?: string | null
-          source?: Database["public"]["Enums"]["cleaning_source"] | null
+          source?: string | null
           start_at?: string | null
-          status?: Database["public"]["Enums"]["cleaning_status"] | null
+          status?: string
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "cleaning_tasks_listing_id_fkey"
+            foreignKeyName: "cleaning_events_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_events_checklist_run_id_fkey"
+            columns: ["checklist_run_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_events_checklist_template_id_fkey"
+            columns: ["checklist_template_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_events_listing_id_fkey"
             columns: ["listing_id"]
             isOneToOne: false
             referencedRelation: "listings"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "cleaning_tasks_next_booking_id_fkey"
+            foreignKeyName: "cleaning_events_next_booking_id_fkey"
             columns: ["next_booking_id"]
             isOneToOne: false
             referencedRelation: "bookings"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "cleaning_tasks_previous_booking_id_fkey"
-            columns: ["previous_booking_id"]
-            isOneToOne: false
-            referencedRelation: "bookings"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "cleaning_tasks_run_fk"
-            columns: ["checklist_run_id"]
-            isOneToOne: false
-            referencedRelation: "checklist_runs"
             referencedColumns: ["id"]
           },
         ]
@@ -722,6 +729,7 @@ export type Database = {
           created_at: string
           currency: string | null
           default_checkin_time: string | null
+          default_checklist_template_id: string | null
           default_checkout_time: string | null
           host_user_id: string
           ics_url_airbnb: string | null
@@ -743,6 +751,7 @@ export type Database = {
           created_at?: string
           currency?: string | null
           default_checkin_time?: string | null
+          default_checklist_template_id?: string | null
           default_checkout_time?: string | null
           host_user_id: string
           ics_url_airbnb?: string | null
@@ -764,6 +773,7 @@ export type Database = {
           created_at?: string
           currency?: string | null
           default_checkin_time?: string | null
+          default_checklist_template_id?: string | null
           default_checkout_time?: string | null
           host_user_id?: string
           ics_url_airbnb?: string | null
@@ -778,12 +788,20 @@ export type Database = {
           timezone?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "listings_default_checklist_template_id_fkey"
+            columns: ["default_checklist_template_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       log_hours: {
         Row: {
           checklist_run_id: string | null
-          cleaning_task_id: string | null
+          cleaning_event_id: string | null
           created_at: string
           date: string
           description: string | null
@@ -799,7 +817,7 @@ export type Database = {
         }
         Insert: {
           checklist_run_id?: string | null
-          cleaning_task_id?: string | null
+          cleaning_event_id?: string | null
           created_at?: string
           date?: string
           description?: string | null
@@ -815,7 +833,7 @@ export type Database = {
         }
         Update: {
           checklist_run_id?: string | null
-          cleaning_task_id?: string | null
+          cleaning_event_id?: string | null
           created_at?: string
           date?: string
           description?: string | null
@@ -838,10 +856,10 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "log_hours_cleaning_task_id_fkey"
-            columns: ["cleaning_task_id"]
+            foreignKeyName: "log_hours_cleaning_event_id_fkey"
+            columns: ["cleaning_event_id"]
             isOneToOne: false
-            referencedRelation: "cleaning_tasks"
+            referencedRelation: "cleaning_events"
             referencedColumns: ["id"]
           },
           {
@@ -947,7 +965,7 @@ export type Database = {
       }
       notification_jobs: {
         Row: {
-          cleaning_task_id: string
+          cleaning_event_id: string | null
           created_at: string
           host_user_id: string | null
           id: string
@@ -960,7 +978,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          cleaning_task_id: string
+          cleaning_event_id?: string | null
           created_at?: string
           host_user_id?: string | null
           id?: string
@@ -973,7 +991,7 @@ export type Database = {
           user_id: string
         }
         Update: {
-          cleaning_task_id?: string
+          cleaning_event_id?: string | null
           created_at?: string
           host_user_id?: string | null
           id?: string
@@ -987,10 +1005,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "notification_jobs_cleaning_task_id_fkey"
-            columns: ["cleaning_task_id"]
+            foreignKeyName: "notification_jobs_cleaning_event_id_fkey"
+            columns: ["cleaning_event_id"]
             isOneToOne: false
-            referencedRelation: "cleaning_tasks"
+            referencedRelation: "cleaning_events"
             referencedColumns: ["id"]
           },
         ]

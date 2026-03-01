@@ -32,21 +32,21 @@ function StatCard({ title, value, icon: Icon, color }: StatCardProps) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [todayTasks, setTodayTasks] = useState<any[]>([]);
+  const [todayEvents, setTodayEvents] = useState<any[]>([]);
   const [stats, setStats] = useState({ hoursThisWeek: 0, openMaintenance: 0, missingItems: 0 });
 
   useEffect(() => {
     const fetchData = async () => {
       const today = format(new Date(), "yyyy-MM-dd");
 
-      const { data: tasks } = await supabase
-        .from("cleaning_tasks")
+      const { data: events } = await supabase
+        .from("cleaning_events")
         .select("*, listings(name)")
         .gte("start_at", `${today}T00:00:00`)
         .lte("start_at", `${today}T23:59:59`)
         .order("start_at");
 
-      setTodayTasks(tasks || []);
+      setTodayEvents(events || []);
 
       const { count: maintenanceCount } = await supabase
         .from("maintenance_tickets")
@@ -67,42 +67,44 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
+  const details = (ev: any) => ev.event_details_json || {};
+
   return (
     <div>
       <PageHeader title="Dashboard" description="Overview of today's activity" />
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard title="Today's Cleanings" value={todayTasks.length} icon={CalendarDays} />
+          <StatCard title="Today's Cleanings" value={todayEvents.length} icon={CalendarDays} />
           <StatCard title="Hours This Week" value={stats.hoursThisWeek} icon={Clock} />
           <StatCard title="Open Maintenance" value={stats.openMaintenance} icon={Wrench} />
           <StatCard title="Missing Items" value={stats.missingItems} icon={ShoppingCart} />
         </div>
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Today's Cleaning Tasks</CardTitle>
+            <CardTitle className="text-lg">Today's Cleaning Events</CardTitle>
           </CardHeader>
           <CardContent>
-            {todayTasks.length === 0 ? (
-              <p className="text-muted-foreground text-sm py-4 text-center">No cleaning tasks scheduled for today.</p>
+            {todayEvents.length === 0 ? (
+              <p className="text-muted-foreground text-sm py-4 text-center">No cleaning events scheduled for today.</p>
             ) : (
               <div className="space-y-3">
-                {todayTasks.map((task: any) => (
+                {todayEvents.map((ev: any) => (
                   <div
-                    key={task.id}
-                    onClick={() => navigate(`/tasks/${task.id}`)}
+                    key={ev.id}
+                    onClick={() => navigate(`/events/${ev.id}`)}
                     className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 cursor-pointer transition-colors"
                   >
                     <div>
                       <p className="font-medium text-sm text-foreground">
-                        {task.listings?.name || "Listing"}
+                        {ev.listings?.name || "Listing"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {task.start_at ? format(new Date(task.start_at), "HH:mm") : "—"} – {task.end_at ? format(new Date(task.end_at), "HH:mm") : "—"}
-                        {task.nights_to_show != null && ` · ${task.nights_to_show} nights`}
-                        {task.guests_to_show != null ? ` · ${task.guests_to_show} guests` : ""}
+                        {ev.start_at ? format(new Date(ev.start_at), "HH:mm") : "—"} – {ev.end_at ? format(new Date(ev.end_at), "HH:mm") : "—"}
+                        {details(ev).nights != null && ` · ${details(ev).nights} nights`}
+                        {details(ev).guests != null ? ` · ${details(ev).guests} guests` : ""}
                       </p>
                     </div>
-                    <StatusBadge status={task.status} />
+                    <StatusBadge status={ev.status} />
                   </div>
                 ))}
               </div>

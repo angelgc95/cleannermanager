@@ -16,11 +16,11 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Get all due SCHEDULED jobs
+    // Get all due SCHEDULED jobs — now joined to cleaning_events
     const { data: dueJobs, error: fetchError } = await supabase
       .from("notification_jobs")
       .select(
-        `*, cleaning_tasks(id, listing_id, start_at, end_at, status, notes, nights_to_show, guests_to_show, 
+        `*, cleaning_events:cleaning_event_id(id, listing_id, start_at, end_at, status, notes, event_details_json,
           listings(name, timezone))`
       )
       .eq("status", "SCHEDULED")
@@ -39,9 +39,9 @@ Deno.serve(async (req) => {
 
     for (const job of dueJobs) {
       try {
-        const task = job.cleaning_tasks as any;
+        const event = (job as any).cleaning_events;
 
-        if (!task || task.status === "DONE" || task.status === "CANCELLED") {
+        if (!event || event.status === "DONE" || event.status === "CANCELLED") {
           await supabase.from("notification_jobs").update({ status: "SKIPPED" }).eq("id", job.id);
           skipped++;
           continue;
@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
           const { data: runs } = await supabase
             .from("checklist_runs")
             .select("finished_at")
-            .eq("cleaning_task_id", task.id)
+            .eq("cleaning_event_id", event.id)
             .not("finished_at", "is", null)
             .limit(1);
 
@@ -63,7 +63,6 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Check user notification preferences
         const { data: prefs } = await supabase
           .from("notification_preferences")
           .select("*")
@@ -85,28 +84,27 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Build notification content
-        const listingName = task.listings?.name || "Unknown listing";
-        const startTime = task.start_at
-          ? new Date(task.start_at).toLocaleString("en-GB", { timeZone: task.listings?.timezone || "UTC" })
+        const listingName = event.listings?.name || "Unknown listing";
+        const details = event.event_details_json || {};
+        const startTime = event.start_at
+          ? new Date(event.start_at).toLocaleString("en-GB", { timeZone: event.listings?.timezone || "UTC" })
           : "N/A";
 
         let title: string;
         let body: string;
-        const link = `/tasks/${task.id}`;
+        const link = `/events/${event.id}`;
 
         if (job.type === "REMINDER_12H") {
           title = "🧹 Cleaning in 12 hours";
-          body = `${listingName}\nStarts: ${startTime}\nNights: ${task.nights_to_show ?? "N/A"} · Guests: ${task.guests_to_show ?? "N/A"}`;
+          body = `${listingName}\nStarts: ${startTime}\nNights: ${details.nights ?? "N/A"} · Guests: ${details.guests ?? "N/A"}`;
         } else if (job.type === "REMINDER_1H") {
           title = "⏰ Cleaning in 1 hour";
-          body = `${listingName}\nStarts: ${startTime}\nNights: ${task.nights_to_show ?? "N/A"} · Guests: ${task.guests_to_show ?? "N/A"}`;
+          body = `${listingName}\nStarts: ${startTime}\nNights: ${details.nights ?? "N/A"} · Guests: ${details.guests ?? "N/A"}`;
         } else {
           title = "📋 Checklist mandatory — submit now";
           body = `${listingName}\nYour cleaning checklist has not been submitted yet. Please complete it now.`;
         }
 
-        // Create in-app notification
         if (!prefs || prefs.inapp_enabled !== false) {
           await supabase.from("in_app_notifications").insert({
             user_id: job.user_id,
@@ -118,7 +116,6 @@ Deno.serve(async (req) => {
           });
         }
 
-        // For CHECKLIST_2PM: also notify the host
         if (job.type === "CHECKLIST_2PM" && job.host_user_id) {
           const { data: cleanerProfile } = await supabase
             .from("profiles")
@@ -135,7 +132,6 @@ Deno.serve(async (req) => {
           });
         }
 
-        // Mark as SENT
         await supabase
           .from("notification_jobs")
           .update({ status: "SENT", sent_at: new Date().toISOString() })

@@ -32,7 +32,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Verify host role
     const { data: isHost } = await supabase.rpc("has_role", { _user_id: user.id, _role: "host" });
     if (!isHost) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
@@ -42,7 +41,6 @@ Deno.serve(async (req) => {
 
     const hostUserId = user.id;
 
-    // Get host settings
     const { data: settings } = await supabase
       .from("host_settings")
       .select("payout_frequency, payout_week_end_day, timezone, default_hourly_rate")
@@ -57,7 +55,6 @@ Deno.serve(async (req) => {
 
     const weekEndDay = settings.payout_week_end_day ?? 0;
 
-    // Calculate current period boundaries
     const now = new Date();
     const currentDay = now.getDay();
     let daysBack = (currentDay - weekEndDay + 7) % 7;
@@ -72,7 +69,6 @@ Deno.serve(async (req) => {
     const startStr = periodStart.toISOString().split("T")[0];
     const endStr = periodEnd.toISOString().split("T")[0];
 
-    // Check if period exists
     const { data: existingPeriod } = await supabase
       .from("payout_periods")
       .select("id")
@@ -93,7 +89,6 @@ Deno.serve(async (req) => {
       periodId = newPeriod.id;
     }
 
-    // Find all cleaners assigned to this host
     const { data: assignments } = await supabase
       .from("cleaner_assignments")
       .select("cleaner_user_id")
@@ -111,7 +106,6 @@ Deno.serve(async (req) => {
     const hourlyRate = settings.default_hourly_rate || 15;
 
     for (const cleanerId of cleanerIds) {
-      // Check if payout already exists
       const { data: existingPayout } = await supabase
         .from("payouts")
         .select("id")
@@ -121,7 +115,6 @@ Deno.serve(async (req) => {
 
       if (existingPayout) continue;
 
-      // Get unpaid log_hours for this cleaner in the date range
       const { data: logHours } = await supabase
         .from("log_hours")
         .select("id, duration_minutes")
@@ -134,7 +127,7 @@ Deno.serve(async (req) => {
       // Get completed checklist runs without log_hours
       const { data: runs } = await supabase
         .from("checklist_runs")
-        .select("id, duration_minutes, started_at, finished_at, cleaning_task_id, listing_id")
+        .select("id, duration_minutes, started_at, finished_at, cleaning_event_id, listing_id")
         .eq("cleaner_user_id", cleanerId)
         .eq("host_user_id", hostUserId)
         .not("finished_at", "is", null)
@@ -142,7 +135,6 @@ Deno.serve(async (req) => {
         .gte("finished_at", `${startStr}T00:00:00`)
         .lte("finished_at", `${endStr}T23:59:59`);
 
-      // Filter runs that already have log_hours
       const { data: existingLogRuns } = await supabase
         .from("log_hours")
         .select("checklist_run_id")
@@ -175,12 +167,10 @@ Deno.serve(async (req) => {
 
       if (payoutError) { console.error("Payout error:", payoutError); continue; }
 
-      // Link existing log_hours
       if ((logHours || []).length > 0) {
         await supabase.from("log_hours").update({ payout_id: payout.id }).in("id", logHours!.map((l: any) => l.id));
       }
 
-      // Create log_hours for orphan runs
       for (const run of orphanRuns) {
         await supabase.from("log_hours").insert({
           user_id: cleanerId,
@@ -191,7 +181,7 @@ Deno.serve(async (req) => {
           duration_minutes: run.duration_minutes,
           source: "CHECKLIST",
           checklist_run_id: run.id,
-          cleaning_task_id: run.cleaning_task_id,
+          cleaning_event_id: run.cleaning_event_id,
           listing_id: run.listing_id || null,
           payout_id: payout.id,
         });

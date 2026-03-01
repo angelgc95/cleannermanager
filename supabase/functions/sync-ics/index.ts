@@ -67,16 +67,28 @@ function extractDateOnly(dateStr: string): string {
   return parseICSDate(dateStr).slice(0, 10);
 }
 
-async function syncListing(supabase: any, listing: any): Promise<{ bookings: number; tasks: number }> {
+async function syncListing(supabase: any, listing: any): Promise<{ bookings: number; events: number }> {
   const icsUrls: { url: string; platform: string }[] = [];
   if (listing.ics_url_airbnb) icsUrls.push({ url: listing.ics_url_airbnb, platform: "airbnb" });
   if (listing.ics_url_booking) icsUrls.push({ url: listing.ics_url_booking, platform: "booking" });
   if (listing.ics_url_other) icsUrls.push({ url: listing.ics_url_other, platform: "other" });
 
-  if (icsUrls.length === 0) return { bookings: 0, tasks: 0 };
+  if (icsUrls.length === 0) return { bookings: 0, events: 0 };
 
   let totalBookings = 0;
-  let totalTasks = 0;
+  let totalEvents = 0;
+
+  // Get the default cleaner for this listing
+  const { data: assignment } = await supabase
+    .from("cleaner_assignments")
+    .select("cleaner_user_id")
+    .eq("listing_id", listing.id)
+    .limit(1)
+    .maybeSingle();
+  const defaultCleanerId = assignment?.cleaner_user_id || null;
+
+  // Get checklist template for this listing
+  const templateId = listing.default_checklist_template_id || null;
 
   for (const { url, platform } of icsUrls) {
     try {
@@ -89,26 +101,25 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
       const icsText = await response.text();
       if (icsText.length > 1_048_576) continue;
 
-      const events = parseICS(icsText);
+      const icsEvents = parseICS(icsText);
 
-      for (const event of events) {
-        const startDate = extractDateOnly(event.dtstart);
-        const endDate = extractDateOnly(event.dtend);
+      for (const icsEvent of icsEvents) {
+        const startDate = extractDateOnly(icsEvent.dtstart);
+        const endDate = extractDateOnly(icsEvent.dtend);
         if (!startDate || !endDate) continue;
 
-        const summary = (event.summary || "").toLowerCase();
+        const summary = (icsEvent.summary || "").toLowerCase();
         if (summary.includes("not available") || summary.includes("blocked")) continue;
 
         const start = new Date(startDate);
         const end = new Date(endDate);
         const nights = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
 
-        const externalUid = `${platform}:${event.uid}`;
+        const externalUid = `${platform}:${icsEvent.uid}`;
 
-        // Extract confirmation code from description (e.g. Airbnb reservation URL)
         let confirmationCode = "";
-        if (event.description) {
-          const urlMatch = event.description.match(/airbnb\.com\/hosting\/reservations\/details\/([A-Za-z0-9]+)/);
+        if (icsEvent.description) {
+          const urlMatch = icsEvent.description.match(/airbnb\.com\/hosting\/reservations\/details\/([A-Za-z0-9]+)/);
           if (urlMatch) {
             confirmationCode = urlMatch[1];
           }
@@ -126,7 +137,7 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
             nights,
             checkin_at: `${startDate}T${listing.default_checkin_time || "15:00:00"}`,
             checkout_at: `${endDate}T${listing.default_checkout_time || "11:00:00"}`,
-            raw_ics_payload: JSON.stringify(event),
+            raw_ics_payload: JSON.stringify(icsEvent),
           }, { onConflict: "external_uid" })
           .select()
           .single();
@@ -134,42 +145,54 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
         if (bookingError) continue;
         totalBookings++;
 
-        // Create cleaning task on CHECK-IN day: from checkout time to checkin time
-        const taskStartAt = `${startDate}T${listing.default_checkout_time || "11:00:00"}`;
-        const taskEndAt = `${startDate}T${listing.default_checkin_time || "15:00:00"}`;
+        // Create cleaning_event on CHECK-IN day
+        const eventStartAt = `${startDate}T${listing.default_checkout_time || "11:00:00"}`;
+        const eventEndAt = `${startDate}T${listing.default_checkin_time || "15:00:00"}`;
+        const reference = confirmationCode || icsEvent.uid || externalUid;
 
-        const { data: existingTasks } = await supabase
-          .from("cleaning_tasks")
-          .select("id, locked")
+        const eventDetailsJson = {
+          nights,
+          guests: null,
+          reference,
+        };
+
+        // Check for existing event (by listing_id + booking_id unique)
+        const { data: existingEvent } = await supabase
+          .from("cleaning_events")
+          .select("id, locked, status")
           .eq("listing_id", listing.id)
-          .or(`previous_booking_id.eq.${booking.id},next_booking_id.eq.${booking.id}`);
+          .eq("booking_id", booking.id)
+          .maybeSingle();
 
-        const lockedExists = existingTasks?.some((t: any) => t.locked);
-
-        if (!lockedExists && (!existingTasks || existingTasks.length === 0)) {
-          const reference = confirmationCode || event.uid || externalUid;
-
-          const { error: taskError } = await supabase
-            .from("cleaning_tasks")
+        if (!existingEvent) {
+          // Insert new cleaning event
+          const { error: eventError } = await supabase
+            .from("cleaning_events")
             .insert({
               listing_id: listing.id,
               host_user_id: listing.host_user_id,
+              booking_id: booking.id,
               source: "AUTO",
               status: "TODO",
-              start_at: taskStartAt,
-              end_at: taskEndAt,
-              previous_booking_id: booking.id,
-              nights_to_show: nights,
+              start_at: eventStartAt,
+              end_at: eventEndAt,
+              assigned_cleaner_id: defaultCleanerId,
+              checklist_template_id: templateId,
+              event_details_json: eventDetailsJson,
               reference,
             });
-          if (!taskError) totalTasks++;
-        } else if (!lockedExists && existingTasks && existingTasks.length > 0) {
-          const reference = confirmationCode || event.uid || externalUid;
+          if (!eventError) totalEvents++;
+        } else if (!existingEvent.locked && existingEvent.status !== "DONE" && existingEvent.status !== "CANCELLED") {
+          // Update existing non-locked event
           await supabase
-            .from("cleaning_tasks")
-            .update({ start_at: taskStartAt, end_at: taskEndAt, nights_to_show: nights, reference })
-            .eq("id", existingTasks[0].id)
-            .eq("locked", false);
+            .from("cleaning_events")
+            .update({
+              start_at: eventStartAt,
+              end_at: eventEndAt,
+              event_details_json: eventDetailsJson,
+              reference,
+            })
+            .eq("id", existingEvent.id);
         }
       }
     } catch (err) {
@@ -182,7 +205,7 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
     .update({ last_synced_at: new Date().toISOString() })
     .eq("id", listing.id);
 
-  return { bookings: totalBookings, tasks: totalTasks };
+  return { bookings: totalBookings, events: totalEvents };
 }
 
 Deno.serve(async (req) => {
@@ -214,7 +237,6 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Verify host role
     const { data: isHost } = await supabase.rpc("has_role", { _user_id: user.id, _role: "host" });
     if (!isHost) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
@@ -239,21 +261,21 @@ Deno.serve(async (req) => {
       if (listErr || !listing) throw new Error("Listing not found");
       const result = await syncListing(supabase, listing);
       return new Response(
-        JSON.stringify({ success: true, bookings_synced: result.bookings, tasks_created: result.tasks }),
+        JSON.stringify({ success: true, bookings_synced: result.bookings, events_created: result.events }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     } else {
       const { data: listings } = await supabase
         .from("listings").select("*").eq("host_user_id", user.id).eq("sync_enabled", true).limit(50);
-      let totalBookings = 0, totalTasks = 0, listingsSynced = 0;
+      let totalBookings = 0, totalEvents = 0, listingsSynced = 0;
       for (const listing of (listings || [])) {
         const result = await syncListing(supabase, listing);
         totalBookings += result.bookings;
-        totalTasks += result.tasks;
+        totalEvents += result.events;
         listingsSynced++;
       }
       return new Response(
-        JSON.stringify({ success: true, listings_synced: listingsSynced, bookings_synced: totalBookings, tasks_created: totalTasks }),
+        JSON.stringify({ success: true, listings_synced: listingsSynced, bookings_synced: totalBookings, events_created: totalEvents }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
