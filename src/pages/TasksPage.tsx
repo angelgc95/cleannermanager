@@ -372,7 +372,12 @@ export default function TasksPage() {
                     const assignedListing = listings.find(l => l.id === t.listing_id);
                     return (
                       <SelectItem key={t.id} value={t.id}>
-                        {t.name}{assignedListing ? ` → ${assignedListing.name}` : ""}
+                        <span className="flex items-center gap-2">
+                          <span>{t.name}</span>
+                          {assignedListing && (
+                            <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{assignedListing.name}</span>
+                          )}
+                        </span>
                       </SelectItem>
                     );
                   })}</SelectContent>
