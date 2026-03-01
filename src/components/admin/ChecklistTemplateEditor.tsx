@@ -2,13 +2,14 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Pencil, Plus, Trash2, Save, X, Settings2, AlarmClock } from "lucide-react";
+import { Pencil, Plus, Trash2, Save, X, Settings2, AlarmClock, Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -50,7 +51,9 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
   const [editingSection, setEditingSection] = useState<{ id: string; title: string } | null>(null);
   const [editingItem, setEditingItem] = useState<ChecklistItem & { sectionId: string } | null>(null);
   const [newSectionTitle, setNewSectionTitle] = useState("");
+  const [newSectionDescription, setNewSectionDescription] = useState("");
   const [addingSectionOpen, setAddingSectionOpen] = useState(false);
+  const [generatingItems, setGeneratingItems] = useState(false);
   const [addingItemToSection, setAddingItemToSection] = useState<string | null>(null);
   const [newItemLabel, setNewItemLabel] = useState("");
   const [newItemType, setNewItemType] = useState("YESNO");
@@ -67,19 +70,66 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
   };
 
   // --- Section CRUD ---
-  const addSection = async () => {
+  const addSection = async (withAI: boolean = false) => {
     if (!newSectionTitle.trim()) return;
     const maxSort = Math.max(0, ...sections.map((s) => s.sort_order));
+    
+    // If AI mode, generate items first
+    let aiItems: { label: string; type: string; required: boolean; sort_order: number; help_text: string | null }[] = [];
+    if (withAI && newSectionDescription.trim().length >= 5) {
+      setGeneratingItems(true);
+      try {
+        const { data: aiData, error: aiErr } = await supabase.functions.invoke("generate-checklist-suggestions", {
+          body: { description: newSectionDescription.trim(), mode: "section", section_title: newSectionTitle.trim() },
+        });
+        if (aiErr || !aiData?.items) {
+          toast({ title: "AI suggestions failed", description: "Section created without items.", variant: "destructive" });
+        } else {
+          aiItems = aiData.items;
+        }
+      } catch {
+        toast({ title: "AI suggestions failed", description: "Section created without items.", variant: "destructive" });
+      } finally {
+        setGeneratingItems(false);
+      }
+    }
+
     const { data, error } = await supabase
       .from("checklist_sections")
       .insert({ template_id: templateId, title: newSectionTitle.trim(), sort_order: maxSort + 1, host_user_id: user?.id })
       .select("id, title, sort_order")
       .single();
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
-    onSectionsUpdated([...sections, { ...data, items: [] }]);
+
+    // Insert AI-generated items if any
+    let insertedItems: ChecklistItem[] = [];
+    if (aiItems.length > 0) {
+      const itemsToInsert = aiItems.map((item) => ({
+        section_id: data.id,
+        label: item.label,
+        type: item.type as any,
+        required: item.required,
+        sort_order: item.sort_order,
+        help_text: item.help_text,
+        host_user_id: user?.id,
+      }));
+      const { data: itemsData, error: itemsErr } = await supabase
+        .from("checklist_items")
+        .insert(itemsToInsert)
+        .select("id, item_key, label, type, required, sort_order, help_text, timer_minutes, depends_on_item_id");
+      if (!itemsErr && itemsData) {
+        insertedItems = itemsData as ChecklistItem[];
+      }
+    }
+
+    onSectionsUpdated([...sections, { ...data, items: insertedItems }]);
     setNewSectionTitle("");
+    setNewSectionDescription("");
     setAddingSectionOpen(false);
-    toast({ title: "Section added" });
+    const desc = aiItems.length > 0
+      ? `Section added with ${aiItems.length} AI-suggested items.`
+      : "Section added";
+    toast({ title: desc });
   };
 
   const updateSectionTitle = async () => {
@@ -272,13 +322,39 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
       ))}
 
       {/* Add Section Dialog */}
-      <Dialog open={addingSectionOpen} onOpenChange={setAddingSectionOpen}>
+      <Dialog open={addingSectionOpen} onOpenChange={(open) => { setAddingSectionOpen(open); if (!open) { setNewSectionTitle(""); setNewSectionDescription(""); } }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add Section</DialogTitle></DialogHeader>
-          <Input value={newSectionTitle} onChange={(e) => setNewSectionTitle(e.target.value)} placeholder="Section title..." />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddingSectionOpen(false)}>Cancel</Button>
-            <Button onClick={addSection} disabled={!newSectionTitle.trim()}>Add</Button>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Section Title</Label>
+              <Input value={newSectionTitle} onChange={(e) => setNewSectionTitle(e.target.value)} placeholder="e.g. Kitchen, Bathroom, Outdoor..." />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Describe this section <span className="text-muted-foreground font-normal">(for smart suggestions)</span></Label>
+              <Textarea
+                value={newSectionDescription}
+                onChange={(e) => setNewSectionDescription(e.target.value)}
+                placeholder="e.g. Large kitchen with dishwasher, gas oven, coffee machine, and breakfast bar..."
+                rows={3}
+                className="resize-none"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                {newSectionDescription.trim().length >= 5
+                  ? "✨ AI will suggest items tailored to your description."
+                  : "Add a description to get AI-tailored suggestions, or leave empty to add items manually."}
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            <Button
+              onClick={() => addSection(newSectionDescription.trim().length >= 5)}
+              disabled={!newSectionTitle.trim() || generatingItems}
+              className="w-full gap-1.5"
+            >
+              {generatingItems ? <Loader2 className="h-4 w-4 animate-spin" /> : newSectionDescription.trim().length >= 5 ? <Sparkles className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              {generatingItems ? "Generating..." : newSectionDescription.trim().length >= 5 ? "Add with Smart Suggestions" : "Add Empty Section"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
