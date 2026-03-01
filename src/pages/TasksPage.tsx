@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { ChecklistTemplateEditor } from "@/components/admin/ChecklistTemplateEditor";
+import type { Section } from "@/components/admin/ChecklistTemplateEditor";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +27,6 @@ import {
 
 interface TemplateOption { id: string; name: string; }
 interface ListingOption { id: string; name: string; default_checklist_template_id: string | null; }
-interface Section { id: string; title: string; sort_order: number; items: { id: string; item_key: string | null; label: string; type: string; required: boolean; sort_order: number; help_text: string | null; timer_minutes: number | null; }[]; }
 
 interface SectionSuggestion {
   title: string;
@@ -188,7 +188,7 @@ export default function TasksPage() {
       const { data } = await supabase.from("checklist_sections").select("id, title, sort_order").eq("template_id", selectedTemplateId).order("sort_order");
       const secs = data || [];
       if (secs.length === 0) { setSections([]); return; }
-      const { data: items } = await supabase.from("checklist_items").select("id, item_key, label, type, required, sort_order, help_text, section_id, timer_minutes").in("section_id", secs.map((s) => s.id)).order("sort_order");
+      const { data: items } = await supabase.from("checklist_items").select("id, item_key, label, type, required, sort_order, help_text, section_id, timer_minutes, depends_on_item_id").in("section_id", secs.map((s) => s.id)).order("sort_order");
       setSections(secs.map((s) => ({ ...s, items: (items || []).filter((i: any) => i.section_id === s.id).map(({ section_id, ...rest }: any) => rest) })));
     };
     fetchSections();
