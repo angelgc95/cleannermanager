@@ -12,7 +12,12 @@ serve(async (req) => {
   }
 
   try {
-    const { description } = await req.json();
+    const body = await req.json();
+    const { description, mode, section_title } = body;
+
+    // mode: "template" (default) generates full sections, "section" generates items for a single section
+    const currentMode = mode || "template";
+
     if (!description || typeof description !== "string" || description.trim().length < 5) {
       return new Response(JSON.stringify({ error: "Description too short" }), {
         status: 400,
@@ -28,7 +33,29 @@ serve(async (req) => {
       });
     }
 
-    const systemPrompt = `You are a cleaning checklist expert for short-term rental properties (Airbnb, Booking.com, etc).
+    let systemPrompt: string;
+
+    if (currentMode === "section") {
+      systemPrompt = `You are a cleaning checklist expert for short-term rental properties (Airbnb, Booking.com, etc).
+Given a section title and a description of what this section should cover, generate practical checklist items for that section.
+
+Rules:
+- Generate 3-8 items appropriate for the described section
+- Item types: YESNO (yes/no check), PHOTO (photo required), TEXT (free text), NUMBER (numeric value)
+- Most items should be YESNO type
+- Include at least one PHOTO item for verification
+- Mark critical items as required=true
+- Add helpful help_text for items that need clarification
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "items": [
+    { "label": "Item description", "type": "YESNO", "required": true, "help_text": null },
+    { "label": "Photo of area", "type": "PHOTO", "required": false, "help_text": "Take a clear photo" }
+  ]
+}`;
+    } else {
+      systemPrompt = `You are a cleaning checklist expert for short-term rental properties (Airbnb, Booking.com, etc).
 Given a description of a property, generate a practical cleaning checklist organized into sections.
 
 Rules:
@@ -54,6 +81,11 @@ Respond with ONLY valid JSON in this exact format:
     }
   ]
 }`;
+    }
+
+    const userContent = currentMode === "section"
+      ? `Section title: "${section_title || "Untitled"}"\nDescription: "${description.trim()}"`
+      : `Property description: "${description.trim()}"`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -65,7 +97,7 @@ Respond with ONLY valid JSON in this exact format:
         model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Property description: "${description.trim()}"` },
+          { role: "user", content: userContent },
         ],
         temperature: 0.7,
         max_tokens: 4000,
@@ -88,26 +120,39 @@ Respond with ONLY valid JSON in this exact format:
     const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
     const parsed = JSON.parse(jsonMatch[1].trim());
 
-    if (!parsed.sections || !Array.isArray(parsed.sections)) {
-      throw new Error("Invalid AI response structure");
-    }
-
-    // Add sort_order
-    const sections = parsed.sections.map((s: any, si: number) => ({
-      title: s.title,
-      sort_order: si + 1,
-      items: (s.items || []).map((item: any, ii: number) => ({
+    if (currentMode === "section") {
+      if (!parsed.items || !Array.isArray(parsed.items)) {
+        throw new Error("Invalid AI response structure");
+      }
+      const items = parsed.items.map((item: any, ii: number) => ({
         label: item.label,
         type: item.type || "YESNO",
         required: item.required ?? true,
         sort_order: ii + 1,
         help_text: item.help_text || null,
-      })),
-    }));
-
-    return new Response(JSON.stringify({ sections }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+      }));
+      return new Response(JSON.stringify({ items }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } else {
+      if (!parsed.sections || !Array.isArray(parsed.sections)) {
+        throw new Error("Invalid AI response structure");
+      }
+      const sections = parsed.sections.map((s: any, si: number) => ({
+        title: s.title,
+        sort_order: si + 1,
+        items: (s.items || []).map((item: any, ii: number) => ({
+          label: item.label,
+          type: item.type || "YESNO",
+          required: item.required ?? true,
+          sort_order: ii + 1,
+          help_text: item.help_text || null,
+        })),
+      }));
+      return new Response(JSON.stringify({ sections }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
   } catch (err) {
     console.error("Error:", err);
     return new Response(JSON.stringify({ error: "Failed to generate suggestions" }), {
