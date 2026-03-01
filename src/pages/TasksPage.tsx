@@ -104,7 +104,7 @@ const DEFAULT_TEMPLATE_SECTIONS: SectionSuggestion[] = [
 ];
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<any[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
   const navigate = useNavigate();
   const { role, user } = useAuth();
   const { toast } = useToast();
@@ -125,11 +125,11 @@ export default function TasksPage() {
   useEffect(() => {
     const fetch = async () => {
       const { data } = await supabase
-        .from("cleaning_tasks")
+        .from("cleaning_events")
         .select("*, listings(name)")
         .order("start_at", { ascending: true })
         .limit(200);
-      setTasks(data || []);
+      setEvents(data || []);
     };
     fetch();
   }, []);
@@ -156,6 +156,8 @@ export default function TasksPage() {
       if (listingId && listingId !== "__none__") {
         await supabase.from("checklist_templates").update({ listing_id: null }).eq("listing_id", listingId).neq("id", selectedTemplateId);
         await supabase.from("checklist_templates").update({ listing_id: listingId }).eq("id", selectedTemplateId);
+        // Also update listing's default_checklist_template_id
+        await supabase.from("listings").update({ default_checklist_template_id: selectedTemplateId } as any).eq("id", listingId);
       } else {
         await supabase.from("checklist_templates").update({ listing_id: null }).eq("id", selectedTemplateId);
       }
@@ -263,31 +265,33 @@ export default function TasksPage() {
     }
   };
 
-  const { upcomingTasks, completedTasks } = useMemo(() => {
+  const { upcomingEvents, completedEvents } = useMemo(() => {
     const upcoming: any[] = []; const completed: any[] = [];
-    for (const task of tasks) {
-      if (task.status === "DONE") completed.push(task);
-      else if (task.status !== "CANCELLED") upcoming.push(task);
+    for (const ev of events) {
+      if (ev.status === "DONE") completed.push(ev);
+      else if (ev.status !== "CANCELLED") upcoming.push(ev);
     }
     completed.sort((a, b) => (b.start_at ? new Date(b.start_at).getTime() : 0) - (a.start_at ? new Date(a.start_at).getTime() : 0));
-    return { upcomingTasks: upcoming, completedTasks: completed };
-  }, [tasks]);
+    return { upcomingEvents: upcoming, completedEvents: completed };
+  }, [events]);
 
-  const TaskCard = ({ task }: { task: any }) => (
-    <Card key={task.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/tasks/${task.id}`)}>
+  const details = (ev: any) => ev.event_details_json || {};
+
+  const EventCard = ({ event }: { event: any }) => (
+    <Card key={event.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/events/${event.id}`)}>
       <CardContent className="flex items-center justify-between p-4">
         <div className="min-w-0">
-          <p className="font-medium text-sm truncate">{task.listings?.name || "Listing"}{task.reference ? ` · ${task.reference}` : ""}</p>
+          <p className="font-medium text-sm truncate">{event.listings?.name || "Listing"}{event.reference ? ` · ${event.reference}` : ""}</p>
           <p className="text-xs text-muted-foreground">
-            {task.start_at ? format(new Date(task.start_at), "MMM d, HH:mm") : "No date"}
-            {task.end_at ? ` – ${format(new Date(task.end_at), "HH:mm")}` : ""}
-            {task.nights_to_show != null && ` · ${task.nights_to_show}N`}
-            {task.guests_to_show != null ? ` · ${task.guests_to_show}G` : ""}
+            {event.start_at ? format(new Date(event.start_at), "MMM d, HH:mm") : "No date"}
+            {event.end_at ? ` – ${format(new Date(event.end_at), "HH:mm")}` : ""}
+            {details(event).nights != null && ` · ${details(event).nights}N`}
+            {details(event).guests != null ? ` · ${details(event).guests}G` : ""}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {task.source === "AUTO" && <span className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">Auto</span>}
-          <StatusBadge status={task.status} />
+          {event.source === "AUTO" && <span className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">Auto</span>}
+          <StatusBadge status={event.status} />
         </div>
       </CardContent>
     </Card>
@@ -295,7 +299,7 @@ export default function TasksPage() {
 
   return (
     <div>
-      <PageHeader title="Checklists" description="Cleaning checklists for each scheduled listing task" actions={isHost ? (
+      <PageHeader title="Checklists" description="Cleaning checklists for each scheduled event" actions={isHost ? (
         <Button variant="outline" size="sm" onClick={() => openEditor()} className="gap-1.5">
           <Settings2 className="h-4 w-4" /> Manage Templates
         </Button>
@@ -303,8 +307,8 @@ export default function TasksPage() {
       <div className="p-6 space-y-4">
         <Tabs defaultValue="upcoming">
           <TabsList className="w-full"><TabsTrigger value="upcoming" className="flex-1">Upcoming</TabsTrigger><TabsTrigger value="completed" className="flex-1">Completed</TabsTrigger></TabsList>
-          <TabsContent value="upcoming" className="space-y-2">{upcomingTasks.length === 0 ? <p className="text-center text-muted-foreground py-8">No upcoming checklists.</p> : upcomingTasks.map((task) => <TaskCard key={task.id} task={task} />)}</TabsContent>
-          <TabsContent value="completed" className="space-y-2">{completedTasks.length === 0 ? <p className="text-center text-muted-foreground py-8">No completed checklists yet.</p> : completedTasks.map((task) => <TaskCard key={task.id} task={task} />)}</TabsContent>
+          <TabsContent value="upcoming" className="space-y-2">{upcomingEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">No upcoming checklists.</p> : upcomingEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}</TabsContent>
+          <TabsContent value="completed" className="space-y-2">{completedEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">No completed checklists yet.</p> : completedEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}</TabsContent>
         </Tabs>
       </div>
 
@@ -400,7 +404,6 @@ export default function TasksPage() {
                         </SelectContent>
                       </Select>
 
-                      {/* Save button */}
                       {pendingListingId !== null && !saved && (
                         <Button size="sm" onClick={handleSaveAssignment} disabled={assigningListing} className="w-full gap-1.5">
                           {assigningListing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -408,20 +411,17 @@ export default function TasksPage() {
                         </Button>
                       )}
 
-                      {/* Saved confirmation */}
                       {saved && (
                         <p className="text-xs text-[hsl(var(--status-done))] flex items-center gap-1">
                           <Check className="h-3.5 w-3.5" /> Assignment saved successfully.
                         </p>
                       )}
 
-                      {/* Warning if not assigned */}
                       {!saved && !(pendingListingId !== null) && !templates.find(t => t.id === selectedTemplateId)?.listing_id && (
                         <p className="text-xs text-amber-600">⚠ This template is not assigned to any listing. Cleaners won't see it.</p>
                       )}
                     </div>
 
-                    {/* Listings without template warning */}
                     {(() => {
                       const assignedListingIds = templates.filter(t => t.listing_id).map(t => t.listing_id);
                       const unassigned = listings.filter(l => !assignedListingIds.includes(l.id));

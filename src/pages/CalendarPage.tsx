@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, addMonths, subMonths, isSameMonth, isToday } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 
 export default function CalendarPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [tasks, setTasks] = useState<any[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -19,18 +19,18 @@ export default function CalendarPage() {
   const isHost = role === "host";
 
   useEffect(() => {
-    const fetchTasks = async () => {
+    const fetchEvents = async () => {
       const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
       const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
       const { data } = await supabase
-        .from("cleaning_tasks")
+        .from("cleaning_events")
         .select("*, listings(name)")
         .gte("start_at", start.toISOString())
         .lte("start_at", end.toISOString())
         .order("start_at");
-      setTasks(data || []);
+      setEvents(data || []);
     };
-    fetchTasks();
+    fetchEvents();
   }, [currentMonth]);
 
   useEffect(() => {
@@ -57,17 +57,17 @@ export default function CalendarPage() {
     return result;
   }, [currentMonth]);
 
-  const tasksByDate = useMemo(() => {
+  const eventsByDate = useMemo(() => {
     const map: Record<string, any[]> = {};
-    tasks.forEach((t) => {
-      if (t.start_at) {
-        const key = format(new Date(t.start_at), "yyyy-MM-dd");
+    events.forEach((ev) => {
+      if (ev.start_at) {
+        const key = format(new Date(ev.start_at), "yyyy-MM-dd");
         if (!map[key]) map[key] = [];
-        map[key].push(t);
+        map[key].push(ev);
       }
     });
     return map;
-  }, [tasks]);
+  }, [events]);
 
   const suggestionsByDate = useMemo(() => {
     const map: Record<string, any[]> = {};
@@ -88,6 +88,8 @@ export default function CalendarPage() {
     red: "bg-red-500/20 text-red-700 dark:text-red-400",
   };
 
+  const details = (ev: any) => ev.event_details_json || {};
+
   return (
     <div className="flex flex-col h-full">
       <PageHeader title="Calendar" description="Cleaning schedule overview" actions={
@@ -105,9 +107,8 @@ export default function CalendarPage() {
           ))}
           {days.map((day) => {
             const key = format(day, "yyyy-MM-dd");
-            const dayTasks = tasksByDate[key] || [];
+            const dayEvents = eventsByDate[key] || [];
             const daySuggestions = isHost ? (suggestionsByDate[key] || []) : [];
-            // Pick the highest uplift suggestion for the badge
             const topSuggestion = daySuggestions.length > 0
               ? daySuggestions.reduce((a: any, b: any) => (b.uplift_pct > a.uplift_pct ? b : a))
               : null;
@@ -131,12 +132,12 @@ export default function CalendarPage() {
                   )}
                 </div>
                 <div className="mt-1 space-y-1">
-                  {dayTasks.slice(0, 3).map((t: any) => (
-                    <button key={t.id} onClick={(e) => { e.stopPropagation(); navigate(`/tasks/${t.id}`); }} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", t.status === "DONE" ? "bg-[hsl(var(--status-done)/0.15)] text-[hsl(var(--status-done))]" : t.status === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
-                      {t.listings?.name || "Cleaning"}{t.nights_to_show != null ? ` · ${t.nights_to_show}N` : ""}{t.guests_to_show != null ? ` · ${t.guests_to_show}G` : ""}
+                  {dayEvents.slice(0, 3).map((ev: any) => (
+                    <button key={ev.id} onClick={(e) => { e.stopPropagation(); navigate(`/events/${ev.id}`); }} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", ev.status === "DONE" ? "bg-[hsl(var(--status-done)/0.15)] text-[hsl(var(--status-done))]" : ev.status === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
+                      {ev.listings?.name || "Cleaning"}{details(ev).nights != null ? ` · ${details(ev).nights}N` : ""}{details(ev).guests != null ? ` · ${details(ev).guests}G` : ""}
                     </button>
                   ))}
-                  {dayTasks.length > 3 && <p className="text-xs text-muted-foreground px-1">+{dayTasks.length - 3} more</p>}
+                  {dayEvents.length > 3 && <p className="text-xs text-muted-foreground px-1">+{dayEvents.length - 3} more</p>}
                 </div>
               </div>
             );

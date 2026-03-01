@@ -11,7 +11,7 @@ import { ArrowLeft, Check, Camera, X, Loader2, Clock, LogIn, LogOut } from "luci
 import { cn } from "@/lib/utils";
 import { ShoppingCheckSection } from "@/components/checklist/ShoppingCheckSection";
 import { ChecklistTemplateEditor } from "@/components/admin/ChecklistTemplateEditor";
-import { TaskInlineEdit } from "@/components/admin/TaskInlineEdit";
+import { EventInlineEdit } from "@/components/admin/EventInlineEdit";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -49,14 +49,16 @@ interface MissingItem {
 const SHOPPING_TAB_ID = "__shopping__";
 const CLOCK_IN_TAB_ID = "__clock_in__";
 const CLOCK_OUT_TAB_ID = "__clock_out__";
+
 export default function ChecklistRunPage() {
-  const { taskId } = useParams();
+  // Route uses eventId now (was taskId)
+  const { eventId } = useParams();
   const navigate = useNavigate();
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
   const [templateId, setTemplateId] = useState<string>("");
 
-  const [task, setTask] = useState<any>(null);
+  const [event, setEvent] = useState<any>(null);
   const [sections, setSections] = useState<Section[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
   const [responses, setResponses] = useState<Record<string, boolean | null>>({});
@@ -67,7 +69,6 @@ export default function ChecklistRunPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activePhotoItemId, setActivePhotoItemId] = useState<string | null>(null);
 
-  // Work Log state
   const nowTime = () => {
     const d = new Date();
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -79,41 +80,39 @@ export default function ChecklistRunPage() {
   const [clockedIn, setClockedIn] = useState(false);
   const [clockedOut, setClockedOut] = useState(false);
 
-  // Shopping state
   const [shoppingChecked, setShoppingChecked] = useState<boolean | null>(null);
   const [missingItems, setMissingItems] = useState<MissingItem[]>([]);
   const [shoppingError, setShoppingError] = useState<string | null>(null);
 
-  // Load task + template sections + reuse existing run
   useEffect(() => {
-    if (!taskId || !user) return;
+    if (!eventId || !user) return;
 
     const load = async () => {
-      const { data: taskData } = await supabase
-        .from("cleaning_tasks")
+      const { data: eventData } = await supabase
+        .from("cleaning_events")
         .select("*, listings(name, timezone)")
-        .eq("id", taskId)
+        .eq("id", eventId)
         .single();
-      setTask(taskData);
+      setEvent(eventData);
 
-      // Check if task is already DONE
-      if (taskData?.status === "DONE") {
+      if (eventData?.status === "DONE") {
         setAlreadyFinished(true);
         return;
       }
 
-      // Find template for listing
-      let tplId = "00000000-0000-0000-0000-000000000001";
-      if (taskData?.listing_id) {
+      // Use event's stored template, fallback to listing lookup
+      let tplId = eventData?.checklist_template_id || "";
+      if (!tplId && eventData?.listing_id) {
         const { data: tpl } = await supabase
           .from("checklist_templates")
           .select("id")
-          .eq("listing_id", taskData.listing_id)
+          .eq("listing_id", eventData.listing_id)
           .eq("active", true)
           .limit(1)
           .single();
         if (tpl) tplId = tpl.id;
       }
+      if (!tplId) return;
       setTemplateId(tplId);
 
       const { data: sectionsData } = await supabase
@@ -139,27 +138,25 @@ export default function ChecklistRunPage() {
       setSections(fullSections);
       if (fullSections.length > 0) setActiveTab(CLOCK_IN_TAB_ID);
 
-      // Check for existing unfinished run for this task
+      // Check for existing unfinished run
       const { data: existingRuns } = await supabase
         .from("checklist_runs")
         .select("id")
-        .eq("cleaning_task_id", taskId)
+        .eq("cleaning_event_id", eventId)
         .is("finished_at", null)
         .limit(1);
 
       if (existingRuns && existingRuns.length > 0) {
-        // Reuse existing run
         setRunId(existingRuns[0].id);
       } else {
-        // Create new checklist run
         const startedAt = new Date().toISOString();
         const { data: run } = await supabase
           .from("checklist_runs")
           .insert({
-            cleaning_task_id: taskId,
-            listing_id: taskData?.listing_id || null,
+            cleaning_event_id: eventId,
+            listing_id: eventData?.listing_id || null,
             cleaner_user_id: user.id,
-            host_user_id: taskData?.host_user_id,
+            host_user_id: eventData?.host_user_id,
             started_at: startedAt,
           } as any)
           .select("id")
@@ -168,13 +165,13 @@ export default function ChecklistRunPage() {
         if (run) setRunId(run.id);
       }
 
-      if (taskData?.status === "TODO") {
-        await supabase.from("cleaning_tasks").update({ status: "IN_PROGRESS" as const }).eq("id", taskId);
+      if (eventData?.status === "TODO") {
+        await supabase.from("cleaning_events").update({ status: "IN_PROGRESS" }).eq("id", eventId);
       }
     };
 
     load();
-  }, [taskId, user]);
+  }, [eventId, user]);
 
   const toggleYesNo = (itemId: string) => {
     setResponses((prev) => ({
@@ -273,7 +270,6 @@ export default function ChecklistRunPage() {
   };
 
   const validateShopping = (): boolean => {
-    // Shopping is optional for cleaners
     setShoppingError(null);
     return true;
   };
@@ -283,7 +279,6 @@ export default function ChecklistRunPage() {
       const { done, total } = getSectionCompletion(section);
       return done >= total;
     });
-    // Shopping is optional
     return sectionsOk && clockedIn && clockedOut && workStart && workEnd && workEnd > workStart;
   };
 
@@ -297,19 +292,17 @@ export default function ChecklistRunPage() {
       toast({ title: "Incomplete", description: "Please complete all required items before finishing.", variant: "destructive" });
       return;
     }
-    if (!runId || !taskId || !user) return;
+    if (!runId || !eventId || !user) return;
 
     setFinishing(true);
 
     const finishedAt = new Date().toISOString();
     const today = new Date().toISOString().split("T")[0];
 
-    // Calculate duration from work start/end
     const [sh, sm] = workStart.split(":").map(Number);
     const [eh, em] = workEnd.split(":").map(Number);
     const durationMinutes = (eh * 60 + em) - (sh * 60 + sm);
 
-    // Save all YES/NO responses
     const responseEntries = Object.entries(responses)
       .filter(([, val]) => val !== null)
       .map(([itemId, val]) => ({
@@ -323,14 +316,12 @@ export default function ChecklistRunPage() {
       await supabase.from("checklist_responses").insert(responseEntries);
     }
 
-    // Update run with finish time
     await supabase.from("checklist_runs").update({
       finished_at: finishedAt,
       duration_minutes: durationMinutes,
     }).eq("id", runId);
 
-    // UPSERT LogHours with source=CHECKLIST (unique on checklist_run_id)
-    // Use upsert pattern: try insert, if conflict do nothing (already logged)
+    // Log hours linked to cleaning_event_id
     await supabase.from("log_hours").upsert({
       user_id: user.id,
       date: today,
@@ -339,13 +330,12 @@ export default function ChecklistRunPage() {
       duration_minutes: durationMinutes,
       source: "CHECKLIST" as const,
       checklist_run_id: runId,
-      cleaning_task_id: taskId,
-      listing_id: task?.listing_id || null,
+      cleaning_event_id: eventId,
+      listing_id: event?.listing_id || null,
       description: workNotes || null,
       host_user_id: hostId,
     } as any, { onConflict: "checklist_run_id" });
 
-    // Create shopping list entries for missing items
     for (const item of missingItems) {
       const { data: existing } = await supabase
         .from("shopping_list")
@@ -369,34 +359,34 @@ export default function ChecklistRunPage() {
           note: item.note || null,
           created_from: "CHECKLIST" as const,
           checklist_run_id: runId,
-          listing_id: task?.listing_id || null,
+          listing_id: event?.listing_id || null,
           host_user_id: hostId,
         } as any);
       }
     }
 
-    // Mark task as DONE
-    await supabase.from("cleaning_tasks").update({
-      status: "DONE" as const,
+    // Mark event as DONE
+    await supabase.from("cleaning_events").update({
+      status: "DONE",
       checklist_run_id: runId,
-    }).eq("id", taskId);
+    }).eq("id", eventId);
 
     toast({ title: "Checklist complete!", description: `Duration: ${durationMinutes} minutes` });
-    navigate(`/tasks/${taskId}`);
+    navigate(`/events/${eventId}`);
   };
 
   if (alreadyFinished) {
     return (
       <div className="p-6 text-center space-y-4">
-        <p className="text-muted-foreground">This cleaning task has already been completed.</p>
-        <Button variant="outline" onClick={() => navigate(`/tasks/${taskId}`)}>
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back to Task
+        <p className="text-muted-foreground">This cleaning event has already been completed.</p>
+        <Button variant="outline" onClick={() => navigate(`/events/${eventId}`)}>
+          <ArrowLeft className="h-4 w-4 mr-1" /> Back to Event
         </Button>
       </div>
     );
   }
 
-  if (!task) {
+  if (!event) {
     return <div className="p-6 text-muted-foreground">Loading checklist...</div>;
   }
 
@@ -404,14 +394,12 @@ export default function ChecklistRunPage() {
     return (
       <div className="p-6 text-center space-y-4">
         <p className="text-muted-foreground">No checklist template has been set up for this listing yet. Ask your host to create one.</p>
-        <Button variant="outline" onClick={() => navigate(`/tasks/${taskId}`)}>
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back to Task
+        <Button variant="outline" onClick={() => navigate(`/events/${eventId}`)}>
+          <ArrowLeft className="h-4 w-4 mr-1" /> Back to Event
         </Button>
       </div>
     );
   }
-
-  const shoppingCompletion = shoppingChecked === true ? { done: 1, total: 1 } : { done: 0, total: 1 };
 
   const allTabs = [CLOCK_IN_TAB_ID, ...sections.map(s => s.id), SHOPPING_TAB_ID, CLOCK_OUT_TAB_ID];
   const goToNextTab = () => {
@@ -420,23 +408,23 @@ export default function ChecklistRunPage() {
       setActiveTab(allTabs[currentIdx + 1]);
     }
   };
+
   return (
     <div className="flex flex-col h-full">
       <PageHeader
         title="Cleaning Checklist"
-        description={`${task.listings?.name || "Listing"}`}
+        description={`${event.listings?.name || "Listing"}`}
         actions={
-          <Button variant="outline" size="sm" onClick={() => navigate(`/tasks/${taskId}`)}>
+          <Button variant="outline" size="sm" onClick={() => navigate(`/events/${eventId}`)}>
             <ArrowLeft className="h-4 w-4 mr-1" /> Back
           </Button>
         }
       />
 
-      {/* Admin controls */}
       {role === "host" && (
         <div className="border-b border-border bg-muted/30 px-4 py-3 space-y-3">
           <div className="flex gap-2 flex-wrap">
-            <TaskInlineEdit task={task} onUpdated={(updated) => setTask(updated)} />
+            <EventInlineEdit event={event} onUpdated={(updated) => setEvent(updated)} />
             {templateId && (
               <ChecklistTemplateEditor
                 sections={sections}

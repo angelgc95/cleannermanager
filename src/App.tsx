@@ -67,8 +67,8 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/tasks" element={<TasksPage />} />
-              <Route path="/tasks/:id" element={<TaskDetailPage />} />
-              <Route path="/tasks/:taskId/checklist" element={<ChecklistRunPage />} />
+              <Route path="/events/:id" element={<TaskDetailPage />} />
+              <Route path="/events/:eventId/checklist" element={<ChecklistRunPage />} />
               <Route path="/hours" element={<LogHoursPage />} />
               <Route path="/expenses" element={<ExpensesPage />} />
               <Route path="/maintenance" element={<MaintenancePage />} />
