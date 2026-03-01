@@ -7,12 +7,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Check, Camera, X, Loader2 } from "lucide-react";
+import { ArrowLeft, Check, Camera, X, Loader2, Clock, LogIn, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { WorkLogSection } from "@/components/checklist/WorkLogSection";
 import { ShoppingCheckSection } from "@/components/checklist/ShoppingCheckSection";
 import { ChecklistTemplateEditor } from "@/components/admin/ChecklistTemplateEditor";
 import { TaskInlineEdit } from "@/components/admin/TaskInlineEdit";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Section {
   id: string;
@@ -45,7 +47,8 @@ interface MissingItem {
 }
 
 const SHOPPING_TAB_ID = "__shopping__";
-
+const CLOCK_IN_TAB_ID = "__clock_in__";
+const CLOCK_OUT_TAB_ID = "__clock_out__";
 export default function ChecklistRunPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
@@ -73,6 +76,8 @@ export default function ChecklistRunPage() {
   const [workEnd, setWorkEnd] = useState("");
   const [workNotes, setWorkNotes] = useState("");
   const [workLogError, setWorkLogError] = useState<string | null>(null);
+  const [clockedIn, setClockedIn] = useState(false);
+  const [clockedOut, setClockedOut] = useState(false);
 
   // Shopping state
   const [shoppingChecked, setShoppingChecked] = useState<boolean | null>(null);
@@ -132,7 +137,7 @@ export default function ChecklistRunPage() {
       }));
 
       setSections(fullSections);
-      if (fullSections.length > 0) setActiveTab(fullSections[0].id);
+      if (fullSections.length > 0) setActiveTab(CLOCK_IN_TAB_ID);
 
       // Check for existing unfinished run for this task
       const { data: existingRuns } = await supabase
@@ -279,7 +284,7 @@ export default function ChecklistRunPage() {
       return done >= total;
     });
     // Shopping is optional
-    return sectionsOk && workStart && workEnd && workEnd > workStart;
+    return sectionsOk && clockedIn && clockedOut && workStart && workEnd && workEnd > workStart;
   };
 
   const handleFinish = async () => {
@@ -408,9 +413,8 @@ export default function ChecklistRunPage() {
 
   const shoppingCompletion = shoppingChecked === true ? { done: 1, total: 1 } : { done: 0, total: 1 };
 
-  // Helper to go to next section
+  const allTabs = [CLOCK_IN_TAB_ID, ...sections.map(s => s.id), SHOPPING_TAB_ID, CLOCK_OUT_TAB_ID];
   const goToNextTab = () => {
-    const allTabs = [...sections.map(s => s.id), SHOPPING_TAB_ID];
     const currentIdx = allTabs.indexOf(activeTab);
     if (currentIdx < allTabs.length - 1) {
       setActiveTab(allTabs[currentIdx + 1]);
@@ -453,20 +457,21 @@ export default function ChecklistRunPage() {
         onChange={handlePhotoUpload}
       />
 
-      <WorkLogSection
-        workStart={workStart}
-        workEnd={workEnd}
-        workNotes={workNotes}
-        onWorkStartChange={setWorkStart}
-        onWorkEndChange={setWorkEnd}
-        onWorkNotesChange={setWorkNotes}
-        error={workLogError}
-      />
-
       <div className="flex-1 flex flex-col overflow-hidden">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
           <div className="border-b border-border bg-card px-4 overflow-x-auto">
             <TabsList className="h-auto bg-transparent gap-0 p-0">
+              <TabsTrigger
+                value={CLOCK_IN_TAB_ID}
+                className={cn(
+                  "px-3 py-2.5 text-xs rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent whitespace-nowrap",
+                  clockedIn && "text-[hsl(var(--status-done))]"
+                )}
+              >
+                <LogIn className="h-3 w-3 mr-1" />
+                Clock In
+                {clockedIn && <Check className="h-3 w-3 ml-1" />}
+              </TabsTrigger>
               {sections.map((section) => {
                 const { done, total } = getSectionCompletion(section);
                 const isComplete = done >= total && total > 0;
@@ -498,10 +503,55 @@ export default function ChecklistRunPage() {
                   (optional)
                 </span>
               </TabsTrigger>
+              <TabsTrigger
+                value={CLOCK_OUT_TAB_ID}
+                className={cn(
+                  "px-3 py-2.5 text-xs rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent whitespace-nowrap",
+                  clockedOut && "text-[hsl(var(--status-done))]"
+                )}
+              >
+                <LogOut className="h-3 w-3 mr-1" />
+                Clock Out
+                {clockedOut && <Check className="h-3 w-3 ml-1" />}
+              </TabsTrigger>
             </TabsList>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4">
+            {/* Clock In Tab */}
+            <TabsContent value={CLOCK_IN_TAB_ID} className="mt-0 space-y-4">
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Clock className="h-4 w-4 text-primary" />
+                    Clock In
+                  </div>
+                  <p className="text-xs text-muted-foreground">Record your start time before beginning the checklist. Defaults to now.</p>
+                  <div className="space-y-1">
+                    <Label htmlFor="work-start" className="text-xs">
+                      Start Time <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="work-start"
+                      type="time"
+                      value={workStart}
+                      onChange={(e) => { setWorkStart(e.target.value); setClockedIn(false); }}
+                      className="h-9"
+                    />
+                  </div>
+                  {!clockedIn ? (
+                    <Button className="w-full gap-2" onClick={() => { if (workStart) { setClockedIn(true); goToNextTab(); } }}>
+                      <LogIn className="h-4 w-4" /> Confirm Clock In
+                    </Button>
+                  ) : (
+                    <div className="flex items-center gap-2 text-sm text-[hsl(var(--status-done))]">
+                      <Check className="h-4 w-4" /> Clocked in at {workStart}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
             {sections.map((section) => (
               <TabsContent key={section.id} value={section.id} className="mt-0 space-y-2">
                 {section.items.map((item) => (
@@ -592,9 +642,7 @@ export default function ChecklistRunPage() {
                   const uncheckedYesNo = section.items.filter(
                     (i) => i.type === "YESNO" && i.required && responses[i.id] !== true
                   );
-                  const sectionComplete = done >= total && total > 0;
-                  const allTabs = [...sections.map(s => s.id), SHOPPING_TAB_ID];
-                  const isLastSection = allTabs.indexOf(section.id) === allTabs.length - 1;
+                   const sectionComplete = done >= total && total > 0;
 
                   return (
                     <div className="flex gap-2 mt-3">
@@ -611,7 +659,7 @@ export default function ChecklistRunPage() {
                           <Check className="h-4 w-4 mr-2" /> Mark Section Complete
                         </Button>
                       )}
-                      {sectionComplete && !isLastSection && (
+                      {sectionComplete && (
                         <Button
                           className="flex-1 gap-2"
                           onClick={goToNextTab}
@@ -633,6 +681,64 @@ export default function ChecklistRunPage() {
                 onMissingItemsChange={setMissingItems}
                 error={shoppingError}
               />
+              <div className="mt-3">
+                <Button className="w-full gap-2" onClick={goToNextTab}>
+                  Next: Clock Out →
+                </Button>
+              </div>
+            </TabsContent>
+
+            {/* Clock Out Tab */}
+            <TabsContent value={CLOCK_OUT_TAB_ID} className="mt-0 space-y-4">
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Clock className="h-4 w-4 text-primary" />
+                    Clock Out
+                  </div>
+                  <p className="text-xs text-muted-foreground">Record your end time after completing the checklist. Defaults to now.</p>
+                  <div className="space-y-1">
+                    <Label htmlFor="work-end" className="text-xs">
+                      End Time <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="work-end"
+                      type="time"
+                      value={workEnd || nowTime()}
+                      onChange={(e) => { setWorkEnd(e.target.value); setClockedOut(false); }}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="work-notes" className="text-xs">Notes (optional)</Label>
+                    <Textarea
+                      id="work-notes"
+                      value={workNotes}
+                      onChange={(e) => setWorkNotes(e.target.value)}
+                      placeholder="Any notes about the work..."
+                      className="min-h-[60px] text-sm"
+                    />
+                  </div>
+                  {workLogError && <p className="text-xs text-destructive">{workLogError}</p>}
+                  {!clockedOut ? (
+                    <Button className="w-full gap-2" onClick={() => {
+                      const endVal = workEnd || nowTime();
+                      setWorkEnd(endVal);
+                      if (endVal > workStart) {
+                        setClockedOut(true);
+                      } else {
+                        setWorkLogError("End time must be after start time.");
+                      }
+                    }}>
+                      <LogOut className="h-4 w-4" /> Confirm Clock Out
+                    </Button>
+                  ) : (
+                    <div className="flex items-center gap-2 text-sm text-[hsl(var(--status-done))]">
+                      <Check className="h-4 w-4" /> Clocked out at {workEnd}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
           </div>
         </Tabs>
