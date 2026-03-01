@@ -75,6 +75,7 @@ export type Database = {
       }
       checklist_items: {
         Row: {
+          depends_on_item_id: string | null
           help_text: string | null
           host_user_id: string | null
           id: string
@@ -87,6 +88,7 @@ export type Database = {
           type: Database["public"]["Enums"]["checklist_item_type"] | null
         }
         Insert: {
+          depends_on_item_id?: string | null
           help_text?: string | null
           host_user_id?: string | null
           id?: string
@@ -99,6 +101,7 @@ export type Database = {
           type?: Database["public"]["Enums"]["checklist_item_type"] | null
         }
         Update: {
+          depends_on_item_id?: string | null
           help_text?: string | null
           host_user_id?: string | null
           id?: string
@@ -111,6 +114,13 @@ export type Database = {
           type?: Database["public"]["Enums"]["checklist_item_type"] | null
         }
         Relationships: [
+          {
+            foreignKeyName: "checklist_items_depends_on_item_id_fkey"
+            columns: ["depends_on_item_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_items"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "checklist_items_section_id_fkey"
             columns: ["section_id"]
@@ -1405,7 +1415,7 @@ export type Database = {
     }
     Enums: {
       app_role: "host" | "cleaner"
-      checklist_item_type: "YESNO" | "PHOTO" | "TEXT" | "NUMBER"
+      checklist_item_type: "YESNO" | "PHOTO" | "TEXT" | "NUMBER" | "TIMER"
       cleaning_source: "AUTO" | "MANUAL"
       cleaning_status: "TODO" | "IN_PROGRESS" | "DONE" | "CANCELLED"
       log_hours_source: "MANUAL" | "CHECKLIST"
@@ -1545,7 +1555,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["host", "cleaner"],
-      checklist_item_type: ["YESNO", "PHOTO", "TEXT", "NUMBER"],
+      checklist_item_type: ["YESNO", "PHOTO", "TEXT", "NUMBER", "TIMER"],
       cleaning_source: ["AUTO", "MANUAL"],
       cleaning_status: ["TODO", "IN_PROGRESS", "DONE", "CANCELLED"],
       log_hours_source: ["MANUAL", "CHECKLIST"],
