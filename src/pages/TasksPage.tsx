@@ -108,7 +108,7 @@ export default function TasksPage() {
   const { role, user } = useAuth();
   const { toast } = useToast();
   const isHost = role === "host";
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [templates, setTemplates] = useState<TemplateOption[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
@@ -136,10 +136,14 @@ export default function TasksPage() {
     return tpls;
   }, []);
 
-  const openEditor = useCallback(async () => {
-    setEditorOpen(true);
+  const openEditor = useCallback(async (templateId?: string) => {
+    setManageOpen(true);
     const tpls = await fetchTemplates();
-    if (tpls.length > 0 && !selectedTemplateId) setSelectedTemplateId(tpls[0].id);
+    if (templateId) {
+      setSelectedTemplateId(templateId);
+    } else if (tpls.length > 0 && !selectedTemplateId) {
+      setSelectedTemplateId(tpls[0].id);
+    }
   }, [selectedTemplateId, fetchTemplates]);
 
   useEffect(() => {
@@ -214,7 +218,7 @@ export default function TasksPage() {
       setListingDescription("");
       setSelectedTemplateId(tpl.id);
       await fetchTemplates();
-      if (!editorOpen) setEditorOpen(true);
+      if (!manageOpen) setManageOpen(true);
     } catch (err: any) {
       toast({ title: "Error", description: err?.message || "Failed to create template", variant: "destructive" });
     } finally {
@@ -255,16 +259,9 @@ export default function TasksPage() {
   return (
     <div>
       <PageHeader title="Checklists" description="Cleaning checklists for each scheduled listing task" actions={isHost ? (
-        <div className="flex gap-2">
-          <Button variant="default" size="sm" onClick={() => setCreateDialogOpen(true)} className="gap-1.5">
-            <Plus className="h-4 w-4" /> Create Template
-          </Button>
-          {templates.length > 0 && (
-            <Button variant="outline" size="sm" onClick={openEditor} className="gap-1.5">
-              <Settings2 className="h-4 w-4" /> Edit Template
-            </Button>
-          )}
-        </div>
+        <Button variant="outline" size="sm" onClick={() => openEditor()} className="gap-1.5">
+          <Settings2 className="h-4 w-4" /> Manage Templates
+        </Button>
       ) : undefined} />
       <div className="p-6 space-y-4">
         <Tabs defaultValue="upcoming">
@@ -315,12 +312,30 @@ export default function TasksPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Template Sheet */}
-      <Sheet open={editorOpen} onOpenChange={setEditorOpen}>
+      {/* Manage Templates Sheet */}
+      <Sheet open={manageOpen} onOpenChange={setManageOpen}>
         <SheetContent className="sm:max-w-lg overflow-y-auto">
-          <SheetHeader><SheetTitle>Edit Checklist Template</SheetTitle></SheetHeader>
+          <SheetHeader><SheetTitle>Manage Templates</SheetTitle></SheetHeader>
           <div className="mt-4 space-y-4">
-            {templates.length > 0 ? (<><Select value={selectedTemplateId || ""} onValueChange={setSelectedTemplateId}><SelectTrigger><SelectValue placeholder="Select template" /></SelectTrigger><SelectContent>{templates.map((t) => (<SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>))}</SelectContent></Select>{selectedTemplateId && <ChecklistTemplateEditor sections={sections} templateId={selectedTemplateId} onSectionsUpdated={setSections} />}</>) : (<div className="text-center py-8 space-y-3"><p className="text-sm text-muted-foreground">No checklist templates found.</p><Button onClick={() => { setEditorOpen(false); setCreateDialogOpen(true); }} className="gap-1.5"><Plus className="h-4 w-4" /> Create Template</Button></div>)}
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">{templates.length} template{templates.length !== 1 ? "s" : ""}</p>
+              <Button size="sm" onClick={() => { setCreateDialogOpen(true); }} className="gap-1.5">
+                <Plus className="h-4 w-4" /> Create Template
+              </Button>
+            </div>
+            {templates.length > 0 ? (
+              <>
+                <Select value={selectedTemplateId || ""} onValueChange={setSelectedTemplateId}>
+                  <SelectTrigger><SelectValue placeholder="Select template to edit" /></SelectTrigger>
+                  <SelectContent>{templates.map((t) => (<SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>))}</SelectContent>
+                </Select>
+                {selectedTemplateId && <ChecklistTemplateEditor sections={sections} templateId={selectedTemplateId} onSectionsUpdated={setSections} />}
+              </>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-sm text-muted-foreground">No templates yet. Create one to get started.</p>
+              </div>
+            )}
           </div>
         </SheetContent>
       </Sheet>
