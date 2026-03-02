@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -282,37 +283,41 @@ export default function TasksPage() {
     }
   };
 
-  const { upcomingEvents, completedEvents } = useMemo(() => {
-    const upcoming: any[] = []; const completed: any[] = [];
+  const { upcomingEvents, completedEvents, cancelledEvents } = useMemo(() => {
+    const upcoming: any[] = []; const completed: any[] = []; const cancelled: any[] = [];
     for (const ev of events) {
-      if (ev.status === "DONE") completed.push(ev);
-      else if (ev.status !== "CANCELLED") upcoming.push(ev);
+      if (ev.status === "CANCELLED") cancelled.push(ev);
+      else if (ev.status === "DONE") completed.push(ev);
+      else upcoming.push(ev);
     }
     completed.sort((a, b) => (b.start_at ? new Date(b.start_at).getTime() : 0) - (a.start_at ? new Date(a.start_at).getTime() : 0));
-    return { upcomingEvents: upcoming, completedEvents: completed };
+    return { upcomingEvents: upcoming, completedEvents: completed, cancelledEvents: cancelled };
   }, [events]);
 
   const details = (ev: any) => ev.event_details_json || {};
 
-  const EventCard = ({ event }: { event: any }) => (
-    <Card key={event.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/events/${event.id}`)}>
-      <CardContent className="flex items-center justify-between p-4">
-        <div className="min-w-0">
-          <p className="font-medium text-sm truncate">{event.listings?.name || "Listing"}{event.reference ? ` · ${event.reference}` : ""}</p>
-          <p className="text-xs text-muted-foreground">
-            {event.start_at ? format(new Date(event.start_at), "MMM d, HH:mm") : "No date"}
-            {event.end_at ? ` – ${format(new Date(event.end_at), "HH:mm")}` : ""}
-            {details(event).nights != null && ` · ${details(event).nights}N`}
-            {details(event).guests != null ? ` · ${details(event).guests}G` : ""}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {event.source === "AUTO" && <span className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">Auto</span>}
-          <StatusBadge status={event.status} />
-        </div>
-      </CardContent>
-    </Card>
-  );
+  const EventCard = ({ event }: { event: any }) => {
+    const isCancelled = event.status === "CANCELLED";
+    return (
+      <Card key={event.id} className={cn("cursor-pointer hover:shadow-md transition-shadow", isCancelled && "opacity-50")} onClick={() => navigate(`/events/${event.id}`)}>
+        <CardContent className="flex items-center justify-between p-4">
+          <div className="min-w-0">
+            <p className={cn("font-medium text-sm truncate", isCancelled && "line-through text-muted-foreground")}>{event.listings?.name || "Listing"}{event.reference ? ` · ${event.reference}` : ""}</p>
+            <p className={cn("text-xs text-muted-foreground", isCancelled && "line-through")}>
+              {event.start_at ? format(new Date(event.start_at), "MMM d, HH:mm") : "No date"}
+              {event.end_at ? ` – ${format(new Date(event.end_at), "HH:mm")}` : ""}
+              {details(event).nights != null && ` · ${details(event).nights}N`}
+              {details(event).guests != null ? ` · ${details(event).guests}G` : ""}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {event.source === "AUTO" && <span className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">Auto</span>}
+            <StatusBadge status={event.status} />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div>
@@ -324,7 +329,10 @@ export default function TasksPage() {
       <div className="p-6 space-y-4">
         <Tabs defaultValue="upcoming">
           <TabsList className="w-full"><TabsTrigger value="upcoming" className="flex-1">Upcoming</TabsTrigger><TabsTrigger value="completed" className="flex-1">Completed</TabsTrigger></TabsList>
-          <TabsContent value="upcoming" className="space-y-2">{upcomingEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">No upcoming checklists.</p> : upcomingEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}</TabsContent>
+          <TabsContent value="upcoming" className="space-y-2">
+            {cancelledEvents.length > 0 && cancelledEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}
+            {upcomingEvents.length === 0 && cancelledEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">No upcoming checklists.</p> : upcomingEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}
+          </TabsContent>
           <TabsContent value="completed" className="space-y-2">{completedEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">No completed checklists yet.</p> : completedEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}</TabsContent>
         </Tabs>
       </div>

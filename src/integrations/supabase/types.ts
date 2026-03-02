@@ -1374,6 +1374,51 @@ export type Database = {
         }
         Relationships: []
       }
+      tasks: {
+        Row: {
+          assigned_cleaner_id: string
+          completed_at: string | null
+          created_at: string
+          due_date: string | null
+          help_text: string | null
+          host_user_id: string
+          id: string
+          label: string
+          required: boolean
+          status: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_cleaner_id: string
+          completed_at?: string | null
+          created_at?: string
+          due_date?: string | null
+          help_text?: string | null
+          host_user_id: string
+          id?: string
+          label: string
+          required?: boolean
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_cleaner_id?: string
+          completed_at?: string | null
+          created_at?: string
+          due_date?: string | null
+          help_text?: string | null
+          host_user_id?: string
+          id?: string
+          label?: string
+          required?: boolean
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string

@@ -187,6 +187,14 @@ function CleanerShoppingView({ submissions, items, products, user, hostId, toast
             {filtered.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No products found.</p>}
           </div>
 
+          {/* Cleaner: Add new product */}
+          <Card className="border-dashed">
+            <CardContent className="p-3 space-y-2">
+              <p className="text-sm font-medium">Add New Product</p>
+              <CleanerAddProduct hostId={hostId} onAdded={onRefresh} />
+            </CardContent>
+          </Card>
+
           {selected.length > 0 && (
             <Button onClick={handleSubmit} disabled={submitting} className="w-full mt-4 gap-2">
               <Send className="h-4 w-4" /> Submit {selected.length} item{selected.length !== 1 ? "s" : ""}
@@ -574,7 +582,20 @@ function AdminSubmissionCard({ submission, items, editingId, editQty, editStatus
                       <span className="text-muted-foreground ml-2 text-xs">× {item.quantity_needed}</span>
                       {item.note && <span className="text-muted-foreground text-xs ml-2">({item.note})</span>}
                     </div>
-                    <StatusBadge status={item.status} />
+                    <Select value={item.status} onValueChange={async (val) => {
+                      await supabase.from("shopping_list").update({ status: val as any }).eq("id", item.id);
+                      onSaveEdit(null); // triggers no-op but we just need refresh pattern
+                      // optimistically update inline
+                      item.status = val;
+                    }}>
+                      <SelectTrigger className="w-[100px] h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="MISSING">Missing</SelectItem>
+                        <SelectItem value="ORDERED">Ordered</SelectItem>
+                        <SelectItem value="BOUGHT">Bought</SelectItem>
+                        <SelectItem value="OK">OK</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <Button size="sm" variant="ghost" onClick={() => onStartEdit(item)}><Edit2 className="h-3 w-3" /></Button>
                     <Button size="sm" variant="ghost" className="text-destructive" onClick={() => onDeleteItem(item.id)}><Trash2 className="h-3 w-3" /></Button>
                   </>
@@ -607,4 +628,35 @@ function SubmissionStatusBadge({ status }: { status: string }) {
   };
   const { label, variant } = map[status] || { label: status, variant: "outline" as const };
   return <Badge variant={variant} className="text-[10px]">{label}</Badge>;
+}
+
+/* ─── Cleaner: Add new product inline ─── */
+function CleanerAddProduct({ hostId, onAdded }: { hostId: string | null; onAdded: () => void }) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
+  const { toast } = useToast();
+  const { user } = useAuth();
+
+  const handleAdd = async () => {
+    if (!name.trim() || !hostId || !user) return;
+    const { error } = await supabase.from("products").insert({ name: name.trim(), category: category.trim() || null, host_user_id: hostId, active: true } as any);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Product added" });
+      setName("");
+      setCategory("");
+      onAdded();
+    }
+  };
+
+  return (
+    <div className="flex gap-2">
+      <Input placeholder="Product name" value={name} onChange={(e) => setName(e.target.value)} className="flex-1 h-8 text-sm" />
+      <Input placeholder="Category" value={category} onChange={(e) => setCategory(e.target.value)} className="w-28 h-8 text-sm" />
+      <Button size="sm" onClick={handleAdd} disabled={!name.trim()} className="gap-1">
+        <Plus className="h-3.5 w-3.5" /> Add
+      </Button>
+    </div>
+  );
 }
