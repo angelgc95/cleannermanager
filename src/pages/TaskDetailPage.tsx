@@ -30,6 +30,7 @@ export default function TaskDetailPage() {
   const [event, setEvent] = useState<any>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [listingTimezone, setListingTimezone] = useState<string>("UTC");
 
   const [checklistRun, setChecklistRun] = useState<any>(null);
   const [runPhotos, setRunPhotos] = useState<any[]>([]);
@@ -52,11 +53,14 @@ export default function TaskDetailPage() {
     if (!id) return;
     supabase
       .from("cleaning_events")
-      .select("*, listings(name)")
+      .select("*, listings(name, timezone)")
       .eq("id", id)
       .single()
       .then(({ data }) => {
         setEvent(data);
+        if (data?.listings?.timezone) {
+          setListingTimezone(data.listings.timezone);
+        }
         if (data?.assigned_cleaner_id) {
           setAssigningCleaner(data.assigned_cleaner_id);
         }
@@ -227,11 +231,11 @@ export default function TaskDetailPage() {
                   <p className="text-muted-foreground">Cleaning Window</p>
                   <p className="font-medium text-xs">
                     {event.start_at
-                      ? new Date(event.start_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+                      ? new Date(event.start_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: listingTimezone })
                       : "—"}
                     {" → "}
                     {event.end_at
-                      ? new Date(event.end_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+                      ? new Date(event.end_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: listingTimezone })
                       : "—"}
                   </p>
                 </div>
