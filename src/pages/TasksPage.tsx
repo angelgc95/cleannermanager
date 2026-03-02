@@ -125,14 +125,6 @@ export default function TasksPage() {
   const [editingTemplate, setEditingTemplate] = useState(false);
   const [templateDirty, setTemplateDirty] = useState(false);
 
-  // Auto-open manage sheet from query param (e.g. from Settings)
-  useEffect(() => {
-    if (searchParams.get("manage") === "1") {
-      setManageOpen(true);
-      setSearchParams({}, { replace: true });
-    }
-  }, [searchParams, setSearchParams]);
-
   useEffect(() => {
     const fetch = async () => {
       const { data } = await supabase
@@ -192,6 +184,14 @@ export default function TasksPage() {
       setSelectedTemplateId(tpls[0].id);
     }
   }, [selectedTemplateId, fetchTemplates, fetchListings]);
+
+  // Auto-open manage sheet from query param (e.g. from Settings)
+  useEffect(() => {
+    if (searchParams.get("manage") === "1") {
+      setSearchParams({}, { replace: true });
+      openEditor();
+    }
+  }, [searchParams, setSearchParams, openEditor]);
 
   useEffect(() => {
     if (!selectedTemplateId) { setSections([]); return; }
