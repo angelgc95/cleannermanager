@@ -6,11 +6,12 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { CalendarIcon, ChevronDown, ChevronRight, DollarSign, RefreshCw } from "lucide-react";
+import { CalendarIcon, ChevronDown, ChevronRight, DollarSign, RefreshCw, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PeriodGroup { period: any; payouts: any[]; }
@@ -95,6 +96,26 @@ export default function PayoutsPage() {
     else { toast({ title: `Period ${newStatus === "CLOSED" ? "closed" : "reopened"}` }); fetchData(); }
   };
 
+  const handleDeletePayout = async (payoutId: string) => {
+    // Unlink log_hours first
+    await supabase.from("log_hours").update({ payout_id: null }).eq("payout_id", payoutId);
+    const { error } = await supabase.from("payouts").delete().eq("id", payoutId);
+    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
+    else { toast({ title: "Payout deleted" }); fetchData(); }
+  };
+
+  const handleDeletePeriod = async (periodId: string) => {
+    // Delete payouts in this period first (unlink log_hours)
+    const { data: periodPayouts } = await supabase.from("payouts").select("id").eq("period_id", periodId);
+    for (const p of (periodPayouts || [])) {
+      await supabase.from("log_hours").update({ payout_id: null }).eq("payout_id", p.id);
+      await supabase.from("payouts").delete().eq("id", p.id);
+    }
+    const { error } = await supabase.from("payout_periods").delete().eq("id", periodId);
+    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
+    else { toast({ title: "Period deleted" }); fetchData(); }
+  };
+
   const periodTotal = (payouts: any[]) => payouts.reduce((sum, p) => sum + Number(p.total_amount || 0), 0);
   const periodMinutes = (payouts: any[]) => payouts.reduce((sum, p) => sum + (p.total_minutes || 0), 0);
   const allPaid = (payouts: any[]) => payouts.length > 0 && payouts.every((p) => p.status === "PAID");
@@ -175,11 +196,22 @@ export default function PayoutsPage() {
                       <div><p className="text-sm font-medium">{p.cleaner_name}</p><p className="text-xs text-muted-foreground">{p.total_minutes} min @ €{Number(p.hourly_rate_used).toFixed(2)}/hr</p></div>
                       <div className="flex items-center gap-3">
                         <div className="text-right"><p className="font-semibold text-sm">€{Number(p.total_amount).toFixed(2)}</p><StatusBadge status={p.status} /></div>
-                        {isHost && (
-                          <Select value={p.status} onValueChange={(v) => handleUpdatePayoutStatus(p.id, v as "PENDING" | "PAID")}>
-                            <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue /></SelectTrigger>
-                            <SelectContent><SelectItem value="PENDING">Pending</SelectItem><SelectItem value="PAID">Paid</SelectItem></SelectContent>
-                          </Select>
+                         {isHost && (
+                          <>
+                            <Select value={p.status} onValueChange={(v) => handleUpdatePayoutStatus(p.id, v as "PENDING" | "PAID")}>
+                              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue /></SelectTrigger>
+                              <SelectContent><SelectItem value="PENDING">Pending</SelectItem><SelectItem value="PAID">Paid</SelectItem></SelectContent>
+                            </Select>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader><AlertDialogTitle>Delete payout?</AlertDialogTitle><AlertDialogDescription>This will unlink associated log hours. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+                                <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => handleDeletePayout(p.id)}>Delete</AlertDialogAction></AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </>
                         )}
                       </div>
                     </div>
@@ -188,6 +220,15 @@ export default function PayoutsPage() {
                     <div className="flex items-center justify-end gap-2 px-6 py-3 bg-muted/30">
                       {period.status === "OPEN" ? <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleUpdatePeriodStatus(period.id, "CLOSED"); }}>Close Period</Button> : <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleUpdatePeriodStatus(period.id, "OPEN"); }}>Reopen Period</Button>}
                       {payouts.length > 0 && !isPaid && <Button size="sm" onClick={async (e) => { e.stopPropagation(); for (const p of payouts) { if (p.status !== "PAID") await handleUpdatePayoutStatus(p.id, "PAID"); } }}>Mark All Paid</Button>}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="destructive" size="sm" onClick={(e) => e.stopPropagation()}><Trash2 className="h-3.5 w-3.5 mr-1" />Delete Period</Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader><AlertDialogTitle>Delete entire period?</AlertDialogTitle><AlertDialogDescription>This will delete all payouts in this period and unlink associated log hours. This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+                          <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => handleDeletePeriod(period.id)}>Delete</AlertDialogAction></AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   )}
                 </div>
