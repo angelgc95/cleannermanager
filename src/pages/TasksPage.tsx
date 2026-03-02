@@ -122,6 +122,7 @@ export default function TasksPage() {
   const [pendingAssignments, setPendingAssignments] = useState<Record<string, string | null>>({});
   const [saved, setSaved] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
+  const [templateDirty, setTemplateDirty] = useState(false);
   useEffect(() => {
     const fetch = async () => {
       const { data } = await supabase
@@ -351,16 +352,21 @@ export default function TasksPage() {
       </Dialog>
 
       {/* Manage Templates Sheet */}
-      <Sheet open={manageOpen} onOpenChange={(open) => { setManageOpen(open); if (!open) setEditingTemplate(false); }}>
+      <Sheet open={manageOpen} onOpenChange={(open) => { setManageOpen(open); if (!open) { setEditingTemplate(false); setTemplateDirty(false); } }}>
         <SheetContent className="sm:max-w-lg overflow-y-auto">
           <SheetHeader><SheetTitle>Manage Templates</SheetTitle></SheetHeader>
           <div className="mt-4 space-y-4">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm text-muted-foreground">{templates.length} template{templates.length !== 1 ? "s" : ""}</p>
               <div className="flex items-center gap-2">
-                {selectedTemplateId && sections.length > 0 && (
-                  <Button size="sm" variant={editingTemplate ? "default" : "outline"} onClick={() => setEditingTemplate(!editingTemplate)} className="gap-1.5">
-                    <Pencil className="h-4 w-4" /> {editingTemplate ? "Done Editing" : "Edit"}
+                {selectedTemplateId && sections.length > 0 && !editingTemplate && (
+                  <Button size="sm" variant="outline" onClick={() => { setEditingTemplate(true); setTemplateDirty(false); }} className="gap-1.5">
+                    <Pencil className="h-4 w-4" /> Edit
+                  </Button>
+                )}
+                {editingTemplate && (
+                  <Button size="sm" variant={templateDirty ? "default" : "outline"} disabled={!templateDirty} onClick={() => { setEditingTemplate(false); setTemplateDirty(false); toast({ title: "Template saved" }); }} className="gap-1.5">
+                    <Save className="h-4 w-4" /> Save
                   </Button>
                 )}
                 <Button size="sm" onClick={() => { setCreateDialogOpen(true); }} className="gap-1.5">
@@ -370,7 +376,7 @@ export default function TasksPage() {
             </div>
              {templates.length > 0 ? (
               <>
-                <Select value={selectedTemplateId || ""} onValueChange={(v) => { setSelectedTemplateId(v); setPendingAssignments({}); setSaved(false); setEditingTemplate(false); }}>
+                <Select value={selectedTemplateId || ""} onValueChange={(v) => { setSelectedTemplateId(v); setPendingAssignments({}); setSaved(false); setEditingTemplate(false); setTemplateDirty(false); }}>
                   <SelectTrigger><SelectValue placeholder="Select template to edit" /></SelectTrigger>
                   <SelectContent>{templates.map((t) => (
                     <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
@@ -445,7 +451,7 @@ export default function TasksPage() {
                     })()}
 
                     {editingTemplate ? (
-                      <ChecklistTemplateEditor sections={sections} templateId={selectedTemplateId} onSectionsUpdated={setSections} />
+                      <ChecklistTemplateEditor sections={sections} templateId={selectedTemplateId} onSectionsUpdated={(s) => { setSections(s); setTemplateDirty(true); }} />
                     ) : sections.length > 0 ? (
                       <div className="space-y-3">
                         {sections.map((section) => (
