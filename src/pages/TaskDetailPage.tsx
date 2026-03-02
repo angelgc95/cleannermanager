@@ -112,15 +112,11 @@ export default function TaskDetailPage() {
       if (!profiles) return;
       setCleaners(profiles);
 
+      // Pre-select default cleaner in the dropdown (but don't auto-save to DB)
       if (!event.assigned_cleaner_id && event.listing_id) {
         const listingAssignment = assignments.find(a => a.listing_id === event.listing_id);
         if (listingAssignment) {
-          setAssigningCleaner(listingAssignment.cleaner_user_id);
-          await supabase
-            .from("cleaning_events")
-            .update({ assigned_cleaner_id: listingAssignment.cleaner_user_id })
-            .eq("id", event.id);
-          setEvent((prev: any) => ({ ...prev, assigned_cleaner_id: listingAssignment.cleaner_user_id }));
+          setPendingCleaner(listingAssignment.cleaner_user_id);
         }
       }
     };
