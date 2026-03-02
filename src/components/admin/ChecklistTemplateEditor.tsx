@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Pencil, Plus, Trash2, Save, X, Settings2, AlarmClock, Sparkles, Loader2 } from "lucide-react";
+import { Pencil, Plus, Trash2, Save, X, AlarmClock, Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -47,7 +47,6 @@ interface ChecklistTemplateEditorProps {
 export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdated }: ChecklistTemplateEditorProps) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [editMode, setEditMode] = useState(false);
   const [editingSection, setEditingSection] = useState<{ id: string; title: string } | null>(null);
   const [editingItem, setEditingItem] = useState<ChecklistItem & { sectionId: string } | null>(null);
   const [newSectionTitle, setNewSectionTitle] = useState("");
@@ -230,26 +229,13 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
   const currentSectionId = editingItem ? editingItem.sectionId : addingItemToSection;
   const dependencyItems = currentSectionId ? getSectionItemsForDependency(currentSectionId, editingItem?.id) : [];
 
-  if (!editMode) {
-    return (
-      <Button variant="outline" size="sm" onClick={() => setEditMode(true)} className="gap-1.5">
-        <Settings2 className="h-3.5 w-3.5" /> Edit Template
-      </Button>
-    );
-  }
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold text-foreground">Template Editor</p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setAddingSectionOpen(true)} className="gap-1">
-            <Plus className="h-3.5 w-3.5" /> Section
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setEditMode(false)}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={() => setAddingSectionOpen(true)} className="gap-1">
+          <Plus className="h-3.5 w-3.5" /> Section
+        </Button>
       </div>
 
       {sections.map((section) => (
