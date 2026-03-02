@@ -266,6 +266,9 @@ export default function TasksPage() {
       setSelectedTemplateId(tpl.id);
       await fetchTemplates();
       if (!manageOpen) setManageOpen(true);
+      // Auto-enter edit mode so user can immediately add sections/items
+      setEditingTemplate(true);
+      setTemplateDirty(false);
     } catch (err: any) {
       toast({ title: "Error", description: err?.message || "Failed to create template", variant: "destructive" });
     } finally {
