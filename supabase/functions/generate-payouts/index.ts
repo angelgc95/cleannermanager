@@ -42,44 +42,31 @@ Deno.serve(async (req) => {
 
     const hostUserId = user.id;
 
-    const { data: settings } = await supabase
-      .from("host_settings")
-      .select("payout_frequency, payout_week_end_day, timezone, default_hourly_rate")
-      .eq("host_user_id", hostUserId)
-      .single();
+    // Accept custom period dates from request body
+    let startStr: string;
+    let endStr: string;
 
-    if (!settings) {
-      return new Response(JSON.stringify({ error: "Host settings not found" }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    try {
+      const body = await req.json();
+      if (body.start_date && body.end_date) {
+        startStr = body.start_date;
+        endStr = body.end_date;
+      } else {
+        return new Response(JSON.stringify({ error: "start_date and end_date are required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON body. Provide start_date and end_date." }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const weekEndDay = settings.payout_week_end_day ?? 0;
-    const frequency = settings.payout_frequency || "WEEKLY";
-
-    const now = new Date();
-    const currentDay = now.getDay();
-    let daysBack = (currentDay - weekEndDay + 7) % 7;
-
-    const periodEnd = new Date(now);
-    periodEnd.setDate(periodEnd.getDate() - daysBack);
-    periodEnd.setHours(0, 0, 0, 0);
-
-    // Determine period length based on frequency
-    let periodDays: number;
-    if (frequency === "MONTHLY") {
-      periodDays = 28;
-    } else if (frequency === "BIWEEKLY") {
-      periodDays = 14;
-    } else {
-      periodDays = 7;
-    }
-
-    const periodStart = new Date(periodEnd);
-    periodStart.setDate(periodStart.getDate() - (periodDays - 1));
-
-    const startStr = periodStart.toISOString().split("T")[0];
-    const endStr = periodEnd.toISOString().split("T")[0];
+    const { data: settings } = await supabase
+      .from("host_settings")
+      .select("default_hourly_rate")
+      .eq("host_user_id", hostUserId)
+      .single();
 
     const { data: existingPeriod } = await supabase
       .from("payout_periods")
