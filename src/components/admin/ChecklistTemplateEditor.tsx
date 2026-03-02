@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Pencil, Plus, Trash2, Save, X, AlarmClock, Sparkles, Loader2 } from "lucide-react";
+import { Pencil, Plus, Trash2, Save, X, AlarmClock, Sparkles, Loader2, ArrowUp, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -223,6 +223,23 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
     setNewItemDependsOn("");
   };
 
+  const moveItem = async (sectionId: string, itemId: string, direction: "up" | "down") => {
+    const section = sections.find(s => s.id === sectionId);
+    if (!section) return;
+    const sorted = [...section.items].sort((a, b) => a.sort_order - b.sort_order);
+    const idx = sorted.findIndex(i => i.id === itemId);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const a = sorted[idx], b = sorted[swapIdx];
+    const [sortA, sortB] = [a.sort_order, b.sort_order];
+    const { error: e1 } = await supabase.from("checklist_items").update({ sort_order: sortB }).eq("id", a.id);
+    const { error: e2 } = await supabase.from("checklist_items").update({ sort_order: sortA }).eq("id", b.id);
+    if (e1 || e2) { toast({ title: "Error moving item", variant: "destructive" }); return; }
+    onSectionsUpdated(sections.map(s => s.id === sectionId ? {
+      ...s, items: s.items.map(i => i.id === a.id ? { ...i, sort_order: sortB } : i.id === b.id ? { ...i, sort_order: sortA } : i)
+    } : s));
+  };
+
   // Current type for the dialog
   const currentType = editingItem ? editingItem.type : newItemType;
   const isTimerType = currentType === "TIMER";
@@ -269,10 +286,18 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
               )}
             </div>
 
-            {section.items.map((item) => {
+            {[...section.items].sort((a, b) => a.sort_order - b.sort_order).map((item, idx, arr) => {
               const depItem = item.depends_on_item_id ? section.items.find(i => i.id === item.depends_on_item_id) : null;
               return (
-                <div key={item.id} className="flex items-center gap-2 pl-3 py-1 border-l-2 border-muted text-sm">
+                <div key={item.id} className="flex items-center gap-1 pl-3 py-1 border-l-2 border-muted text-sm">
+                  <div className="flex flex-col">
+                    <Button size="icon" variant="ghost" className="h-5 w-5" disabled={idx === 0} onClick={() => moveItem(section.id, item.id, "up")}>
+                      <ArrowUp className="h-3 w-3" />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-5 w-5" disabled={idx === arr.length - 1} onClick={() => moveItem(section.id, item.id, "down")}>
+                      <ArrowDown className="h-3 w-3" />
+                    </Button>
+                  </div>
                   <span className="flex-1 truncate">
                     {item.type === "TIMER" && <AlarmClock className="h-3 w-3 inline mr-1 text-primary" />}
                     {item.label}
