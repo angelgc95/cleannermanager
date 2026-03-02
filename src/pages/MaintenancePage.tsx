@@ -4,16 +4,22 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/StatusBadge";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { Plus, X, Camera, Loader2 } from "lucide-react";
+import { Plus, X, Camera, Loader2, Trash2 } from "lucide-react";
 
 export default function MaintenancePage() {
-  const { user, hostId } = useAuth();
+  const { user, hostId, role } = useAuth();
   const { toast } = useToast();
+  const isHost = role === "host";
   const [tickets, setTickets] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [issue, setIssue] = useState("");
@@ -76,6 +82,25 @@ export default function MaintenancePage() {
     }
   };
 
+  const handleStatusChange = async (ticketId: string, newStatus: string) => {
+    const { error } = await supabase.from("maintenance_tickets").update({ status: newStatus as any }).eq("id", ticketId);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      setTickets((prev) => prev.map((t) => t.id === ticketId ? { ...t, status: newStatus } : t));
+    }
+  };
+
+  const handleDelete = async (ticketId: string) => {
+    const { error } = await supabase.from("maintenance_tickets").delete().eq("id", ticketId);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      setTickets((prev) => prev.filter((t) => t.id !== ticketId));
+      toast({ title: "Ticket deleted" });
+    }
+  };
+
   return (
     <div>
       <PageHeader title="Maintenance" description="Report and track maintenance issues" actions={<Button size="sm" onClick={() => setShowForm(!showForm)}>{showForm ? <><X className="h-4 w-4 mr-1" /> Cancel</> : <><Plus className="h-4 w-4 mr-1" /> Report Issue</>}</Button>} />
@@ -107,9 +132,44 @@ export default function MaintenancePage() {
         )}
         {tickets.map((t: any) => (
           <Card key={t.id}><CardContent className="p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="min-w-0"><p className="font-medium text-sm truncate">{t.issue}</p><p className="text-xs text-muted-foreground">{format(new Date(t.created_at), "MMM d, yyyy")}</p></div>
-              <StatusBadge status={t.status} />
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-sm truncate">{t.issue}</p>
+                <p className="text-xs text-muted-foreground">{format(new Date(t.created_at), "MMM d, yyyy")}</p>
+              </div>
+              {isHost ? (
+                <div className="flex items-center gap-2 shrink-0">
+                  <Select value={t.status} onValueChange={(val) => handleStatusChange(t.id, val)}>
+                    <SelectTrigger className="w-[130px] h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="OPEN">Open</SelectItem>
+                      <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                      <SelectItem value="DONE">Done</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button size="sm" variant="ghost" className="text-destructive h-8 w-8 p-0">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete ticket?</AlertDialogTitle>
+                        <AlertDialogDescription>This will permanently delete this maintenance ticket.</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleDelete(t.id)}>Delete</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              ) : (
+                <StatusBadge status={t.status} />
+              )}
             </div>
             {(t.pic1_url || t.pic2_url) && (
               <div className="flex gap-2">

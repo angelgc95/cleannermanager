@@ -132,11 +132,14 @@ export default function CalendarPage() {
                   )}
                 </div>
                 <div className="mt-1 space-y-1">
-                  {dayEvents.slice(0, 3).map((ev: any) => (
-                    <button key={ev.id} onClick={(e) => { e.stopPropagation(); navigate(`/events/${ev.id}`); }} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", ev.status === "DONE" ? "bg-[hsl(var(--status-done)/0.15)] text-[hsl(var(--status-done))]" : ev.status === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
-                      {ev.listings?.name || "Cleaning"}{details(ev).nights != null ? ` · ${details(ev).nights}N` : ""}{details(ev).guests != null ? ` · ${details(ev).guests}G` : ""}
-                    </button>
-                  ))}
+                  {dayEvents.slice(0, 3).map((ev: any) => {
+                    const isCancelled = ev.status === "CANCELLED";
+                    return (
+                      <button key={ev.id} onClick={(e) => { e.stopPropagation(); navigate(`/events/${ev.id}`); }} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", isCancelled ? "bg-muted text-muted-foreground line-through opacity-60" : ev.status === "DONE" ? "bg-[hsl(var(--status-done)/0.15)] text-[hsl(var(--status-done))]" : ev.status === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
+                        {ev.listings?.name || "Cleaning"}{details(ev).nights != null ? ` · ${details(ev).nights}N` : ""}{details(ev).guests != null ? ` · ${details(ev).guests}G` : ""}
+                      </button>
+                    );
+                  })}
                   {dayEvents.length > 3 && <p className="text-xs text-muted-foreground px-1">+{dayEvents.length - 3} more</p>}
                 </div>
               </div>
