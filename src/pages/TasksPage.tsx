@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -106,6 +106,7 @@ const DEFAULT_TEMPLATE_SECTIONS: SectionSuggestion[] = [
 export default function TasksPage() {
   const [events, setEvents] = useState<any[]>([]);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { role, user } = useAuth();
   const { toast } = useToast();
   const isHost = role === "host";
@@ -123,6 +124,15 @@ export default function TasksPage() {
   const [saved, setSaved] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
   const [templateDirty, setTemplateDirty] = useState(false);
+
+  // Auto-open manage sheet from query param (e.g. from Settings)
+  useEffect(() => {
+    if (searchParams.get("manage") === "1") {
+      setManageOpen(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   useEffect(() => {
     const fetch = async () => {
       const { data } = await supabase
