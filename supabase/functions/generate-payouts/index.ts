@@ -2,7 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 Deno.serve(async (req) => {
@@ -54,6 +55,7 @@ Deno.serve(async (req) => {
     }
 
     const weekEndDay = settings.payout_week_end_day ?? 0;
+    const frequency = settings.payout_frequency || "WEEKLY";
 
     const now = new Date();
     const currentDay = now.getDay();
@@ -63,8 +65,18 @@ Deno.serve(async (req) => {
     periodEnd.setDate(periodEnd.getDate() - daysBack);
     periodEnd.setHours(0, 0, 0, 0);
 
+    // Determine period length based on frequency
+    let periodDays: number;
+    if (frequency === "MONTHLY") {
+      periodDays = 28;
+    } else if (frequency === "BIWEEKLY") {
+      periodDays = 14;
+    } else {
+      periodDays = 7;
+    }
+
     const periodStart = new Date(periodEnd);
-    periodStart.setDate(periodStart.getDate() - 6);
+    periodStart.setDate(periodStart.getDate() - (periodDays - 1));
 
     const startStr = periodStart.toISOString().split("T")[0];
     const endStr = periodEnd.toISOString().split("T")[0];
