@@ -9,7 +9,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { Settings2, Plus, Loader2, Sparkles, Save, Check, Pencil } from "lucide-react";
+import { Settings2, Plus, Loader2, Sparkles, Save, Check, Pencil, Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -372,10 +372,23 @@ export default function TasksPage() {
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm text-muted-foreground">{templates.length} template{templates.length !== 1 ? "s" : ""}</p>
               <div className="flex items-center gap-2">
-                {selectedTemplateId && sections.length > 0 && !editingTemplate && (
-                  <Button size="sm" variant="outline" onClick={() => { setEditingTemplate(true); setTemplateDirty(false); }} className="gap-1.5">
-                    <Pencil className="h-4 w-4" /> Edit
-                  </Button>
+                {selectedTemplateId && !editingTemplate && (
+                  <>
+                    <Button size="sm" variant="ghost" className="gap-1.5 text-destructive hover:text-destructive" onClick={async () => {
+                      if (!confirm("Delete this template? This cannot be undone.")) return;
+                      await supabase.from("checklist_templates").update({ active: false }).eq("id", selectedTemplateId);
+                      toast({ title: "Template deleted" });
+                      setSelectedTemplateId(null);
+                      await fetchTemplates();
+                    }}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                    {sections.length > 0 && (
+                      <Button size="sm" variant="outline" onClick={() => { setEditingTemplate(true); setTemplateDirty(false); }} className="gap-1.5">
+                        <Pencil className="h-4 w-4" /> Edit
+                      </Button>
+                    )}
+                  </>
                 )}
                 {editingTemplate && (
                   <Button size="sm" variant={templateDirty ? "default" : "outline"} disabled={!templateDirty} onClick={() => { setEditingTemplate(false); setTemplateDirty(false); toast({ title: "Template saved" }); }} className="gap-1.5">
