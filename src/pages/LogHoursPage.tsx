@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Plus, X, Clock, User, Pencil, Trash2 } from "lucide-react";
+import { StatusBadge } from "@/components/StatusBadge";
 
 export default function LogHoursPage() {
   const { user, hostId, role } = useAuth();
@@ -25,15 +26,27 @@ export default function LogHoursPage() {
 
   const fetchEntries = async () => {
     if (!user) return;
-    let query = supabase.from("log_hours").select("*").order("date", { ascending: false }).limit(50);
+    let query = supabase.from("log_hours").select("*, payout_id").order("date", { ascending: false }).limit(50);
     if (!isHost) query = query.eq("user_id", user.id);
     const { data } = await query;
 
-    if (isHost && data && data.length > 0) {
-      const userIds = [...new Set(data.map((e: any) => e.user_id))];
-      const { data: profiles } = await supabase.from("profiles").select("user_id, name").in("user_id", userIds);
-      const nameMap = Object.fromEntries((profiles || []).map((p: any) => [p.user_id, p.name]));
-      setEntries(data.map((e: any) => ({ ...e, _user_name: nameMap[e.user_id] || "Unknown" })));
+    if (data && data.length > 0) {
+      // Fetch payout statuses for entries that have a payout_id
+      const payoutIds = [...new Set(data.filter((e: any) => e.payout_id).map((e: any) => e.payout_id))];
+      let payoutStatusMap: Record<string, string> = {};
+      if (payoutIds.length > 0) {
+        const { data: payouts } = await supabase.from("payouts").select("id, status").in("id", payoutIds);
+        payoutStatusMap = Object.fromEntries((payouts || []).map((p: any) => [p.id, p.status]));
+      }
+
+      if (isHost) {
+        const userIds = [...new Set(data.map((e: any) => e.user_id))];
+        const { data: profiles } = await supabase.from("profiles").select("user_id, name").in("user_id", userIds);
+        const nameMap = Object.fromEntries((profiles || []).map((p: any) => [p.user_id, p.name]));
+        setEntries(data.map((e: any) => ({ ...e, _user_name: nameMap[e.user_id] || "Unknown", _payout_status: e.payout_id ? (payoutStatusMap[e.payout_id] || "PENDING") : "PENDING" })));
+      } else {
+        setEntries(data.map((e: any) => ({ ...e, _payout_status: e.payout_id ? (payoutStatusMap[e.payout_id] || "PENDING") : "PENDING" })));
+      }
     } else {
       setEntries(data || []);
     }
@@ -178,9 +191,10 @@ export default function LogHoursPage() {
                     <p className="font-medium text-sm">{format(new Date(entry.date), "MMM d, yyyy")}</p>
                     {isHost && entry._user_name && <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">{entry._user_name}</span>}
                   </div>
-                  <p className="text-xs text-muted-foreground">{entry.start_at?.slice(0, 5)} – {entry.end_at?.slice(0, 5)} · {entry.duration_minutes} min</p>
+                   <p className="text-xs text-muted-foreground">{entry.start_at?.slice(0, 5)} – {entry.end_at?.slice(0, 5)} · {entry.duration_minutes} min</p>
                   {entry.description && <p className="text-xs text-muted-foreground mt-1">{entry.description}</p>}
                 </div>
+                <StatusBadge status={entry._payout_status || "PENDING"} />
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {!isHost && entry.user_id === user?.id && (
