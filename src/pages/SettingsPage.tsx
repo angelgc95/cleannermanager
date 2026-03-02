@@ -9,11 +9,12 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Loader2, RefreshCw, DollarSign, Pencil, Trash2 } from "lucide-react";
+import { Plus, Loader2, RefreshCw, DollarSign, Pencil, Trash2, ClipboardCheck, ChevronRight } from "lucide-react";
 import { NotificationSettings } from "@/components/NotificationSettings";
 import { PricingSuggestionsSettings } from "@/components/PricingSuggestionsSettings";
 import { AdminCleanerManagement } from "@/components/admin/AdminCleanerManagement";
 import { ManualEventEntry } from "@/components/ManualEventEntry";
+import { useNavigate } from "react-router-dom";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -73,6 +74,7 @@ function PayoutScheduleSettings({ settings, onUpdate }: { settings: any; onUpdat
 export default function SettingsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [listings, setListings] = useState<any[]>([]);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -273,6 +275,19 @@ export default function SettingsPage() {
           </Card>
         ))}
         {listings.length === 0 && !showAdd && <p className="text-center text-muted-foreground py-8">No listings configured yet.</p>}
+
+        <Card className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => navigate("/tasks?manage=1")}>
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <ClipboardCheck className="h-5 w-5 text-primary" />
+              <div>
+                <p className="font-medium text-sm">Checklist Templates</p>
+                <p className="text-xs text-muted-foreground">Create and edit cleaning checklists</p>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </CardContent>
+        </Card>
 
         <AdminCleanerManagement />
         {settings && <PayoutScheduleSettings settings={settings} onUpdate={fetchSettings} />}
