@@ -9,7 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { Settings2, Plus, Loader2, Sparkles, Save, Check } from "lucide-react";
+import { Settings2, Plus, Loader2, Sparkles, Save, Check, Pencil } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -121,7 +121,7 @@ export default function TasksPage() {
   const [assigningListing, setAssigningListing] = useState(false);
   const [pendingAssignments, setPendingAssignments] = useState<Record<string, string | null>>({});
   const [saved, setSaved] = useState(false);
-
+  const [editingTemplate, setEditingTemplate] = useState(false);
   useEffect(() => {
     const fetch = async () => {
       const { data } = await supabase
@@ -351,19 +351,26 @@ export default function TasksPage() {
       </Dialog>
 
       {/* Manage Templates Sheet */}
-      <Sheet open={manageOpen} onOpenChange={setManageOpen}>
+      <Sheet open={manageOpen} onOpenChange={(open) => { setManageOpen(open); if (!open) setEditingTemplate(false); }}>
         <SheetContent className="sm:max-w-lg overflow-y-auto">
           <SheetHeader><SheetTitle>Manage Templates</SheetTitle></SheetHeader>
           <div className="mt-4 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <p className="text-sm text-muted-foreground">{templates.length} template{templates.length !== 1 ? "s" : ""}</p>
-              <Button size="sm" onClick={() => { setCreateDialogOpen(true); }} className="gap-1.5">
-                <Plus className="h-4 w-4" /> Create Template
-              </Button>
+              <div className="flex items-center gap-2">
+                {selectedTemplateId && sections.length > 0 && (
+                  <Button size="sm" variant={editingTemplate ? "default" : "outline"} onClick={() => setEditingTemplate(!editingTemplate)} className="gap-1.5">
+                    <Pencil className="h-4 w-4" /> {editingTemplate ? "Done Editing" : "Edit"}
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => { setCreateDialogOpen(true); }} className="gap-1.5">
+                  <Plus className="h-4 w-4" /> Create Template
+                </Button>
+              </div>
             </div>
              {templates.length > 0 ? (
               <>
-                <Select value={selectedTemplateId || ""} onValueChange={(v) => { setSelectedTemplateId(v); setPendingAssignments({}); setSaved(false); }}>
+                <Select value={selectedTemplateId || ""} onValueChange={(v) => { setSelectedTemplateId(v); setPendingAssignments({}); setSaved(false); setEditingTemplate(false); }}>
                   <SelectTrigger><SelectValue placeholder="Select template to edit" /></SelectTrigger>
                   <SelectContent>{templates.map((t) => (
                     <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
@@ -437,7 +444,36 @@ export default function TasksPage() {
                       );
                     })()}
 
-                    <ChecklistTemplateEditor sections={sections} templateId={selectedTemplateId} onSectionsUpdated={setSections} />
+                    {editingTemplate ? (
+                      <ChecklistTemplateEditor sections={sections} templateId={selectedTemplateId} onSectionsUpdated={setSections} />
+                    ) : sections.length > 0 ? (
+                      <div className="space-y-3">
+                        {sections.map((section) => (
+                          <div key={section.id} className="rounded-md border border-border">
+                            <div className="bg-muted/30 px-3 py-2 border-b border-border">
+                              <p className="text-sm font-medium">{section.title}</p>
+                            </div>
+                            <ul className="divide-y divide-border">
+                              {section.items.map((item) => (
+                                <li key={item.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                                  <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{item.type}</span>
+                                  <span className="flex-1">{item.label}</span>
+                                  {item.timer_minutes && item.timer_minutes > 0 && (
+                                    <span className="text-xs text-muted-foreground">⏰ {item.timer_minutes}m</span>
+                                  )}
+                                  {item.required && <span className="text-xs text-destructive">*</span>}
+                                </li>
+                              ))}
+                              {section.items.length === 0 && (
+                                <li className="px-3 py-2 text-xs text-muted-foreground italic">No items in this section</li>
+                              )}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center py-4">This template has no sections yet. Click Edit to add some.</p>
+                    )}
                   </div>
                 )}
               </>
