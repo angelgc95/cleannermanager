@@ -4,11 +4,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { ChevronDown, ChevronRight, DollarSign, RefreshCw } from "lucide-react";
+import { CalendarIcon, ChevronDown, ChevronRight, DollarSign, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface PeriodGroup { period: any; payouts: any[]; }
 
@@ -20,6 +23,8 @@ export default function PayoutsPage() {
   const [expandedPeriods, setExpandedPeriods] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [startDate, setStartDate] = useState<Date>();
+  const [endDate, setEndDate] = useState<Date>();
 
   const fetchData = async () => {
     setLoading(true);
@@ -53,11 +58,24 @@ export default function PayoutsPage() {
   const togglePeriod = (id: string) => { setExpandedPeriods((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); };
 
   const handleGeneratePayouts = async () => {
+    if (!startDate || !endDate) {
+      toast({ title: "Select dates", description: "Please select both a start and end date.", variant: "destructive" });
+      return;
+    }
+    if (startDate >= endDate) {
+      toast({ title: "Invalid range", description: "Start date must be before end date.", variant: "destructive" });
+      return;
+    }
     setGenerating(true);
     try {
-      const { data, error } = await supabase.functions.invoke("generate-payouts");
+      const { data, error } = await supabase.functions.invoke("generate-payouts", {
+        body: {
+          start_date: format(startDate, "yyyy-MM-dd"),
+          end_date: format(endDate, "yyyy-MM-dd"),
+        },
+      });
       if (error) throw error;
-      toast({ title: "Payouts generated", description: data?.message || "Weekly payouts have been processed." });
+      toast({ title: "Payouts generated", description: data?.message || "Payouts have been processed." });
       fetchData();
     } catch (err: any) { toast({ title: "Error", description: err.message, variant: "destructive" }); }
     finally { setGenerating(false); }
@@ -83,12 +101,54 @@ export default function PayoutsPage() {
 
   return (
     <div>
-      <PageHeader title="Payouts" description={isHost ? "Manage weekly payout periods and payments" : "Your payout history"} actions={isHost ? (<Button size="sm" onClick={handleGeneratePayouts} disabled={generating}><RefreshCw className={`h-4 w-4 mr-1 ${generating ? "animate-spin" : ""}`} />{generating ? "Generating..." : "Generate Payouts"}</Button>) : undefined} />
+      <PageHeader title="Payouts" description={isHost ? "Generate and manage payout periods" : "Your payout history"} />
       <div className="p-6 space-y-4 max-w-3xl">
+        {isHost && (
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <p className="text-sm font-medium">Generate Payouts for Period</p>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Start Date</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className={cn("w-[150px] justify-start text-left font-normal", !startDate && "text-muted-foreground")}>
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {startDate ? format(startDate, "MMM d, yyyy") : "Pick date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={startDate} onSelect={setStartDate} initialFocus className={cn("p-3 pointer-events-auto")} />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">End Date</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className={cn("w-[150px] justify-start text-left font-normal", !endDate && "text-muted-foreground")}>
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {endDate ? format(endDate, "MMM d, yyyy") : "Pick date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={endDate} onSelect={setEndDate} initialFocus className={cn("p-3 pointer-events-auto")} />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <Button size="sm" onClick={handleGeneratePayouts} disabled={generating || !startDate || !endDate}>
+                  <RefreshCw className={`h-4 w-4 mr-1 ${generating ? "animate-spin" : ""}`} />
+                  {generating ? "Generating..." : "Generate Payouts"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {loading && <p className="text-center text-muted-foreground py-8">Loading...</p>}
         {!loading && periodGroups.length === 0 && (
           <div className="text-center py-12 space-y-3"><DollarSign className="h-10 w-10 mx-auto text-muted-foreground/50" /><p className="text-muted-foreground">No payout periods yet.</p>
-            {isHost && <p className="text-sm text-muted-foreground">Click "Generate Payouts" to create the current week's payouts.</p>}
+            {isHost && <p className="text-sm text-muted-foreground">Select a date range above and click "Generate Payouts".</p>}
           </div>
         )}
         {periodGroups.map(({ period, payouts }) => {
