@@ -289,11 +289,11 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        <NotificationSettings />
         <AdminCleanerManagement />
         {settings && <PayoutScheduleSettings settings={settings} onUpdate={fetchSettings} />}
         {settings && <PricingSuggestionsSettings settings={settings} listings={listings} onUpdate={() => { fetchSettings(); }} />}
         <ManualEventEntry listings={listings} />
-        <NotificationSettings />
       </div>
     </div>
   );
