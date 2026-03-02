@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ export function AdminCleanerManagement() {
   const [addCode, setAddCode] = useState("");
   const [adding, setAdding] = useState(false);
   const [knownCleanerIds, setKnownCleanerIds] = useState<string[]>([]);
+  const knownCleanerIdsRef = useRef<string[]>([]);
 
   const fetchData = async () => {
     if (!user) return;
@@ -46,7 +47,7 @@ export function AdminCleanerManagement() {
     
     // Also get cleaners who have the cleaner role and a profile, that this host has previously added
     // We track them via knownCleanerIds in state after add_cleaner succeeds
-    const allCleanerIds = [...new Set([...cleanerIdsFromAssignments, ...knownCleanerIds])];
+    const allCleanerIds = [...new Set([...cleanerIdsFromAssignments, ...knownCleanerIdsRef.current])];
     
     if (allCleanerIds.length === 0) { setCleaners([]); return; }
 
@@ -73,7 +74,9 @@ export function AdminCleanerManagement() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       if (data?.cleaner_user_id) {
-        setKnownCleanerIds(prev => [...new Set([...prev, data.cleaner_user_id])]);
+        const newIds = [...new Set([...knownCleanerIdsRef.current, data.cleaner_user_id])];
+        knownCleanerIdsRef.current = newIds;
+        setKnownCleanerIds(newIds);
       }
       toast({ title: "Cleaner added!", description: `${data.cleaner_name} has been added.` });
       setAddCode("");
