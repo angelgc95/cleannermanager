@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -17,7 +18,8 @@ export default function LogHoursPage() {
   const [entries, setEntries] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ date: format(new Date(), "yyyy-MM-dd"), start_at: "09:00", end_at: "10:00", description: "" });
+  const [form, setForm] = useState({ date: format(new Date(), "yyyy-MM-dd"), start_at: "09:00", end_at: "10:00", description: "", assignedCleaner: "" });
+  const [cleaners, setCleaners] = useState<{ user_id: string; name: string }[]>([]);
 
   const isHost = role === "host";
 
@@ -39,8 +41,27 @@ export default function LogHoursPage() {
 
   useEffect(() => { fetchEntries(); }, [user, role]);
 
+  useEffect(() => {
+    if (!isHost || !hostId) return;
+    const loadCleaners = async () => {
+      const { data: assignments } = await supabase
+        .from("cleaner_assignments")
+        .select("cleaner_user_id")
+        .eq("host_user_id", hostId);
+      if (!assignments) return;
+      const cleanerIds = [...new Set(assignments.map(a => a.cleaner_user_id))];
+      if (cleanerIds.length === 0) return;
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("user_id, name")
+        .in("user_id", cleanerIds);
+      setCleaners(profiles || []);
+    };
+    loadCleaners();
+  }, [isHost, hostId]);
+
   const resetForm = () => {
-    setForm({ date: format(new Date(), "yyyy-MM-dd"), start_at: "09:00", end_at: "10:00", description: "" });
+    setForm({ date: format(new Date(), "yyyy-MM-dd"), start_at: "09:00", end_at: "10:00", description: "", assignedCleaner: "" });
     setEditingId(null);
     setShowForm(false);
   };
@@ -52,13 +73,22 @@ export default function LogHoursPage() {
     const [eh, em] = form.end_at.split(":").map(Number);
     const duration = (eh * 60 + em) - (sh * 60 + sm);
 
+    const targetUserId = isHost && form.assignedCleaner ? form.assignedCleaner : user.id;
+
+    if (isHost && !form.assignedCleaner && !editingId) {
+      toast({ title: "Select a cleaner", description: "Please assign this entry to a cleaner.", variant: "destructive" });
+      return;
+    }
+
     if (editingId) {
-      const { error } = await supabase.from("log_hours").update({ date: form.date, start_at: form.start_at, end_at: form.end_at, duration_minutes: duration > 0 ? duration : 0, description: form.description }).eq("id", editingId);
+      const updates: any = { date: form.date, start_at: form.start_at, end_at: form.end_at, duration_minutes: duration > 0 ? duration : 0, description: form.description };
+      if (isHost && form.assignedCleaner) updates.user_id = form.assignedCleaner;
+      const { error } = await supabase.from("log_hours").update(updates).eq("id", editingId);
       if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
       else { toast({ title: "Entry updated" }); resetForm(); fetchEntries(); }
     } else {
       const { error } = await supabase.from("log_hours").insert({
-        user_id: user.id, date: form.date, start_at: form.start_at, end_at: form.end_at,
+        user_id: targetUserId, date: form.date, start_at: form.start_at, end_at: form.end_at,
         duration_minutes: duration > 0 ? duration : 0, description: form.description, host_user_id: hostId,
       });
       if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
@@ -67,7 +97,7 @@ export default function LogHoursPage() {
   };
 
   const handleEdit = (entry: any) => {
-    setForm({ date: entry.date, start_at: entry.start_at?.slice(0, 5) || "09:00", end_at: entry.end_at?.slice(0, 5) || "10:00", description: entry.description || "" });
+    setForm({ date: entry.date, start_at: entry.start_at?.slice(0, 5) || "09:00", end_at: entry.end_at?.slice(0, 5) || "10:00", description: entry.description || "", assignedCleaner: entry.user_id || "" });
     setEditingId(entry.id);
     setShowForm(true);
   };
@@ -100,6 +130,21 @@ export default function LogHoursPage() {
         {showForm && (
           <Card><CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="space-y-4">
+              {isHost && (
+                <div className="space-y-1">
+                  <Label>Assign to Cleaner</Label>
+                  <Select value={form.assignedCleaner} onValueChange={(v) => setForm({ ...form, assignedCleaner: v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select cleaner..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cleaners.map((c) => (
+                        <SelectItem key={c.user_id} value={c.user_id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1"><Label>Date</Label><Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required /></div>
                 <div className="space-y-1"><Label>Start</Label><Input type="time" value={form.start_at} onChange={(e) => setForm({ ...form, start_at: e.target.value })} required /></div>
