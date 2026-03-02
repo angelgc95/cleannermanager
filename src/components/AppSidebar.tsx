@@ -28,11 +28,14 @@ const mainNavItems = [
   { title: "Maintenance", url: "/maintenance", icon: Wrench, roles: ["host", "cleaner"] },
   { title: "Shopping List", url: "/shopping", icon: ShoppingCart, roles: ["host", "cleaner"] },
   { title: "Payouts", url: "/payouts", icon: DollarSign, roles: ["host", "cleaner"] },
+  { title: "Guides", url: "/guides", icon: BookOpen, roles: ["host", "cleaner"] },
 ];
 
-const bottomNavItems = [
-  { title: "Guides", url: "/guides", icon: BookOpen, roles: ["host", "cleaner"] },
+import { Bell } from "lucide-react";
+
+const middleNavItems = [
   { title: "Settings", url: "/settings", icon: Settings, roles: ["host", "cleaner"] },
+  { title: "Notifications", url: "/settings#notifications", icon: Bell, roles: ["host", "cleaner"] },
 ];
 
 export function AppSidebar() {
@@ -90,10 +93,10 @@ export function AppSidebar() {
         ))}
       </nav>
 
-      {/* Bottom section */}
+      {/* Middle section: Settings & Notifications */}
       <div className="border-t border-sidebar-border shrink-0">
         <div className="py-2">
-          {filterByRole(bottomNavItems).map((item) => (
+          {filterByRole(middleNavItems).map((item) => (
             <NavLink
               key={item.url}
               to={item.url}
