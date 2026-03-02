@@ -176,7 +176,7 @@ export default function SettingsPage() {
     try {
       const { data, error } = await supabase.functions.invoke("sync-ics", { body: { listing_id: id } });
       if (error) throw error;
-      toast({ title: "Sync complete", description: `${data.bookings_synced} bookings synced, ${data.tasks_created} new checklists created.` });
+      toast({ title: "Sync complete", description: `${data.bookings_synced} bookings synced, ${data.events_created} new cleaning events created.` });
       fetchListings();
     } catch (err: any) {
       toast({ title: "Sync failed", description: err.message || "Unknown error", variant: "destructive" });
