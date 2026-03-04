@@ -330,10 +330,9 @@ export default function TasksPage() {
         <Tabs defaultValue="upcoming">
           <TabsList className="w-full"><TabsTrigger value="upcoming" className="flex-1">Upcoming</TabsTrigger><TabsTrigger value="completed" className="flex-1">Completed</TabsTrigger></TabsList>
           <TabsContent value="upcoming" className="space-y-2">
-            {cancelledEvents.length > 0 && cancelledEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}
-            {upcomingEvents.length === 0 && cancelledEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">No upcoming checklists.</p> : upcomingEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}
+            {upcomingEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">No upcoming checklists.</p> : upcomingEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}
           </TabsContent>
-          <TabsContent value="completed" className="space-y-2">{completedEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">No completed checklists yet.</p> : completedEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}</TabsContent>
+          <TabsContent value="completed" className="space-y-2">{completedEvents.length === 0 && cancelledEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">No completed checklists yet.</p> : (<>{cancelledEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}{completedEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}</>)}</TabsContent>
         </Tabs>
       </div>
 
