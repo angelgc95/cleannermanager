@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { Plus, X } from "lucide-react";
 
 export default function ExpensesPage() {
@@ -45,10 +45,21 @@ export default function ExpensesPage() {
     }
   };
 
+  const grouped = useMemo(() => {
+    const groups: Record<string, { expenses: any[]; total: number }> = {};
+    for (const exp of entries) {
+      const key = format(parseISO(exp.date), "yyyy-MM");
+      if (!groups[key]) groups[key] = { expenses: [], total: 0 };
+      groups[key].expenses.push(exp);
+      groups[key].total += Number(exp.amount);
+    }
+    return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a));
+  }, [entries]);
+
   return (
     <div>
       <PageHeader title="Expenses" description="Track cleaning-related expenses" actions={<Button size="sm" onClick={() => setShowForm(!showForm)}>{showForm ? <><X className="h-4 w-4 mr-1" /> Cancel</> : <><Plus className="h-4 w-4 mr-1" /> Add Expense</>}</Button>} />
-      <div className="p-6 space-y-4 max-w-2xl">
+      <div className="p-6 space-y-6 max-w-2xl">
         {showForm && (
           <Card><CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -62,11 +73,23 @@ export default function ExpensesPage() {
             </form>
           </CardContent></Card>
         )}
-        {entries.map((exp: any) => (
-          <Card key={exp.id}><CardContent className="flex items-center justify-between p-4">
-            <div><p className="font-medium text-sm">{exp.name}</p><p className="text-xs text-muted-foreground">{format(new Date(exp.date), "MMM d, yyyy")} · {exp.shop || "—"}</p></div>
-            <span className="font-semibold text-sm">€{Number(exp.amount).toFixed(2)}</span>
-          </CardContent></Card>
+        {grouped.map(([monthKey, { expenses, total }]) => (
+          <div key={monthKey}>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                {format(parseISO(monthKey + "-01"), "MMMM yyyy")}
+              </h3>
+              <span className="text-sm font-semibold">€{total.toFixed(2)}</span>
+            </div>
+            <div className="space-y-2">
+              {expenses.map((exp: any) => (
+                <Card key={exp.id}><CardContent className="flex items-center justify-between p-4">
+                  <div><p className="font-medium text-sm">{exp.name}</p><p className="text-xs text-muted-foreground">{format(parseISO(exp.date), "MMM d")} · {exp.shop || "—"}</p></div>
+                  <span className="font-semibold text-sm">€{Number(exp.amount).toFixed(2)}</span>
+                </CardContent></Card>
+              ))}
+            </div>
+          </div>
         ))}
         {entries.length === 0 && !showForm && <p className="text-center text-muted-foreground py-8">No expenses yet.</p>}
       </div>
