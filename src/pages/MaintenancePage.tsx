@@ -50,8 +50,9 @@ export default function MaintenancePage() {
     const path = `maintenance/${crypto.randomUUID()}.${ext}`;
     const { error } = await supabase.storage.from("checklist-photos").upload(path, file);
     if (error) return null;
-    const { data } = supabase.storage.from("checklist-photos").getPublicUrl(path);
-    return data.publicUrl;
+    // Store path instead of public URL; generate signed URL for display
+    const { data } = await supabase.storage.from("checklist-photos").createSignedUrl(path, 3600);
+    return data?.signedUrl || null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
