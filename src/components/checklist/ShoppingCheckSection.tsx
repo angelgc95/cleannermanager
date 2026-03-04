@@ -2,11 +2,9 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, Plus, X, ShoppingCart } from "lucide-react";
+import { Check, X, ShoppingCart, Plus, Search } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
 interface MissingItem {
@@ -32,9 +30,8 @@ export function ShoppingCheckSection({
   error,
 }: ShoppingCheckSectionProps) {
   const [products, setProducts] = useState<any[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState("");
-  const [quantity, setQuantity] = useState(1);
-  const [note, setNote] = useState("");
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -44,35 +41,57 @@ export function ShoppingCheckSection({
     fetchProducts();
   }, []);
 
-  const addMissingItem = () => {
-    if (!selectedProduct) return;
-    const product = products.find((p) => p.id === selectedProduct);
-    if (!product) return;
+  // Sync selected set from existing missingItems
+  useEffect(() => {
+    setSelected(new Set(missingItems.map((i) => i.productId)));
+  }, [missingItems]);
 
-    // Check if already added
-    const existing = missingItems.findIndex((i) => i.productId === selectedProduct);
-    if (existing >= 0) {
-      const updated = [...missingItems];
-      updated[existing].quantity += quantity;
-      onMissingItemsChange(updated);
+  const toggleProduct = (productId: string) => {
+    const next = new Set(selected);
+    if (next.has(productId)) {
+      next.delete(productId);
     } else {
-      onMissingItemsChange([
-        ...missingItems,
-        { productId: selectedProduct, productName: product.name, quantity, note },
-      ]);
+      next.add(productId);
     }
-    setSelectedProduct("");
-    setQuantity(1);
-    setNote("");
+    setSelected(next);
   };
 
-  const removeItem = (index: number) => {
-    onMissingItemsChange(missingItems.filter((_, i) => i !== index));
+  const addToShoppingList = () => {
+    const newItems: MissingItem[] = [];
+    for (const pid of selected) {
+      const existing = missingItems.find((i) => i.productId === pid);
+      if (existing) {
+        newItems.push(existing);
+      } else {
+        const product = products.find((p) => p.id === pid);
+        if (product) {
+          newItems.push({ productId: pid, productName: product.name, quantity: 1, note: "" });
+        }
+      }
+    }
+    onMissingItemsChange(newItems);
   };
+
+  const filteredProducts = products.filter((p) =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    (p.category && p.category.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  // Group by category
+  const grouped = filteredProducts.reduce<Record<string, any[]>>((acc, p) => {
+    const cat = p.category || "Other";
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(p);
+    return acc;
+  }, {});
+  const sortedCategories = Object.keys(grouped).sort();
+
+  const newSelectionsCount = [...selected].filter((id) => !missingItems.find((i) => i.productId === id)).length;
+  const removalsCount = missingItems.filter((i) => !selected.has(i.productId)).length;
+  const hasChanges = newSelectionsCount > 0 || removalsCount > 0;
 
   return (
     <div className="space-y-3">
-      {/* Shopping checked? */}
       <Card>
         <CardContent className="p-3">
           <div className="flex items-center gap-3">
@@ -104,66 +123,85 @@ export function ShoppingCheckSection({
         </CardContent>
       </Card>
 
-      {/* If checked YES → show add missing items */}
       {shoppingChecked === true && (
-        <>
-          <Card>
-            <CardContent className="p-3 space-y-2">
-              <p className="text-sm font-medium">Add missing products</p>
-              <div className="flex gap-2">
-                <Select value={selectedProduct} onValueChange={setSelectedProduct}>
-                  <SelectTrigger className="flex-1 h-9 text-sm">
-                    <SelectValue placeholder="Select product..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {products.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}{p.category ? ` (${p.category})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  type="number"
-                  min={1}
-                  value={quantity}
-                  onChange={(e) => setQuantity(Number(e.target.value) || 1)}
-                  className="w-16 h-9 text-sm"
-                  placeholder="Qty"
-                />
-              </div>
+        <Card>
+          <CardContent className="p-3 space-y-3">
+            <p className="text-sm font-medium">Select missing products</p>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Note (optional)"
-                className="h-9 text-sm"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search products..."
+                className="h-9 text-sm pl-8"
               />
-              <Button size="sm" variant="outline" onClick={addMissingItem} disabled={!selectedProduct} className="gap-1">
-                <Plus className="h-3 w-3" /> Add
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Added items */}
-          {missingItems.length > 0 && (
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground font-medium px-1">Missing items added:</p>
-              {missingItems.map((item, idx) => (
-                <Card key={idx}>
-                  <CardContent className="p-2 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">{item.productName} × {item.quantity}</p>
-                      {item.note && <p className="text-xs text-muted-foreground">{item.note}</p>}
-                    </div>
-                    <button onClick={() => removeItem(idx)} className="text-destructive p-1">
-                      <X className="h-4 w-4" />
-                    </button>
-                  </CardContent>
-                </Card>
-              ))}
             </div>
-          )}
-        </>
+
+            <div className="max-h-64 overflow-y-auto space-y-3 border rounded-md p-2">
+              {sortedCategories.map((cat) => (
+                <div key={cat}>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">{cat}</p>
+                  <div className="space-y-0.5">
+                    {grouped[cat].map((p: any) => (
+                      <label
+                        key={p.id}
+                        className={cn(
+                          "flex items-center gap-2.5 p-2 rounded-md cursor-pointer text-sm transition-colors",
+                          selected.has(p.id) ? "bg-accent" : "hover:bg-muted/50"
+                        )}
+                      >
+                        <Checkbox
+                          checked={selected.has(p.id)}
+                          onCheckedChange={() => toggleProduct(p.id)}
+                        />
+                        <span className="font-medium">{p.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {filteredProducts.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-4">No products found</p>
+              )}
+            </div>
+
+            {selected.size > 0 && (
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">{selected.size} product{selected.size !== 1 ? "s" : ""} selected</p>
+                <Button size="sm" onClick={addToShoppingList} disabled={!hasChanges} className="gap-1.5">
+                  <Plus className="h-3.5 w-3.5" /> {missingItems.length > 0 ? "Update" : "Add to"} Shopping List
+                </Button>
+              </div>
+            )}
+
+            {missingItems.length > 0 && (
+              <div className="border-t pt-2 space-y-1">
+                <p className="text-xs text-muted-foreground font-medium">Added to shopping list:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {missingItems.map((item) => (
+                    <span
+                      key={item.productId}
+                      className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-xs font-medium"
+                    >
+                      {item.productName}
+                      <button
+                        onClick={() => {
+                          const next = new Set(selected);
+                          next.delete(item.productId);
+                          setSelected(next);
+                          onMissingItemsChange(missingItems.filter((i) => i.productId !== item.productId));
+                        }}
+                        className="hover:text-destructive"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {error && <p className="text-xs text-destructive mt-1">{error}</p>}
