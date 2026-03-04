@@ -52,6 +52,7 @@ export default function ChecklistRunPage() {
   const [alreadyFinished, setAlreadyFinished] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activePhotoItemId, setActivePhotoItemId] = useState<string | null>(null);
+  const activePhotoItemIdRef = useRef<string | null>(null);
 
   const nowTime = () => {
     const d = new Date();
@@ -242,17 +243,18 @@ export default function ChecklistRunPage() {
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !activePhotoItemId || !runId || !user) return;
+    const currentItemId = activePhotoItemIdRef.current;
+    if (!e.target.files || !currentItemId || !runId || !user) return;
     const files = Array.from(e.target.files);
 
     for (const file of files) {
       const ext = file.name.split(".").pop();
-      const path = `${user.id}/${runId}/${activePhotoItemId}/${crypto.randomUUID()}.${ext}`;
+      const path = `${user.id}/${runId}/${currentItemId}/${crypto.randomUUID()}.${ext}`;
 
       const tempId = crypto.randomUUID();
       setPhotos((prev) => ({
         ...prev,
-        [activePhotoItemId]: [...(prev[activePhotoItemId] || []), { id: tempId, url: "", uploading: true }],
+        [currentItemId]: [...(prev[currentItemId] || []), { id: tempId, url: "", uploading: true }],
       }));
 
       const { data, error } = await supabase.storage
@@ -263,7 +265,7 @@ export default function ChecklistRunPage() {
         toast({ title: "Upload failed", description: error.message, variant: "destructive" });
         setPhotos((prev) => ({
           ...prev,
-          [activePhotoItemId]: (prev[activePhotoItemId] || []).filter((p) => p.id !== tempId),
+          [currentItemId]: (prev[currentItemId] || []).filter((p) => p.id !== tempId),
         }));
         continue;
       }
@@ -273,15 +275,15 @@ export default function ChecklistRunPage() {
 
       await supabase.from("checklist_photos").insert({
         run_id: runId,
-        item_id: activePhotoItemId,
+        item_id: currentItemId,
         photo_url: data.path,
-        sort_order: (photos[activePhotoItemId]?.length || 0),
+        sort_order: (photos[currentItemId]?.length || 0),
         host_user_id: hostId,
       } as any);
 
       setPhotos((prev) => ({
         ...prev,
-        [activePhotoItemId]: (prev[activePhotoItemId] || []).map((p) =>
+        [currentItemId]: (prev[currentItemId] || []).map((p) =>
           p.id === tempId ? { ...p, url: photoUrl, storagePath: data.path, uploading: false } : p
         ),
       }));
@@ -308,6 +310,7 @@ export default function ChecklistRunPage() {
   };
 
   const openPhotoPicker = (itemId: string) => {
+    activePhotoItemIdRef.current = itemId;
     setActivePhotoItemId(itemId);
     fileInputRef.current?.click();
   };
