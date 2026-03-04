@@ -8,14 +8,27 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Loader2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 export default function ExpensesPage() {
-  const { user, hostId } = useAuth();
+  const { user, hostId, role } = useAuth();
   const { toast } = useToast();
   const [entries, setEntries] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ date: format(new Date(), "yyyy-MM-dd"), name: "", amount: "", shop: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const isAdmin = role === "host";
 
   const fetchEntries = async () => {
     const { data } = await supabase.from("expenses").select("*").order("date", { ascending: false }).limit(50);
@@ -24,9 +37,33 @@ export default function ExpensesPage() {
 
   useEffect(() => { fetchEntries(); }, []);
 
+  const resetForm = () => {
+    setForm({ date: format(new Date(), "yyyy-MM-dd"), name: "", amount: "", shop: "" });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !hostId) return;
+
+    if (editingId) {
+      const { error } = await supabase.from("expenses").update({
+        date: form.date,
+        name: form.name,
+        amount: parseFloat(form.amount),
+        shop: form.shop,
+      }).eq("id", editingId);
+      if (error) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Expense updated" });
+        resetForm();
+        fetchEntries();
+      }
+      return;
+    }
+
     const { error } = await supabase.from("expenses").insert({
       created_by_user_id: user.id,
       date: form.date,
@@ -39,8 +76,27 @@ export default function ExpensesPage() {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Expense added" });
-      setShowForm(false);
-      setForm({ date: format(new Date(), "yyyy-MM-dd"), name: "", amount: "", shop: "" });
+      resetForm();
+      fetchEntries();
+    }
+  };
+
+  const startEdit = (exp: any) => {
+    setForm({ date: exp.date, name: exp.name, amount: String(exp.amount), shop: exp.shop || "" });
+    setEditingId(exp.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    setDeleting(true);
+    const { error } = await supabase.from("expenses").delete().eq("id", deleteId);
+    setDeleting(false);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Expense deleted" });
+      setDeleteId(null);
       fetchEntries();
     }
   };
@@ -58,7 +114,7 @@ export default function ExpensesPage() {
 
   return (
     <div>
-      <PageHeader title="Expenses" description="Track cleaning-related expenses" actions={<Button size="sm" onClick={() => setShowForm(!showForm)}>{showForm ? <><X className="h-4 w-4 mr-1" /> Cancel</> : <><Plus className="h-4 w-4 mr-1" /> Add Expense</>}</Button>} />
+      <PageHeader title="Expenses" description="Track cleaning-related expenses" actions={<Button size="sm" onClick={() => { if (showForm) resetForm(); else setShowForm(true); }}>{showForm ? <><X className="h-4 w-4 mr-1" /> Cancel</> : <><Plus className="h-4 w-4 mr-1" /> Add Expense</>}</Button>} />
       <div className="p-6 space-y-6 max-w-2xl">
         {showForm && (
           <Card><CardContent className="pt-6">
@@ -69,7 +125,7 @@ export default function ExpensesPage() {
               </div>
               <div className="space-y-1"><Label>Description</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="What was purchased?" required /></div>
               <div className="space-y-1"><Label>Shop</Label><Input value={form.shop} onChange={(e) => setForm({ ...form, shop: e.target.value })} /></div>
-              <Button type="submit">Save</Button>
+              <Button type="submit">{editingId ? "Update" : "Save"}</Button>
             </form>
           </CardContent></Card>
         )}
@@ -85,7 +141,19 @@ export default function ExpensesPage() {
               {expenses.map((exp: any) => (
                 <Card key={exp.id}><CardContent className="flex items-center justify-between p-4">
                   <div><p className="font-medium text-sm">{exp.name}</p><p className="text-xs text-muted-foreground">{format(parseISO(exp.date), "MMM d")} · {exp.shop || "—"}</p></div>
-                  <span className="font-semibold text-sm">€{Number(exp.amount).toFixed(2)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-sm">€{Number(exp.amount).toFixed(2)}</span>
+                    {isAdmin && (
+                      <>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEdit(exp)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(exp.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </CardContent></Card>
               ))}
             </div>
@@ -93,6 +161,22 @@ export default function ExpensesPage() {
         ))}
         {entries.length === 0 && !showForm && <p className="text-center text-muted-foreground py-8">No expenses yet.</p>}
       </div>
+
+      <Dialog open={!!deleteId} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete expense?</DialogTitle>
+            <DialogDescription>This action cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteId(null)} disabled={deleting}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting} className="gap-1.5">
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
