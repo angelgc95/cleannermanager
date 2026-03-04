@@ -36,6 +36,20 @@ export default function GuidesPage() {
   const [editingGuide, setEditingGuide] = useState<any>(null);
   const [editGuideTitle, setEditGuideTitle] = useState("");
 
+  // Helper to extract storage path from either a full public URL or a plain path
+  const extractStoragePath = (urlOrPath: string, bucket: string): string => {
+    if (urlOrPath.includes(`/${bucket}/`)) return urlOrPath.split(`/${bucket}/`).pop() || urlOrPath;
+    return urlOrPath;
+  };
+
+  const getSignedUrl = async (urlOrPath: string, bucket: string): Promise<string> => {
+    const path = extractStoragePath(urlOrPath, bucket);
+    const { data } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+    return data?.signedUrl || "#";
+  };
+
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+
   const fetchData = async () => {
     const [{ data: f }, { data: g }] = await Promise.all([
       supabase.from("guides_folders").select("*").order("name"),
@@ -43,6 +57,15 @@ export default function GuidesPage() {
     ]);
     setFolders(f || []);
     setGuides(g || []);
+
+    // Generate signed URLs for all guides
+    const urls: Record<string, string> = {};
+    for (const guide of (g || [])) {
+      if (guide.pdf_url) {
+        urls[guide.id] = await getSignedUrl(guide.pdf_url, "guides");
+      }
+    }
+    setSignedUrls(urls);
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -68,7 +91,7 @@ export default function GuidesPage() {
   const deleteFolder = async (folderId: string) => {
     const folderGuides = guides.filter((g) => g.folder_id === folderId);
     for (const g of folderGuides) {
-      if (g.pdf_url) { const path = g.pdf_url.split("/guides/")[1]; if (path) await supabase.storage.from("guides").remove([path]); }
+      if (g.pdf_url) { const path = extractStoragePath(g.pdf_url, "guides"); if (path) await supabase.storage.from("guides").remove([path]); }
       await supabase.from("guides").delete().eq("id", g.id);
     }
     await supabase.from("guides_folders").delete().eq("id", folderId);
@@ -83,15 +106,16 @@ export default function GuidesPage() {
     const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
     const { data: uploadData, error: uploadError } = await supabase.storage.from("guides").upload(path, selectedFile, { contentType: selectedFile.type });
     if (uploadError) { toast({ title: "Upload failed", description: uploadError.message, variant: "destructive" }); setUploading(false); return; }
-    const { data: urlData } = supabase.storage.from("guides").getPublicUrl(uploadData.path);
-    await supabase.from("guides").insert({ title: guideTitle.trim(), folder_id: uploadFolderId, pdf_url: urlData.publicUrl, uploaded_by_user_id: user.id, host_user_id: user.id });
+    // Store the storage path (not public URL) for signed URL generation
+    const storagePath = uploadData.path;
+    await supabase.from("guides").insert({ title: guideTitle.trim(), folder_id: uploadFolderId, pdf_url: storagePath, uploaded_by_user_id: user.id, host_user_id: user.id });
     toast({ title: "File uploaded" });
     setUploadFolderId(null); setGuideTitle(""); setSelectedFile(null); setUploading(false);
     fetchData();
   };
 
   const deleteGuide = async (guide: any) => {
-    if (guide.pdf_url) { const path = guide.pdf_url.split("/guides/")[1]; if (path) await supabase.storage.from("guides").remove([path]); }
+    if (guide.pdf_url) { const path = extractStoragePath(guide.pdf_url, "guides"); if (path) await supabase.storage.from("guides").remove([path]); }
     await supabase.from("guides").delete().eq("id", guide.id);
     toast({ title: "Guide deleted" });
     fetchData();
@@ -148,7 +172,7 @@ export default function GuidesPage() {
                 <div className="space-y-1">
                   {folder.guides.map((g: any) => (
                     <div key={g.id} className="flex items-center gap-2 group">
-                      <a href={g.pdf_url || "#"} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/50 transition-colors text-sm flex-1 min-w-0">
+                      <a href={signedUrls[g.id] || "#"} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/50 transition-colors text-sm flex-1 min-w-0">
                         {g.pdf_url ? getFileIcon(g.pdf_url) : <FileText className="h-4 w-4 text-primary shrink-0" />}
                         <span className="truncate">{g.title}</span>
                       </a>

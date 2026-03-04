@@ -14,6 +14,38 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    // Authenticate: accept either a valid JWT (host role) or the service role key as Bearer token
+    const authHeader = req.headers.get("Authorization") || req.headers.get("authorization");
+    let authorized = false;
+
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.replace("Bearer ", "");
+      // Check if it's the service role key (used by pg_cron / internal calls)
+      if (token === serviceKey) {
+        authorized = true;
+      } else {
+        // Validate as user JWT
+        const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+        const userClient = createClient(supabaseUrl, anonKey, {
+          global: { headers: { Authorization: authHeader } },
+        });
+        const { data: { user }, error: userError } = await userClient.auth.getUser();
+        if (!userError && user) {
+          const svc = createClient(supabaseUrl, serviceKey);
+          const { data: isHost } = await svc.rpc("has_role", { _user_id: user.id, _role: "host" });
+          if (isHost) authorized = true;
+        }
+      }
+    }
+
+    if (!authorized) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabase = createClient(supabaseUrl, serviceKey);
 
     // Get all due SCHEDULED jobs — now joined to cleaning_events
@@ -139,6 +171,7 @@ Deno.serve(async (req) => {
 
         processed++;
       } catch (err) {
+        console.error("Job processing error:", err);
         await supabase
           .from("notification_jobs")
           .update({ status: "FAILED", last_error: err instanceof Error ? err.message : String(err) })
@@ -151,8 +184,9 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
+    console.error("dispatch-notifications error:", error);
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
+      JSON.stringify({ error: "An error occurred processing notifications" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
