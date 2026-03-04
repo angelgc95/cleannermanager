@@ -212,7 +212,8 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error("compute-price-suggestions error:", err);
+    return new Response(JSON.stringify({ error: "An error occurred computing suggestions" }), {
       status: 500,
       headers: corsHeaders,
     });

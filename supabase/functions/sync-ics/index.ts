@@ -282,8 +282,9 @@ Deno.serve(async (req) => {
       );
     }
   } catch (error) {
+    console.error("sync-ics error:", error);
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
+      JSON.stringify({ error: "An error occurred during sync" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

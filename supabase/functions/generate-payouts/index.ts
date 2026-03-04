@@ -194,8 +194,8 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err: any) {
-    console.error("Error:", err);
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error("generate-payouts error:", err);
+    return new Response(JSON.stringify({ error: "An error occurred generating payouts" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
