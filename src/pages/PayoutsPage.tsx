@@ -139,7 +139,7 @@ export default function PayoutsPage() {
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar mode="single" selected={startDate} onSelect={setStartDate} initialFocus className={cn("p-3 pointer-events-auto")} />
+                      <Calendar mode="single" selected={startDate} onSelect={setStartDate} initialFocus weekStartsOn={1} className={cn("p-3 pointer-events-auto")} />
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -153,7 +153,7 @@ export default function PayoutsPage() {
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar mode="single" selected={endDate} onSelect={setEndDate} initialFocus className={cn("p-3 pointer-events-auto")} />
+                      <Calendar mode="single" selected={endDate} onSelect={setEndDate} initialFocus weekStartsOn={1} className={cn("p-3 pointer-events-auto")} />
                     </PopoverContent>
                   </Popover>
                 </div>
