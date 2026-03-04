@@ -36,6 +36,15 @@ export default function CalendarPage() {
   useEffect(() => {
     if (!isHost) return;
     const fetchSuggestions = async () => {
+      // Check if pricing suggestions are enabled
+      const { data: settings } = await supabase
+        .from("host_settings")
+        .select("nightly_price_suggestions_enabled")
+        .single();
+      if (!settings?.nightly_price_suggestions_enabled) {
+        setSuggestions([]);
+        return;
+      }
       const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
       const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
       const { data } = await supabase
