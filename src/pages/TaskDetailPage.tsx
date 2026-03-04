@@ -30,6 +30,8 @@ export default function TaskDetailPage() {
   const [event, setEvent] = useState<any>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [listingTimezone, setListingTimezone] = useState<string>("UTC");
 
   const [checklistRun, setChecklistRun] = useState<any>(null);
@@ -182,6 +184,39 @@ export default function TaskDetailPage() {
     }
   };
 
+  const handleResetConfirm = async () => {
+    if (!id || !event?.checklist_run_id) return;
+    setResetting(true);
+    try {
+      const runId = event.checklist_run_id;
+
+      // Delete related data in order: photos, responses, shopping items, log hours, then the run itself
+      await supabase.from("checklist_photos").delete().eq("run_id", runId);
+      await supabase.from("checklist_responses").delete().eq("run_id", runId);
+      await supabase.from("shopping_list").delete().eq("checklist_run_id", runId);
+      await supabase.from("log_hours").delete().eq("checklist_run_id", runId);
+      await supabase.from("checklist_runs").delete().eq("id", runId);
+
+      // Reset the event: clear checklist_run_id and set status to TODO
+      await supabase
+        .from("cleaning_events")
+        .update({ checklist_run_id: null, status: "TODO" })
+        .eq("id", id);
+
+      setEvent((prev: any) => ({ ...prev, checklist_run_id: null, status: "TODO" }));
+      setChecklistRun(null);
+      setRunPhotos([]);
+      setRunShoppingItems([]);
+      setPendingStatus(null);
+      setResetOpen(false);
+      toast({ title: "Event reset", description: "Previous checklist has been removed. The event is ready to be redone." });
+    } catch (err: any) {
+      toast({ title: "Error resetting event", description: err.message, variant: "destructive" });
+    } finally {
+      setResetting(false);
+    }
+  };
+
   if (!event) return <div className="p-6 text-muted-foreground">Loading...</div>;
 
   const hasTemplate = !!event.checklist_template_id || templateName !== null;
@@ -274,7 +309,15 @@ export default function TaskDetailPage() {
                       <Label className="text-xs">Status</Label>
                       <Select
                         value={pendingStatus ?? event.status}
-                        onValueChange={(v) => setPendingStatus(v)}
+                        onValueChange={(v) => {
+                          // If changing to TODO from IN_PROGRESS/DONE and there's a checklist run, show reset dialog
+                          const currentStatus = pendingStatus ?? event.status;
+                          if (v === "TODO" && (currentStatus === "IN_PROGRESS" || currentStatus === "DONE") && event.checklist_run_id) {
+                            setResetOpen(true);
+                          } else {
+                            setPendingStatus(v);
+                          }
+                        }}
                       >
                         <SelectTrigger className="h-9 text-sm">
                           <SelectValue />
@@ -452,6 +495,29 @@ export default function TaskDetailPage() {
             </Button>
             <Button variant="destructive" disabled={!cancelReason.trim()} onClick={cancelEvent}>
               Confirm Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Reset this cleaning event?
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently delete the previous checklist run, including all responses, photos, shopping items, and logged hours associated with it. The event will be set back to "To-do" so the cleaner can redo it.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetOpen(false)} disabled={resetting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleResetConfirm} disabled={resetting} className="gap-1.5">
+              {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
+              Reset & Remove Checklist
             </Button>
           </DialogFooter>
         </DialogContent>
