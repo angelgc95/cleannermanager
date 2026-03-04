@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 interface PhotoEntry {
   id?: string;
   url: string;
+  storagePath?: string;
   uploading?: boolean;
 }
 
@@ -267,12 +268,13 @@ export default function ChecklistRunPage() {
         continue;
       }
 
-      const { data: urlData } = supabase.storage.from("checklist-photos").getPublicUrl(data.path);
+      const { data: signedData } = await supabase.storage.from("checklist-photos").createSignedUrl(data.path, 86400);
+      const photoUrl = signedData?.signedUrl || data.path;
 
       await supabase.from("checklist_photos").insert({
         run_id: runId,
         item_id: activePhotoItemId,
-        photo_url: urlData.publicUrl,
+        photo_url: data.path,
         sort_order: (photos[activePhotoItemId]?.length || 0),
         host_user_id: hostId,
       } as any);
@@ -280,7 +282,7 @@ export default function ChecklistRunPage() {
       setPhotos((prev) => ({
         ...prev,
         [activePhotoItemId]: (prev[activePhotoItemId] || []).map((p) =>
-          p.id === tempId ? { ...p, url: urlData.publicUrl, uploading: false } : p
+          p.id === tempId ? { ...p, url: photoUrl, storagePath: data.path, uploading: false } : p
         ),
       }));
     }
@@ -288,17 +290,20 @@ export default function ChecklistRunPage() {
     e.target.value = "";
   };
 
-  const removePhoto = async (itemId: string, photoUrl: string) => {
+  const removePhoto = async (itemId: string, photoUrl: string, storagePath?: string) => {
     setPhotos((prev) => ({
       ...prev,
       [itemId]: (prev[itemId] || []).filter((p) => p.url !== photoUrl),
     }));
-    const pathParts = photoUrl.split("/checklist-photos/");
-    if (pathParts[1]) {
-      await supabase.storage.from("checklist-photos").remove([pathParts[1]]);
+    // Use storagePath if available, otherwise extract from URL
+    const path = storagePath || (photoUrl.includes("/checklist-photos/") ? photoUrl.split("/checklist-photos/").pop() : null);
+    if (path) {
+      await supabase.storage.from("checklist-photos").remove([path]);
     }
     if (runId) {
-      await supabase.from("checklist_photos").delete().eq("run_id", runId).eq("item_id", itemId).eq("photo_url", photoUrl);
+      // Delete by storage path (new format) or full URL (legacy)
+      const dbPath = storagePath || photoUrl;
+      await supabase.from("checklist_photos").delete().eq("run_id", runId).eq("item_id", itemId).eq("photo_url", dbPath);
     }
   };
 
@@ -736,7 +741,7 @@ export default function ChecklistRunPage() {
                                     <>
                                       <img src={photo.url} alt="" className="h-full w-full object-cover" />
                                       <button
-                                        onClick={() => removePhoto(item.id, photo.url)}
+                                        onClick={() => removePhoto(item.id, photo.url, photo.storagePath)}
                                         className="absolute top-0.5 right-0.5 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
                                       >
                                         <X className="h-3 w-3" />
