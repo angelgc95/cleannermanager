@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, AlertTriangle, CheckCircle2, Loader2, Save } from "lucide-react";
+import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, AlertTriangle, CheckCircle2, Loader2, Save, Bell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -37,6 +37,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
   const [checklistRun, setChecklistRun] = useState<any>(null);
   const [runPhotos, setRunPhotos] = useState<any[]>([]);
   const [runShoppingItems, setRunShoppingItems] = useState<any[]>([]);
+  const [latestRunForStatus, setLatestRunForStatus] = useState<{ id: string; finished_at: string | null } | null>(null);
 
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [assigningCleaner, setAssigningCleaner] = useState<string>("");
@@ -50,6 +51,20 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
   const isAdmin = role === "host";
   const details = event?.event_details_json || {};
   const hasPendingChanges = pendingCleaner !== null || pendingStatus !== null;
+
+  // Query latest checklist run for effectiveStatus
+  useEffect(() => {
+    if (!id) return;
+    supabase
+      .from("checklist_runs")
+      .select("id, finished_at")
+      .eq("cleaning_event_id", id)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        setLatestRunForStatus(data && data.length > 0 ? data[0] : null);
+      });
+  }, [id]);
 
   useEffect(() => {
     if (!id) return;
@@ -245,7 +260,15 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
   if (!event) return <div className="p-6 text-muted-foreground">Loading...</div>;
 
   const hasTemplate = !!event.checklist_template_id || templateName !== null;
-  const canStartChecklist = hasTemplate && (event.status === "TODO" || event.status === "IN_PROGRESS");
+
+  // Derive effectiveStatus from latest checklist run
+  const effectiveStatus = latestRunForStatus
+    ? latestRunForStatus.finished_at
+      ? "COMPLETED"
+      : "IN_PROGRESS"
+    : "TODO";
+
+  const statusMismatch = event.status === "IN_PROGRESS" && effectiveStatus === "COMPLETED";
 
   return (
     <div ref={ref}>
@@ -263,7 +286,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">Cleaning Event</CardTitle>
-              <StatusBadge status={event.status} />
+              <StatusBadge status={effectiveStatus} />
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -496,9 +519,19 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
           </Card>
         )}
 
+        {/* === Status Mismatch Warning === */}
+        {statusMismatch && (
+          <div className="flex items-start gap-3 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              Status out of sync (completed checklist exists).
+            </p>
+          </div>
+        )}
+
         {/* === Action Buttons === */}
         <div className="flex gap-2 flex-wrap">
-          {!isAdmin && canStartChecklist && (
+          {!isAdmin && hasTemplate && effectiveStatus === "TODO" && (
             <Button
               onClick={() => navigate(`/events/${id}/checklist`)}
               className="gap-2"
@@ -506,6 +539,37 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
             >
               <ClipboardList className="h-4 w-4" /> Start Cleaning Checklist
             </Button>
+          )}
+          {!isAdmin && hasTemplate && effectiveStatus === "IN_PROGRESS" && (
+            <Button
+              onClick={() => navigate(`/events/${id}/checklist`)}
+              className="gap-2"
+              size="lg"
+            >
+              <ClipboardList className="h-4 w-4" /> Continue Cleaning Checklist
+            </Button>
+          )}
+          {!isAdmin && effectiveStatus === "COMPLETED" && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">This cleaning event has been completed.</p>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={async () => {
+                  if (!event?.host_user_id || !user) return;
+                  const listingName = event.listings?.name || "Unknown listing";
+                  const ref = event.reference || id;
+                  await supabase.from("in_app_notifications").insert({
+                    user_id: event.host_user_id,
+                    host_user_id: event.host_user_id,
+                    title: "🔄 Reset requested",
+                    body: `Cleaner has requested a checklist reset for ${listingName} (ref: ${ref}).`,
+                    link: `/events/${id}`,
+                  } as any);
+                  toast({ title: "Request sent", description: "Your host has been notified." });
+                }} className="gap-2">
+                  <Bell className="h-4 w-4" /> Request reset from host
+                </Button>
+              </div>
+            </div>
           )}
           {event.status !== "CANCELLED" && event.status !== "DONE" && (
             <Button variant="outline" onClick={() => setCancelOpen(true)} className="gap-2">
