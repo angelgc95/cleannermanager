@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useEffectiveStatuses } from "@/hooks/useEffectiveStatus";
 import { format } from "date-fns";
 import { Settings2, Plus, Loader2, Sparkles, Save, Check, Pencil, Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -283,21 +284,26 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
     }
   };
 
+  const eventIds = useMemo(() => events.map((e: any) => e.id), [events]);
+  const { statuses: effectiveStatuses } = useEffectiveStatuses(eventIds);
+
   const { upcomingEvents, completedEvents, cancelledEvents } = useMemo(() => {
     const upcoming: any[] = []; const completed: any[] = []; const cancelled: any[] = [];
     for (const ev of events) {
+      const es = effectiveStatuses[ev.id];
       if (ev.status === "CANCELLED") cancelled.push(ev);
-      else if (ev.status === "DONE") completed.push(ev);
+      else if (es === "COMPLETED" || ev.status === "DONE") completed.push(ev);
       else upcoming.push(ev);
     }
     completed.sort((a, b) => (b.start_at ? new Date(b.start_at).getTime() : 0) - (a.start_at ? new Date(a.start_at).getTime() : 0));
     return { upcomingEvents: upcoming, completedEvents: completed, cancelledEvents: cancelled };
-  }, [events]);
+  }, [events, effectiveStatuses]);
 
   const details = (ev: any) => ev.event_details_json || {};
 
   const EventCard = ({ event }: { event: any }) => {
     const isCancelled = event.status === "CANCELLED";
+    const displayStatus = isCancelled ? "CANCELLED" : (effectiveStatuses[event.id] || event.status);
     return (
       <Card key={event.id} className={cn("cursor-pointer hover:shadow-md transition-shadow", isCancelled && "opacity-50")} onClick={() => navigate(`/events/${event.id}`)}>
         <CardContent className="flex items-center justify-between p-4">
@@ -312,7 +318,7 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {event.source === "AUTO" && <span className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">Auto</span>}
-            <StatusBadge status={event.status} />
+            <StatusBadge status={displayStatus} />
           </div>
         </CardContent>
       </Card>
