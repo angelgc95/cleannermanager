@@ -197,17 +197,30 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
   };
 
   const handleResetConfirm = async () => {
-    if (!id || !event?.checklist_run_id) return;
+    if (!id) return;
     setResetting(true);
     try {
-      const runId = event.checklist_run_id;
+      // Find ALL runs for this event
+      const { data: allRuns } = await supabase
+        .from("checklist_runs")
+        .select("id")
+        .eq("cleaning_event_id", id);
 
-      // Delete related data in order: photos, responses, shopping items, log hours, then the run itself
-      await supabase.from("checklist_photos").delete().eq("run_id", runId);
-      await supabase.from("checklist_responses").delete().eq("run_id", runId);
-      await supabase.from("shopping_list").delete().eq("checklist_run_id", runId);
-      await supabase.from("log_hours").delete().eq("checklist_run_id", runId);
-      await supabase.from("checklist_runs").delete().eq("id", runId);
+      const runIds = (allRuns || []).map((r: any) => r.id);
+
+      if (runIds.length > 0) {
+        // Delete related data for ALL runs
+        for (const rId of runIds) {
+          await supabase.from("checklist_photos").delete().eq("run_id", rId);
+          await supabase.from("checklist_responses").delete().eq("run_id", rId);
+          await supabase.from("shopping_list").delete().eq("checklist_run_id", rId);
+          await supabase.from("log_hours").delete().eq("checklist_run_id", rId);
+        }
+        // Delete all runs
+        for (const rId of runIds) {
+          await supabase.from("checklist_runs").delete().eq("id", rId);
+        }
+      }
 
       // Reset the event: clear checklist_run_id and set status to TODO
       await supabase
@@ -324,22 +337,19 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
                         onValueChange={async (v) => {
                           const currentStatus = pendingStatus ?? event.status;
                           if (v === "TODO" && (currentStatus === "IN_PROGRESS" || currentStatus === "DONE")) {
-                            // Check for any existing checklist run for this event (even if checklist_run_id on event is null)
-                            if (event.checklist_run_id) {
+                            // Always check DB for any runs linked to this event
+                            const { data: existingRuns } = await supabase
+                              .from("checklist_runs")
+                              .select("id")
+                              .eq("cleaning_event_id", id)
+                              .order("started_at", { ascending: false })
+                              .limit(1);
+                            if (existingRuns && existingRuns.length > 0) {
+                              // Ensure local state has the run id for handleResetConfirm
+                              setEvent((prev: any) => ({ ...prev, checklist_run_id: existingRuns[0].id }));
                               setResetOpen(true);
                             } else {
-                              const { data: existingRuns } = await supabase
-                                .from("checklist_runs")
-                                .select("id")
-                                .eq("cleaning_event_id", id)
-                                .limit(1);
-                              if (existingRuns && existingRuns.length > 0) {
-                                // Store the found run id on event so handleResetConfirm can use it
-                                setEvent((prev: any) => ({ ...prev, checklist_run_id: existingRuns[0].id }));
-                                setResetOpen(true);
-                              } else {
-                                setPendingStatus(v);
-                              }
+                              setPendingStatus(v);
                             }
                           } else {
                             setPendingStatus(v);

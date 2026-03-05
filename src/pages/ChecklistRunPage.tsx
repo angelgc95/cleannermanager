@@ -187,14 +187,6 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
         .single();
       setEvent(eventData);
 
-      if (eventData?.status === "DONE") {
-        setAlreadyFinished(true);
-        return;
-      }
-
-      // If event was reset to TODO but old finished run exists, clean it up
-      const eventIsReset = eventData?.status === "TODO";
-
       let tplId = eventData?.checklist_template_id || "";
       if (!tplId && eventData?.listing_id) {
         const { data: tpl } = await supabase
@@ -232,35 +224,28 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
       setSections(fullSections);
       if (fullSections.length > 0) setActiveTab(CLOCK_IN_TAB_ID);
 
-      // Check for ANY existing run for this event (finished or not)
-      const { data: existingRuns } = await supabase
+      // Find the latest checklist run for this event
+      const { data: latestRuns } = await supabase
         .from("checklist_runs")
         .select("id, finished_at")
         .eq("cleaning_event_id", eventId)
+        .order("started_at", { ascending: false })
         .limit(1);
 
-      const hasOldFinishedRun = existingRuns && existingRuns.length > 0 && !!existingRuns[0].finished_at;
-      const needsNewRun = !existingRuns || existingRuns.length === 0;
+      const latestRun = latestRuns && latestRuns.length > 0 ? latestRuns[0] : null;
 
-      if (hasOldFinishedRun && eventIsReset) {
-        // Event was reset to TODO but old finished run remains — reuse it by clearing finished_at
-        const oldRunId = existingRuns[0].id;
-        await supabase.from("checklist_runs").update({
-          finished_at: null,
-          started_at: new Date().toISOString(),
-          duration_minutes: null,
-          overall_notes: null,
-        }).eq("id", oldRunId);
-        // Clean up old responses so checklist starts fresh
-        await supabase.from("checklist_responses").delete().eq("run_id", oldRunId);
-        setRunId(oldRunId);
-      } else if (existingRuns && existingRuns.length > 0 && !needsNewRun) {
-        setRunId(existingRuns[0].id);
-        if (existingRuns[0].finished_at) {
-          setAlreadyFinished(true);
-        }
-      } else if (needsNewRun) {
-        const startedAt = new Date().toISOString();
+      if (latestRun && latestRun.finished_at) {
+        // Latest run is finished — block entry, do NOT touch event status
+        setAlreadyFinished(true);
+        setRunId(latestRun.id);
+        return;
+      }
+
+      if (latestRun && !latestRun.finished_at) {
+        // Existing unfinished run — resume it
+        setRunId(latestRun.id);
+      } else {
+        // No run exists — create one
         const { data: run, error: insertError } = await supabase
           .from("checklist_runs")
           .insert({
@@ -268,7 +253,7 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
             listing_id: eventData?.listing_id || null,
             cleaner_user_id: user.id,
             host_user_id: eventData?.host_user_id,
-            started_at: startedAt,
+            started_at: new Date().toISOString(),
           } as any)
           .select("id")
           .single();
@@ -278,17 +263,19 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
             .from("checklist_runs")
             .select("id, finished_at")
             .eq("cleaning_event_id", eventId)
+            .order("started_at", { ascending: false })
             .limit(1)
             .single();
           if (conflictRun) {
             setRunId(conflictRun.id);
-            if (conflictRun.finished_at) setAlreadyFinished(true);
+            if (conflictRun.finished_at) { setAlreadyFinished(true); return; }
           }
         } else if (run) {
           setRunId(run.id);
         }
       }
 
+      // Only now update TODO → IN_PROGRESS (we confirmed no finished run blocks us)
       if (eventData?.status === "TODO") {
         await supabase.from("cleaning_events").update({ status: "IN_PROGRESS" }).eq("id", eventId);
       }
