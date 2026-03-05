@@ -137,7 +137,19 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
           .from("checklist_photos")
           .select("photo_url, item_id")
           .eq("run_id", event.checklist_run_id);
-        setRunPhotos(photos || []);
+        // Generate signed URLs for private bucket
+        const photosWithSignedUrls = await Promise.all(
+          (photos || []).map(async (p: any) => {
+            if (p.photo_url && !p.photo_url.startsWith("http")) {
+              const { data: signed } = await supabase.storage
+                .from("checklist-photos")
+                .createSignedUrl(p.photo_url, 86400);
+              return { ...p, signed_url: signed?.signedUrl || p.photo_url };
+            }
+            return { ...p, signed_url: p.photo_url };
+          })
+        );
+        setRunPhotos(photosWithSignedUrls);
 
         const { data: shopItems } = await supabase
           .from("shopping_list")
@@ -444,9 +456,9 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
                   </div>
                   <div className="flex gap-2 flex-wrap">
                     {runPhotos.map((photo: any, idx: number) => (
-                      <a key={idx} href={photo.photo_url} target="_blank" rel="noopener noreferrer">
+                      <a key={idx} href={photo.signed_url || photo.photo_url} target="_blank" rel="noopener noreferrer">
                         <img
-                          src={photo.photo_url}
+                          src={photo.signed_url || photo.photo_url}
                           alt=""
                           className="h-20 w-20 rounded-lg object-cover border border-border hover:opacity-80 transition-opacity"
                         />

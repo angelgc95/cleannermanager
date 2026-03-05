@@ -140,6 +140,42 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
     }
   }, [sections, dismissTimer]);
 
+  // Load existing photos from DB when runId is available
+  useEffect(() => {
+    if (!runId) return;
+    const loadPhotos = async () => {
+      const { data: dbPhotos } = await supabase
+        .from("checklist_photos")
+        .select("id, photo_url, item_id, sort_order")
+        .eq("run_id", runId)
+        .order("sort_order");
+      if (!dbPhotos || dbPhotos.length === 0) return;
+
+      const photosByItem: Record<string, PhotoEntry[]> = {};
+      await Promise.all(
+        dbPhotos.map(async (p: any) => {
+          const storagePath = p.photo_url;
+          let url = storagePath;
+          if (!storagePath.startsWith("http")) {
+            const { data: signed } = await supabase.storage
+              .from("checklist-photos")
+              .createSignedUrl(storagePath, 86400);
+            if (signed?.signedUrl) url = signed.signedUrl;
+          }
+          if (!photosByItem[p.item_id]) photosByItem[p.item_id] = [];
+          photosByItem[p.item_id].push({
+            id: p.id,
+            url,
+            storagePath,
+            uploading: false,
+          });
+        })
+      );
+      setPhotos(prev => ({ ...prev, ...photosByItem }));
+    };
+    loadPhotos();
+  }, [runId]);
+
   useEffect(() => {
     if (!eventId || !user) return;
 
@@ -290,13 +326,23 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
       const { data: signedData } = await supabase.storage.from("checklist-photos").createSignedUrl(data.path, 86400);
       const photoUrl = signedData?.signedUrl || data.path;
 
-      await supabase.from("checklist_photos").insert({
+      const { error: dbError } = await supabase.from("checklist_photos").insert({
         run_id: runId,
         item_id: currentItemId,
         photo_url: data.path,
         sort_order: (photos[currentItemId]?.length || 0),
         host_user_id: hostId,
       } as any);
+
+      if (dbError) {
+        await supabase.storage.from("checklist-photos").remove([data.path]);
+        toast({ title: "Failed to save photo", description: dbError.message, variant: "destructive" });
+        setPhotos((prev) => ({
+          ...prev,
+          [currentItemId]: (prev[currentItemId] || []).filter((p) => p.id !== tempId),
+        }));
+        continue;
+      }
 
       setPhotos((prev) => ({
         ...prev,
