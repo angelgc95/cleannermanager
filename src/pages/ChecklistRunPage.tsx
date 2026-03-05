@@ -192,6 +192,9 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
         return;
       }
 
+      // If event was reset to TODO but old finished run exists, clean it up
+      const eventIsReset = eventData?.status === "TODO";
+
       let tplId = eventData?.checklist_template_id || "";
       if (!tplId && eventData?.listing_id) {
         const { data: tpl } = await supabase
@@ -236,12 +239,17 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
         .eq("cleaning_event_id", eventId)
         .limit(1);
 
-      if (existingRuns && existingRuns.length > 0) {
+      const needsNewRun = !existingRuns || existingRuns.length === 0 ||
+        (existingRuns[0].finished_at && eventIsReset);
+
+      if (existingRuns && existingRuns.length > 0 && !needsNewRun) {
         setRunId(existingRuns[0].id);
         if (existingRuns[0].finished_at) {
           setAlreadyFinished(true);
         }
-      } else {
+      }
+
+      if (needsNewRun) {
         const startedAt = new Date().toISOString();
         const { data: run, error: insertError } = await supabase
           .from("checklist_runs")
@@ -256,7 +264,6 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
           .single();
 
         if (insertError && insertError.code === "23505") {
-          // Unique constraint conflict — re-fetch existing run
           const { data: conflictRun } = await supabase
             .from("checklist_runs")
             .select("id, finished_at")
