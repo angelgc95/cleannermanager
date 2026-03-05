@@ -1442,6 +1442,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_notification_jobs: {
+        Args: { batch_size?: number }
+        Returns: {
+          cleaning_event_id: string | null
+          created_at: string
+          host_user_id: string | null
+          id: string
+          last_error: string | null
+          scheduled_for: string
+          sent_at: string | null
+          status: Database["public"]["Enums"]["notification_job_status"] | null
+          type: Database["public"]["Enums"]["notification_type"]
+          updated_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "notification_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       cleaner_has_listing_access: {
         Args: { _cleaner_id: string; _listing_id: string }
         Returns: boolean
@@ -1466,7 +1488,12 @@ export type Database = {
       log_hours_source: "MANUAL" | "CHECKLIST"
       maintenance_priority: "LOW" | "MEDIUM" | "HIGH"
       maintenance_status: "OPEN" | "IN_PROGRESS" | "DONE"
-      notification_job_status: "SCHEDULED" | "SENT" | "SKIPPED" | "FAILED"
+      notification_job_status:
+        | "SCHEDULED"
+        | "SENT"
+        | "SKIPPED"
+        | "FAILED"
+        | "PROCESSING"
       notification_type: "REMINDER_12H" | "REMINDER_1H" | "CHECKLIST_2PM"
       payout_period_status: "OPEN" | "CLOSED"
       payout_status: "PENDING" | "PAID"
@@ -1606,7 +1633,13 @@ export const Constants = {
       log_hours_source: ["MANUAL", "CHECKLIST"],
       maintenance_priority: ["LOW", "MEDIUM", "HIGH"],
       maintenance_status: ["OPEN", "IN_PROGRESS", "DONE"],
-      notification_job_status: ["SCHEDULED", "SENT", "SKIPPED", "FAILED"],
+      notification_job_status: [
+        "SCHEDULED",
+        "SENT",
+        "SKIPPED",
+        "FAILED",
+        "PROCESSING",
+      ],
       notification_type: ["REMINDER_12H", "REMINDER_1H", "CHECKLIST_2PM"],
       payout_period_status: ["OPEN", "CLOSED"],
       payout_status: ["PENDING", "PAID"],

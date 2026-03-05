@@ -1,0 +1,1 @@
+ALTER TYPE notification_job_status ADD VALUE IF NOT EXISTS 'PROCESSING';

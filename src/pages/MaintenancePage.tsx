@@ -21,14 +21,44 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
   const { toast } = useToast();
   const isHost = role === "host";
   const [tickets, setTickets] = useState<any[]>([]);
+  const [signedUrls, setSignedUrls] = useState<Record<string, { pic1?: string; pic2?: string }>>({});
   const [showForm, setShowForm] = useState(false);
   const [issue, setIssue] = useState("");
   const [photos, setPhotos] = useState<{ file: File; preview: string }[]>([]);
   const [uploading, setUploading] = useState(false);
 
+  const generateSignedUrls = async (ticketList: any[]) => {
+    const urlMap: Record<string, { pic1?: string; pic2?: string }> = {};
+    const promises: Promise<void>[] = [];
+
+    for (const t of ticketList) {
+      if (!t.pic1_url && !t.pic2_url) continue;
+      const entry: { pic1?: string; pic2?: string } = {};
+      urlMap[t.id] = entry;
+
+      if (t.pic1_url) {
+        promises.push(
+          supabase.storage.from("checklist-photos").createSignedUrl(t.pic1_url, 3600)
+            .then(({ data }) => { if (data?.signedUrl) entry.pic1 = data.signedUrl; })
+        );
+      }
+      if (t.pic2_url) {
+        promises.push(
+          supabase.storage.from("checklist-photos").createSignedUrl(t.pic2_url, 3600)
+            .then(({ data }) => { if (data?.signedUrl) entry.pic2 = data.signedUrl; })
+        );
+      }
+    }
+
+    await Promise.all(promises);
+    setSignedUrls(urlMap);
+  };
+
   const fetchTickets = async () => {
     const { data } = await supabase.from("maintenance_tickets").select("*").order("created_at", { ascending: false }).limit(50);
-    setTickets(data || []);
+    const list = data || [];
+    setTickets(list);
+    await generateSignedUrls(list);
   };
 
   useEffect(() => { fetchTickets(); }, []);
@@ -50,9 +80,7 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
     const path = `maintenance/${crypto.randomUUID()}.${ext}`;
     const { error } = await supabase.storage.from("checklist-photos").upload(path, file);
     if (error) return null;
-    // Store path instead of public URL; generate signed URL for display
-    const { data } = await supabase.storage.from("checklist-photos").createSignedUrl(path, 3600);
-    return data?.signedUrl || null;
+    return path;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -172,10 +200,10 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
                 <StatusBadge status={t.status} />
               )}
             </div>
-            {(t.pic1_url || t.pic2_url) && (
+            {(signedUrls[t.id]?.pic1 || signedUrls[t.id]?.pic2) && (
               <div className="flex gap-2">
-                {t.pic1_url && <img src={t.pic1_url} alt="" className="h-16 w-16 rounded-md object-cover border border-border" />}
-                {t.pic2_url && <img src={t.pic2_url} alt="" className="h-16 w-16 rounded-md object-cover border border-border" />}
+                {signedUrls[t.id]?.pic1 && <img src={signedUrls[t.id].pic1} alt="" className="h-16 w-16 rounded-md object-cover border border-border" />}
+                {signedUrls[t.id]?.pic2 && <img src={signedUrls[t.id].pic2} alt="" className="h-16 w-16 rounded-md object-cover border border-border" />}
               </div>
             )}
           </CardContent></Card>
