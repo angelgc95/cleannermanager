@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, forwardRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ const SHOPPING_TAB_ID = "__shopping__";
 const CLOCK_IN_TAB_ID = "__clock_in__";
 const CLOCK_OUT_TAB_ID = "__clock_out__";
 
-export default function ChecklistRunPage() {
+const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_props, _ref) {
   const { eventId } = useParams();
   const navigate = useNavigate();
   const { user, hostId, role } = useAuth();
@@ -892,4 +892,6 @@ export default function ChecklistRunPage() {
       </div>
     </div>
   );
-}
+});
+
+export default ChecklistRunPage;
