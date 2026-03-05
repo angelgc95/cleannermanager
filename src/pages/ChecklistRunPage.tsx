@@ -612,23 +612,11 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
     if (!eventId || !user) return;
     setFinishing(true);
     try {
-      const { data: allRuns } = await supabase
-        .from("checklist_runs")
-        .select("id")
-        .eq("cleaning_event_id", eventId);
-      const runIds = (allRuns || []).map((r: any) => r.id);
-      if (runIds.length > 0) {
-        for (const rId of runIds) {
-          await supabase.from("checklist_photos").delete().eq("run_id", rId);
-          await supabase.from("checklist_responses").delete().eq("run_id", rId);
-          await supabase.from("shopping_list").delete().eq("checklist_run_id", rId);
-          await supabase.from("log_hours").delete().eq("checklist_run_id", rId);
-        }
-        for (const rId of runIds) {
-          await supabase.from("checklist_runs").delete().eq("id", rId);
-        }
-      }
-      await supabase.from("cleaning_events").update({ checklist_run_id: null, status: "TODO" }).eq("id", eventId);
+      const { data, error } = await supabase.functions.invoke("reset-cleaning-event", {
+        body: { cleaning_event_id: eventId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
       // Create a new run immediately
       const { data: newRun } = await supabase

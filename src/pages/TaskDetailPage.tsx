@@ -215,38 +215,17 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
     if (!id) return;
     setResetting(true);
     try {
-      // Find ALL runs for this event
-      const { data: allRuns } = await supabase
-        .from("checklist_runs")
-        .select("id")
-        .eq("cleaning_event_id", id);
-
-      const runIds = (allRuns || []).map((r: any) => r.id);
-
-      if (runIds.length > 0) {
-        // Delete related data for ALL runs
-        for (const rId of runIds) {
-          await supabase.from("checklist_photos").delete().eq("run_id", rId);
-          await supabase.from("checklist_responses").delete().eq("run_id", rId);
-          await supabase.from("shopping_list").delete().eq("checklist_run_id", rId);
-          await supabase.from("log_hours").delete().eq("checklist_run_id", rId);
-        }
-        // Delete all runs
-        for (const rId of runIds) {
-          await supabase.from("checklist_runs").delete().eq("id", rId);
-        }
-      }
-
-      // Reset the event: clear checklist_run_id and set status to TODO
-      await supabase
-        .from("cleaning_events")
-        .update({ checklist_run_id: null, status: "TODO" })
-        .eq("id", id);
+      const { data, error } = await supabase.functions.invoke("reset-cleaning-event", {
+        body: { cleaning_event_id: id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
       setEvent((prev: any) => ({ ...prev, checklist_run_id: null, status: "TODO" }));
       setChecklistRun(null);
       setRunPhotos([]);
       setRunShoppingItems([]);
+      setLatestRunForStatus(null);
       setPendingStatus(null);
       setResetOpen(false);
       toast({ title: "Event reset", description: "Previous checklist has been removed. The event is ready to be redone." });
@@ -334,7 +313,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Assignment</p>
               {isAdmin ? (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label className="text-xs">Assigned Cleaner</Label>
                       <Select
@@ -355,40 +334,31 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Status</Label>
-                      <Select
-                        value={pendingStatus ?? event.status}
-                        onValueChange={async (v) => {
-                          const currentStatus = pendingStatus ?? event.status;
-                          if (v === "TODO" && (currentStatus === "IN_PROGRESS" || currentStatus === "DONE")) {
-                            // Always check DB for any runs linked to this event
-                            const { data: existingRuns } = await supabase
-                              .from("checklist_runs")
-                              .select("id")
-                              .eq("cleaning_event_id", id)
-                              .order("started_at", { ascending: false })
-                              .limit(1);
-                            if (existingRuns && existingRuns.length > 0) {
-                              // Ensure local state has the run id for handleResetConfirm
-                              setEvent((prev: any) => ({ ...prev, checklist_run_id: existingRuns[0].id }));
-                              setResetOpen(true);
-                            } else {
-                              setPendingStatus(v);
-                            }
-                          } else {
-                            setPendingStatus(v);
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-9 text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="TODO">To-do</SelectItem>
-                          <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                          <SelectItem value="DONE">Done</SelectItem>
-                          <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      {effectiveStatus === "COMPLETED" || effectiveStatus === "IN_PROGRESS" ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center h-9 px-3 rounded-md border border-input bg-muted text-sm">
+                            <StatusBadge status={effectiveStatus} />
+                          </div>
+                          {effectiveStatus === "COMPLETED" && (
+                            <Button variant="destructive" size="sm" onClick={() => setResetOpen(true)} className="gap-1.5 w-full">
+                              <AlertTriangle className="h-3.5 w-3.5" /> Reset checklist (Start again)
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <Select
+                          value={pendingStatus ?? event.status}
+                          onValueChange={(v) => setPendingStatus(v)}
+                        >
+                          <SelectTrigger className="h-9 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="TODO">To-do</SelectItem>
+                            <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
                   </div>
                   {hasPendingChanges && (
