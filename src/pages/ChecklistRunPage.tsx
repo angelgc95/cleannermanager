@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Check, Camera, X, Loader2, Clock, LogIn, LogOut, AlarmClock, Bell } from "lucide-react";
+import { ArrowLeft, Check, Camera, X, Loader2, Clock, LogIn, LogOut, AlarmClock, Bell, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ShoppingCheckSection } from "@/components/checklist/ShoppingCheckSection";
 import { ChecklistTemplateEditor } from "@/components/admin/ChecklistTemplateEditor";
@@ -244,6 +244,19 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
       if (latestRun && !latestRun.finished_at) {
         // Existing unfinished run — resume it
         setRunId(latestRun.id);
+
+        // Load existing responses for resume
+        const { data: existingResponses } = await supabase
+          .from("checklist_responses")
+          .select("item_id, yesno_value")
+          .eq("run_id", latestRun.id);
+        if (existingResponses && existingResponses.length > 0) {
+          const restoredResponses: Record<string, boolean | null> = {};
+          for (const r of existingResponses) {
+            restoredResponses[r.item_id] = r.yesno_value;
+          }
+          setResponses(restoredResponses);
+        }
       } else {
         // No run exists — create one
         const { data: run, error: insertError } = await supabase
@@ -580,6 +593,77 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
     navigate(`/events/${eventId}`);
   };
 
+  const handleRequestReset = async () => {
+    if (!event?.host_user_id || !user) return;
+    const listingName = event.listings?.name || "Unknown listing";
+    const ref = event.reference || eventId;
+    await supabase.from("in_app_notifications").insert({
+      user_id: event.host_user_id,
+      host_user_id: event.host_user_id,
+      title: "🔄 Reset requested",
+      body: `Cleaner has requested a checklist reset for ${listingName} (ref: ${ref}).`,
+      link: `/events/${eventId}`,
+    } as any);
+    toast({ title: "Request sent", description: "Your host has been notified." });
+    navigate(`/events/${eventId}`);
+  };
+
+  const handleHostResetAndStart = async () => {
+    if (!eventId || !user) return;
+    setFinishing(true);
+    try {
+      const { data: allRuns } = await supabase
+        .from("checklist_runs")
+        .select("id")
+        .eq("cleaning_event_id", eventId);
+      const runIds = (allRuns || []).map((r: any) => r.id);
+      if (runIds.length > 0) {
+        for (const rId of runIds) {
+          await supabase.from("checklist_photos").delete().eq("run_id", rId);
+          await supabase.from("checklist_responses").delete().eq("run_id", rId);
+          await supabase.from("shopping_list").delete().eq("checklist_run_id", rId);
+          await supabase.from("log_hours").delete().eq("checklist_run_id", rId);
+        }
+        for (const rId of runIds) {
+          await supabase.from("checklist_runs").delete().eq("id", rId);
+        }
+      }
+      await supabase.from("cleaning_events").update({ checklist_run_id: null, status: "TODO" }).eq("id", eventId);
+
+      // Create a new run immediately
+      const { data: newRun } = await supabase
+        .from("checklist_runs")
+        .insert({
+          cleaning_event_id: eventId,
+          listing_id: event?.listing_id || null,
+          cleaner_user_id: user.id,
+          host_user_id: event?.host_user_id,
+          started_at: new Date().toISOString(),
+        } as any)
+        .select("id")
+        .single();
+      if (newRun) {
+        setRunId(newRun.id);
+        await supabase.from("cleaning_events").update({ status: "IN_PROGRESS", checklist_run_id: newRun.id }).eq("id", eventId);
+      }
+      setAlreadyFinished(false);
+      setResponses({});
+      setPhotos({});
+      setClockedIn(false);
+      setClockedOut(false);
+      setWorkStart(nowTime());
+      setWorkEnd("");
+      setWorkNotes("");
+      setMissingItems([]);
+      setActiveTab(CLOCK_IN_TAB_ID);
+      toast({ title: "Event reset", description: "You can now start the checklist fresh." });
+    } catch (err: any) {
+      toast({ title: "Reset failed", description: err.message, variant: "destructive" });
+    } finally {
+      setFinishing(false);
+    }
+  };
+
   if (alreadyFinished) {
     return (
       <div className="p-6 text-center space-y-4">
@@ -587,6 +671,17 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
         <Button variant="outline" onClick={() => navigate(`/events/${eventId}`)}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Back to Event
         </Button>
+        {role === "cleaner" && (
+          <Button variant="secondary" onClick={handleRequestReset} className="gap-2">
+            <Bell className="h-4 w-4" /> Request reset from host
+          </Button>
+        )}
+        {role === "host" && (
+          <Button variant="destructive" onClick={handleHostResetAndStart} disabled={finishing} className="gap-2">
+            {finishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
+            Reset &amp; Start again
+          </Button>
+        )}
       </div>
     );
   }
