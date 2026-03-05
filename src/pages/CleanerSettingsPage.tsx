@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,7 +7,7 @@ import { Home, Clock, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
-export default function CleanerSettingsPage() {
+const CleanerSettingsPage = forwardRef<HTMLDivElement>(function CleanerSettingsPage(_props, _ref) {
   const { user, hostId } = useAuth();
   const { toast } = useToast();
   const [uniqueCode, setUniqueCode] = useState<string | null>(null);
@@ -114,4 +114,5 @@ export default function CleanerSettingsPage() {
       </div>
     </div>
   );
-}
+});
+export default CleanerSettingsPage;

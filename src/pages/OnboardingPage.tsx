@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, forwardRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { ClipboardCheck, Copy } from "lucide-react";
 
-export default function OnboardingPage() {
+const OnboardingPage = forwardRef<HTMLDivElement>(function OnboardingPage(_props, _ref) {
   const { user, refreshProfile } = useAuth();
   const [mode, setMode] = useState<"choose" | "host" | "cleaner">("choose");
   const [loading, setLoading] = useState(false);
@@ -161,4 +161,5 @@ export default function OnboardingPage() {
       </Card>
     </div>
   );
-}
+});
+export default OnboardingPage;

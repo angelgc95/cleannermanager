@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, forwardRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { ClipboardCheck, Copy } from "lucide-react";
 
 type AuthMode = "login" | "host-signup" | "cleaner-signup";
 
-export default function Auth() {
+const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -216,4 +216,5 @@ export default function Auth() {
       </Card>
     </div>
   );
-}
+});
+export default Auth;

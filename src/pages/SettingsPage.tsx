@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,7 +71,7 @@ function PayoutScheduleSettings({ settings, onUpdate }: { settings: any; onUpdat
   );
 }
 
-export default function SettingsPage() {
+const SettingsPage = forwardRef<HTMLDivElement>(function SettingsPage(_props, _ref) {
   const { toast } = useToast();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -297,4 +297,5 @@ export default function SettingsPage() {
       </div>
     </div>
   );
-}
+});
+export default SettingsPage;

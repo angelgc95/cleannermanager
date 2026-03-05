@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,7 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
-export default function CalendarPage() {
+const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _ref) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [events, setEvents] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -212,4 +212,5 @@ export default function CalendarPage() {
       </Sheet>
     </div>
   );
-}
+});
+export default CalendarPage;
