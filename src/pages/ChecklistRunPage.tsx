@@ -193,18 +193,21 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
       setSections(fullSections);
       if (fullSections.length > 0) setActiveTab(CLOCK_IN_TAB_ID);
 
+      // Check for ANY existing run for this event (finished or not)
       const { data: existingRuns } = await supabase
         .from("checklist_runs")
-        .select("id")
+        .select("id, finished_at")
         .eq("cleaning_event_id", eventId)
-        .is("finished_at", null)
         .limit(1);
 
       if (existingRuns && existingRuns.length > 0) {
         setRunId(existingRuns[0].id);
+        if (existingRuns[0].finished_at) {
+          setAlreadyFinished(true);
+        }
       } else {
         const startedAt = new Date().toISOString();
-        const { data: run } = await supabase
+        const { data: run, error: insertError } = await supabase
           .from("checklist_runs")
           .insert({
             cleaning_event_id: eventId,
@@ -216,7 +219,21 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
           .select("id")
           .single();
 
-        if (run) setRunId(run.id);
+        if (insertError && insertError.code === "23505") {
+          // Unique constraint conflict — re-fetch existing run
+          const { data: conflictRun } = await supabase
+            .from("checklist_runs")
+            .select("id, finished_at")
+            .eq("cleaning_event_id", eventId)
+            .limit(1)
+            .single();
+          if (conflictRun) {
+            setRunId(conflictRun.id);
+            if (conflictRun.finished_at) setAlreadyFinished(true);
+          }
+        } else if (run) {
+          setRunId(run.id);
+        }
       }
 
       if (eventData?.status === "TODO") {
