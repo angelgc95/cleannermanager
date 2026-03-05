@@ -321,11 +321,26 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
                       <Label className="text-xs">Status</Label>
                       <Select
                         value={pendingStatus ?? event.status}
-                        onValueChange={(v) => {
-                          // If changing to TODO from IN_PROGRESS/DONE and there's a checklist run, show reset dialog
+                        onValueChange={async (v) => {
                           const currentStatus = pendingStatus ?? event.status;
-                          if (v === "TODO" && (currentStatus === "IN_PROGRESS" || currentStatus === "DONE") && event.checklist_run_id) {
-                            setResetOpen(true);
+                          if (v === "TODO" && (currentStatus === "IN_PROGRESS" || currentStatus === "DONE")) {
+                            // Check for any existing checklist run for this event (even if checklist_run_id on event is null)
+                            if (event.checklist_run_id) {
+                              setResetOpen(true);
+                            } else {
+                              const { data: existingRuns } = await supabase
+                                .from("checklist_runs")
+                                .select("id")
+                                .eq("cleaning_event_id", id)
+                                .limit(1);
+                              if (existingRuns && existingRuns.length > 0) {
+                                // Store the found run id on event so handleResetConfirm can use it
+                                setEvent((prev: any) => ({ ...prev, checklist_run_id: existingRuns[0].id }));
+                                setResetOpen(true);
+                              } else {
+                                setPendingStatus(v);
+                              }
+                            }
                           } else {
                             setPendingStatus(v);
                           }
