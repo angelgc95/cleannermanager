@@ -334,30 +334,24 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Status</Label>
-                      {effectiveStatus === "COMPLETED" || effectiveStatus === "IN_PROGRESS" ? (
-                        <div className="space-y-2">
-                          <div className="flex items-center h-9 px-3 rounded-md border border-input bg-muted text-sm">
-                            <StatusBadge status={effectiveStatus} />
-                          </div>
-                          {effectiveStatus === "COMPLETED" && (
-                            <Button variant="destructive" size="sm" onClick={() => setResetOpen(true)} className="gap-1.5 w-full">
-                              <AlertTriangle className="h-3.5 w-3.5" /> Reset checklist (Start again)
-                            </Button>
-                          )}
-                        </div>
-                      ) : (
-                        <Select
-                          value={pendingStatus ?? event.status}
-                          onValueChange={(v) => setPendingStatus(v)}
-                        >
-                          <SelectTrigger className="h-9 text-sm">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="TODO">To-do</SelectItem>
-                            <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                          </SelectContent>
-                        </Select>
+                      <Select
+                        value={pendingStatus ?? event.status}
+                        onValueChange={(v) => setPendingStatus(v)}
+                      >
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="TODO">To-do</SelectItem>
+                          <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                          <SelectItem value="DONE">Done</SelectItem>
+                          <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {effectiveStatus === "COMPLETED" && (
+                        <Button variant="destructive" size="sm" onClick={() => setResetOpen(true)} className="gap-1.5 w-full">
+                          <AlertTriangle className="h-3.5 w-3.5" /> Reset checklist (Start again)
+                        </Button>
                       )}
                     </div>
                   </div>
