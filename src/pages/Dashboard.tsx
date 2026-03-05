@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,7 @@ interface TaskItem {
   created_at: string;
 }
 
-export default function Dashboard() {
+const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
   const navigate = useNavigate();
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
@@ -374,4 +374,5 @@ export default function Dashboard() {
       </div>
     </div>
   );
-}
+});
+export default Dashboard;

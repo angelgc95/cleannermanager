@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ function getFileIcon(url: string) {
   return <File className="h-4 w-4 text-primary shrink-0" />;
 }
 
-export default function GuidesPage() {
+const GuidesPage = forwardRef<HTMLDivElement>(function GuidesPage(_props, _ref) {
   const { role, user } = useAuth();
   const { toast } = useToast();
   const isHost = role === "host";
@@ -207,4 +207,5 @@ export default function GuidesPage() {
       </Dialog>
     </div>
   );
-}
+});
+export default GuidesPage;

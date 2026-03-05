@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
@@ -104,7 +104,7 @@ const DEFAULT_TEMPLATE_SECTIONS: SectionSuggestion[] = [
   },
 ];
 
-export default function TasksPage() {
+const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
   const [events, setEvents] = useState<any[]>([]);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -532,4 +532,5 @@ export default function TasksPage() {
       </Sheet>
     </div>
   );
-}
+});
+export default TasksPage;

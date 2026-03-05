@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Plus, X, Camera, Loader2, Trash2 } from "lucide-react";
 
-export default function MaintenancePage() {
+const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_props, _ref) {
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
   const isHost = role === "host";
@@ -184,4 +184,5 @@ export default function MaintenancePage() {
       </div>
     </div>
   );
-}
+});
+export default MaintenancePage;
