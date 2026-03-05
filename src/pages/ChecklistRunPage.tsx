@@ -239,17 +239,27 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
         .eq("cleaning_event_id", eventId)
         .limit(1);
 
-      const needsNewRun = !existingRuns || existingRuns.length === 0 ||
-        (existingRuns[0].finished_at && eventIsReset);
+      const hasOldFinishedRun = existingRuns && existingRuns.length > 0 && !!existingRuns[0].finished_at;
+      const needsNewRun = !existingRuns || existingRuns.length === 0;
 
-      if (existingRuns && existingRuns.length > 0 && !needsNewRun) {
+      if (hasOldFinishedRun && eventIsReset) {
+        // Event was reset to TODO but old finished run remains — reuse it by clearing finished_at
+        const oldRunId = existingRuns[0].id;
+        await supabase.from("checklist_runs").update({
+          finished_at: null,
+          started_at: new Date().toISOString(),
+          duration_minutes: null,
+          overall_notes: null,
+        }).eq("id", oldRunId);
+        // Clean up old responses so checklist starts fresh
+        await supabase.from("checklist_responses").delete().eq("run_id", oldRunId);
+        setRunId(oldRunId);
+      } else if (existingRuns && existingRuns.length > 0 && !needsNewRun) {
         setRunId(existingRuns[0].id);
         if (existingRuns[0].finished_at) {
           setAlreadyFinished(true);
         }
-      }
-
-      if (needsNewRun) {
+      } else if (needsNewRun) {
         const startedAt = new Date().toISOString();
         const { data: run, error: insertError } = await supabase
           .from("checklist_runs")
