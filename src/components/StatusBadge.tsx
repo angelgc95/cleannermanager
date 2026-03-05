@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
 type StatusVariant = "todo" | "in_progress" | "done" | "cancelled" | "open" | "missing" | "ordered" | "bought" | "ok" | "pending" | "paid";
@@ -21,10 +22,11 @@ interface StatusBadgeProps {
   className?: string;
 }
 
-export function StatusBadge({ status, className }: StatusBadgeProps) {
+export const StatusBadge = forwardRef<HTMLSpanElement, StatusBadgeProps>(function StatusBadge({ status, className }, ref) {
   const key = status.toLowerCase().replace(/-/g, "_") as StatusVariant;
   return (
     <span
+      ref={ref}
       className={cn(
         "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
         variantStyles[key] || "bg-muted text-muted-foreground",
@@ -34,4 +36,4 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
       {status.replace(/_/g, " ")}
     </span>
   );
-}
+});

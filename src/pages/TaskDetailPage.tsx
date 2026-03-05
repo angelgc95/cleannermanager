@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, forwardRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 
-export default function TaskDetailPage() {
+const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props, ref) {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, role, hostId } = useAuth();
@@ -223,7 +223,7 @@ export default function TaskDetailPage() {
   const canStartChecklist = hasTemplate && (event.status === "TODO" || event.status === "IN_PROGRESS");
 
   return (
-    <div>
+    <div ref={ref}>
       <PageHeader
         title={event.listings?.name || "Listing"}
         actions={
@@ -524,4 +524,6 @@ export default function TaskDetailPage() {
       </Dialog>
     </div>
   );
-}
+});
+
+export default TaskDetailPage;
