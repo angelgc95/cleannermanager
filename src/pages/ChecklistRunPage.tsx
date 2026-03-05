@@ -314,12 +314,78 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const currentItemId = activePhotoItemIdRef.current;
-    if (!e.target.files || !currentItemId || !runId || !user) return;
+    if (!e.target.files || !currentItemId || !user) return;
     const files = Array.from(e.target.files);
+
+    // Guard: must have event.host_user_id
+    if (!event?.host_user_id) {
+      toast({ title: "Photo upload failed", description: "Missing host information for this event.", variant: "destructive" });
+      e.target.value = "";
+      return;
+    }
+
+    // Ensure a checklist run exists
+    let currentRunId = runId;
+    if (!currentRunId) {
+      if (!eventId) {
+        toast({ title: "Photo upload failed", description: "No event ID available.", variant: "destructive" });
+        e.target.value = "";
+        return;
+      }
+      // Try to create a new run
+      const { data: newRun, error: runError } = await supabase
+        .from("checklist_runs")
+        .insert({
+          cleaning_event_id: eventId,
+          listing_id: event?.listing_id || null,
+          cleaner_user_id: user.id,
+          host_user_id: event.host_user_id,
+          started_at: new Date().toISOString(),
+        } as any)
+        .select("id")
+        .single();
+
+      if (runError) {
+        // Maybe a run already exists (unique constraint)
+        if (runError.code === "23505") {
+          const { data: existing } = await supabase
+            .from("checklist_runs")
+            .select("id")
+            .eq("cleaning_event_id", eventId)
+            .limit(1)
+            .single();
+          if (existing) {
+            currentRunId = existing.id;
+          } else {
+            console.error("Photo upload: run conflict but no run found", runError);
+            toast({ title: "Photo upload failed", description: `${runError.message} ${(runError as any).details ?? ""}`, variant: "destructive" });
+            e.target.value = "";
+            return;
+          }
+        } else {
+          console.error("Photo upload: failed to create run", runError);
+          toast({ title: "Photo upload failed", description: `${runError.message} ${(runError as any).details ?? ""}`, variant: "destructive" });
+          e.target.value = "";
+          return;
+        }
+      } else if (newRun) {
+        currentRunId = newRun.id;
+        // Link the run to the event
+        await supabase.from("cleaning_events").update({ checklist_run_id: newRun.id }).eq("id", eventId);
+      }
+
+      if (currentRunId) {
+        setRunId(currentRunId);
+      } else {
+        toast({ title: "Photo upload failed", description: "Could not create or find checklist run.", variant: "destructive" });
+        e.target.value = "";
+        return;
+      }
+    }
 
     for (const file of files) {
       const ext = file.name.split(".").pop();
-      const path = `${user.id}/${runId}/${currentItemId}/${crypto.randomUUID()}.${ext}`;
+      const path = `${user.id}/${currentRunId}/${currentItemId}/${crypto.randomUUID()}.${ext}`;
 
       const tempId = crypto.randomUUID();
       setPhotos((prev) => ({
@@ -332,7 +398,8 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
         .upload(path, file, { contentType: file.type });
 
       if (error) {
-        toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+        console.error("Photo storage upload failed", error);
+        toast({ title: "Photo upload failed", description: `${error.message}`, variant: "destructive" });
         setPhotos((prev) => ({
           ...prev,
           [currentItemId]: (prev[currentItemId] || []).filter((p) => p.id !== tempId),
@@ -340,20 +407,24 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
         continue;
       }
 
-      const { data: signedData } = await supabase.storage.from("checklist-photos").createSignedUrl(data.path, 86400);
-      const photoUrl = signedData?.signedUrl || data.path;
+      // Get signed URL for preview (private bucket)
+      const { data: signedData } = await supabase.storage.from("checklist-photos").createSignedUrl(data.path, 3600);
+      const previewUrl = signedData?.signedUrl || data.path;
 
+      // Insert DB record with storage path (not URL) and event's real host_user_id
       const { error: dbError } = await supabase.from("checklist_photos").insert({
-        run_id: runId,
+        run_id: currentRunId,
         item_id: currentItemId,
         photo_url: data.path,
         sort_order: (photos[currentItemId]?.length || 0),
-        host_user_id: hostId,
+        host_user_id: event.host_user_id,
       } as any);
 
       if (dbError) {
+        console.error("Photo DB insert failed", dbError);
+        toast({ title: "Photo upload failed", description: `${dbError.message} ${(dbError as any).details ?? ""}`, variant: "destructive" });
+        // Clean up storage after showing error
         await supabase.storage.from("checklist-photos").remove([data.path]);
-        toast({ title: "Failed to save photo", description: dbError.message, variant: "destructive" });
         setPhotos((prev) => ({
           ...prev,
           [currentItemId]: (prev[currentItemId] || []).filter((p) => p.id !== tempId),
@@ -364,7 +435,7 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
       setPhotos((prev) => ({
         ...prev,
         [currentItemId]: (prev[currentItemId] || []).map((p) =>
-          p.id === tempId ? { ...p, url: photoUrl, storagePath: data.path, uploading: false } : p
+          p.id === tempId ? { ...p, url: previewUrl, storagePath: data.path, uploading: false } : p
         ),
       }));
     }
