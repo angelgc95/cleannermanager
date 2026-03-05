@@ -20,7 +20,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Verify caller
     const anonClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
@@ -45,7 +44,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Service role client for bypassing RLS
     const serviceClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -81,17 +79,27 @@ Deno.serve(async (req) => {
     const runIds = (allRuns || []).map((r: any) => r.id);
 
     if (runIds.length > 0) {
-      // Delete related data
-      for (const rId of runIds) {
-        await serviceClient.from("checklist_photos").delete().eq("run_id", rId);
-        await serviceClient.from("checklist_responses").delete().eq("run_id", rId);
-        await serviceClient.from("shopping_list").delete().eq("checklist_run_id", rId);
-        await serviceClient.from("log_hours").delete().eq("checklist_run_id", rId);
+      // 1. Collect storage paths from checklist_photos before deleting rows
+      const { data: photoRows } = await serviceClient
+        .from("checklist_photos")
+        .select("photo_url")
+        .in("run_id", runIds);
+
+      const storagePaths = (photoRows || [])
+        .map((p: any) => p.photo_url)
+        .filter((url: string) => url && !url.startsWith("http"));
+
+      // 2. Delete storage objects in batch
+      if (storagePaths.length > 0) {
+        await serviceClient.storage.from("checklist-photos").remove(storagePaths);
       }
-      // Delete runs
-      for (const rId of runIds) {
-        await serviceClient.from("checklist_runs").delete().eq("id", rId);
-      }
+
+      // 3. Batched deletes using .in() instead of per-run loops
+      await serviceClient.from("checklist_photos").delete().in("run_id", runIds);
+      await serviceClient.from("checklist_responses").delete().in("run_id", runIds);
+      await serviceClient.from("shopping_list").delete().in("checklist_run_id", runIds);
+      await serviceClient.from("log_hours").delete().in("checklist_run_id", runIds);
+      await serviceClient.from("checklist_runs").delete().in("id", runIds);
     }
 
     // Reset event

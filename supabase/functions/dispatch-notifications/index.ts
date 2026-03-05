@@ -21,11 +21,9 @@ Deno.serve(async (req) => {
 
     if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.replace("Bearer ", "");
-      // Check if it's the service role key (used by pg_cron / internal calls)
       if (token === serviceKey) {
         authorized = true;
       } else {
-        // Validate as user JWT
         const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
         const userClient = createClient(supabaseUrl, anonKey, {
           global: { headers: { Authorization: authHeader } },
@@ -48,30 +46,38 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Get all due SCHEDULED jobs — now joined to cleaning_events
-    const { data: dueJobs, error: fetchError } = await supabase
-      .from("notification_jobs")
-      .select(
-        `*, cleaning_events:cleaning_event_id(id, listing_id, start_at, end_at, status, notes, event_details_json,
-          listings(name, timezone))`
-      )
-      .eq("status", "SCHEDULED")
-      .lte("scheduled_for", new Date().toISOString())
-      .limit(100);
+    // Atomically claim due jobs (prevents double-send race condition)
+    const { data: claimedJobs, error: claimError } = await supabase
+      .rpc("claim_notification_jobs", { batch_size: 100 });
 
-    if (fetchError) throw new Error(fetchError.message);
-    if (!dueJobs || dueJobs.length === 0) {
+    if (claimError) throw new Error(claimError.message);
+    if (!claimedJobs || claimedJobs.length === 0) {
       return new Response(JSON.stringify({ processed: 0 }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    // Fetch event data for all claimed jobs
+    const eventIds = [...new Set(claimedJobs.map((j: any) => j.cleaning_event_id).filter(Boolean))];
+    let eventsMap: Record<string, any> = {};
+
+    if (eventIds.length > 0) {
+      const { data: events } = await supabase
+        .from("cleaning_events")
+        .select("id, listing_id, start_at, end_at, status, notes, event_details_json, listings(name, timezone)")
+        .in("id", eventIds);
+
+      for (const ev of (events || [])) {
+        eventsMap[ev.id] = ev;
+      }
+    }
+
     let processed = 0;
     let skipped = 0;
 
-    for (const job of dueJobs) {
+    for (const job of claimedJobs) {
       try {
-        const event = (job as any).cleaning_events;
+        const event = job.cleaning_event_id ? eventsMap[job.cleaning_event_id] : null;
 
         if (!event || event.status === "DONE" || event.status === "CANCELLED") {
           await supabase.from("notification_jobs").update({ status: "SKIPPED" }).eq("id", job.id);
@@ -180,7 +186,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ processed, skipped, total: dueJobs.length }),
+      JSON.stringify({ processed, skipped, total: claimedJobs.length }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
