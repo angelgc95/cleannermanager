@@ -1,131 +1,78 @@
 
 
-## Plan: Phase 0 — RLS Security Hardening
+## Plan: Phase 1 — Reliability and Data Correctness
 
-### Problems Identified
+### Problem 1: Maintenance media stores signed URLs (expire after 1 hour)
+`MaintenancePage.uploadPhoto()` stores a signed URL in `pic1_url`/`pic2_url` instead of the storage path. After 1 hour the URLs expire and images break.
 
-**Table RLS issues (role-only, not owner-scoped):**
+**Fix:** Store the storage path (e.g. `maintenance/uuid.jpg`) in the DB. At read time, generate signed URLs for display.
 
-1. **`checklist_photos`** — "Host can view photos" uses `has_role(auth.uid(), 'host')` → any host sees ALL hosts' photos
-2. **`checklist_responses`** — "Host can view responses" uses `has_role(auth.uid(), 'host')` → same
-3. **`maintenance_updates`** — "Host can manage updates" uses `has_role(auth.uid(), 'host')` → any host can INSERT/UPDATE/DELETE any host's updates
-4. **`maintenance_updates`** — "Users can view updates" uses `true` → any authenticated user sees all updates
-5. **`profiles`** — "Host can view all profiles" uses `has_role(auth.uid(), 'host')` → any host sees all profiles (cross-tenant)
-6. **`in_app_notifications`** — INSERT uses `has_role(auth.uid(), 'host')` → any host can insert notifications for any user
+**Changes to `src/pages/MaintenancePage.tsx`:**
+- `uploadPhoto()`: return `path` (the storage path string) instead of `signedUrl`
+- `fetchTickets()`: after fetching tickets, loop through `pic1_url`/`pic2_url` and generate signed URLs into a local map `signedUrls: Record<ticketId, { pic1?: string, pic2?: string }>`
+- Render images using `signedUrls[t.id]?.pic1` instead of `t.pic1_url`
 
-**Storage RLS issues:**
-7. **`guides` upload** — "Authenticated users can upload guides" allows ANY authenticated user to upload (no host check)
-8. **`guides` delete** — "Admins can delete guides" allows ANY authenticated user to delete (no owner check)
-9. **`checklist-photos` host delete** — "Hosts can delete checklist photos storage" uses `has_role(auth.uid(), 'host')` without owner scope
+### Problem 2: reset-cleaning-event doesn't delete storage objects
+When resetting, checklist photos are deleted from DB but orphaned in storage.
 
-### Migration: Fix All Policies
+**Changes to `supabase/functions/reset-cleaning-event/index.ts`:**
+- Before deleting `checklist_photos` rows, fetch `photo_url` (storage paths) for each run
+- Call `serviceClient.storage.from("checklist-photos").remove([...paths])` to delete actual files
+- Batch all run IDs into single `.in()` queries instead of looping one-by-one:
+  ```
+  .from("checklist_photos").select("photo_url").in("run_id", runIds)
+  .from("checklist_photos").delete().in("run_id", runIds)
+  .from("checklist_responses").delete().in("run_id", runIds)
+  .from("shopping_list").delete().in("checklist_run_id", runIds)
+  .from("log_hours").delete().in("checklist_run_id", runIds)
+  .from("checklist_runs").delete().in("id", runIds)
+  ```
 
-Single migration that drops and recreates each problematic policy:
+### Problem 3: Dispatcher has race condition (read-then-update)
+Current flow: SELECT where status=SCHEDULED, then later UPDATE to SENT. If two invocations overlap, both read the same jobs and double-send.
 
+**Fix:** Use a DB function to atomically claim jobs via `UPDATE ... WHERE status='SCHEDULED' ... RETURNING *`.
+
+**Migration:** Create a `claim_notification_jobs` function:
 ```sql
--- 1. checklist_photos: scope host SELECT to own host_user_id
-DROP POLICY "Host can view photos" ON checklist_photos;
-CREATE POLICY "Host can view own photos" ON checklist_photos
-  FOR SELECT TO authenticated
-  USING (host_user_id = auth.uid());
-
--- 2. checklist_responses: scope host SELECT to own host_user_id
-DROP POLICY "Host can view responses" ON checklist_responses;
-CREATE POLICY "Host can view own responses" ON checklist_responses
-  FOR SELECT TO authenticated
-  USING (host_user_id = auth.uid());
-
--- 3. maintenance_updates: scope host manage to own host_user_id
-DROP POLICY "Host can manage updates" ON maintenance_updates;
-CREATE POLICY "Host can manage own updates" ON maintenance_updates
-  FOR ALL TO authenticated
-  USING (host_user_id = auth.uid())
-  WITH CHECK (host_user_id = auth.uid());
-
--- 4. maintenance_updates: scope view to host-owned or own-created
-DROP POLICY "Users can view updates" ON maintenance_updates;
-CREATE POLICY "Users can view related updates" ON maintenance_updates
-  FOR SELECT TO authenticated
-  USING (
-    host_user_id = auth.uid()
-    OR created_by_user_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM maintenance_tickets mt
-      WHERE mt.id = maintenance_updates.ticket_id
-      AND cleaner_is_assigned_to_host(auth.uid(), mt.host_user_id)
-    )
-  );
-
--- 5. profiles: scope host view to cleaners assigned to them + own
-DROP POLICY "Host can view all profiles" ON profiles;
-CREATE POLICY "Host can view assigned profiles" ON profiles
-  FOR SELECT TO authenticated
-  USING (
-    user_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM cleaner_assignments ca
-      WHERE ca.host_user_id = auth.uid()
-      AND ca.cleaner_user_id = profiles.user_id
-    )
-  );
-
--- 6. in_app_notifications: scope insert to own user_id or host inserting for assigned cleaners
-DROP POLICY "Host can insert notifications" ON in_app_notifications;
-CREATE POLICY "Host can insert own notifications" ON in_app_notifications
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    host_user_id = auth.uid()
-    AND has_role(auth.uid(), 'host')
-  );
--- Also allow cleaners to insert (for reset requests to their host)
-CREATE POLICY "Cleaner can insert notifications to host" ON in_app_notifications
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    user_id = host_user_id
-    AND cleaner_is_assigned_to_host(auth.uid(), host_user_id)
-  );
-
--- 7. Storage: guides upload — restrict to hosts uploading in own folder
-DROP POLICY IF EXISTS "Authenticated users can upload guides" ON storage.objects;
-CREATE POLICY "Host can upload own guides" ON storage.objects
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    bucket_id = 'guides'
-    AND (auth.uid())::text = (storage.foldername(name))[1]
-    AND has_role(auth.uid(), 'host')
-  );
-
--- 8. Storage: guides delete — restrict to host who owns the folder
-DROP POLICY IF EXISTS "Admins can delete guides" ON storage.objects;
-CREATE POLICY "Host can delete own guides" ON storage.objects
-  FOR DELETE TO authenticated
-  USING (
-    bucket_id = 'guides'
-    AND (auth.uid())::text = (storage.foldername(name))[1]
-    AND has_role(auth.uid(), 'host')
-  );
-
--- 9. Storage: checklist-photos host delete — scope to host_user_id folder
-DROP POLICY IF EXISTS "Hosts can delete checklist photos storage" ON storage.objects;
-CREATE POLICY "Host can delete assigned checklist photos" ON storage.objects
-  FOR DELETE TO authenticated
-  USING (
-    bucket_id = 'checklist-photos'
-    AND has_role(auth.uid(), 'host')
-    AND EXISTS (
-      SELECT 1 FROM checklist_runs cr
-      WHERE cr.host_user_id = auth.uid()
-      AND cr.cleaner_user_id::text = (storage.foldername(name))[1]
-    )
-  );
+CREATE OR REPLACE FUNCTION public.claim_notification_jobs(batch_size int DEFAULT 100)
+RETURNS SETOF notification_jobs
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  UPDATE notification_jobs
+  SET status = 'PROCESSING', updated_at = now()
+  WHERE id IN (
+    SELECT id FROM notification_jobs
+    WHERE status = 'SCHEDULED'
+      AND scheduled_for <= now()
+    ORDER BY scheduled_for
+    LIMIT batch_size
+    FOR UPDATE SKIP LOCKED
+  )
+  RETURNING *;
+$$;
 ```
 
-### Note on profiles policy
-The current "Users can view own profile" policy already covers self-access. The new "Host can view assigned profiles" replaces the overly broad host policy but still allows hosts to see profiles of their assigned cleaners (needed for the app to function).
+**Changes to `supabase/functions/dispatch-notifications/index.ts`:**
+- Replace the SELECT query with `supabase.rpc("claim_notification_jobs", { batch_size: 100 })`
+- The RPC returns already-claimed rows; no other invocation can pick them up
+- Add `'PROCESSING'` to the `notification_job_status` enum via migration
+- On success: update to `SENT`; on skip: update to `SKIPPED`; on error: update to `FAILED`
+- Fetch event data separately for claimed jobs (join via a follow-up query using the event IDs)
 
-### No code changes needed
-All fixes are pure SQL policy replacements. No frontend code references these policies directly — the Supabase client just sends requests and RLS enforces access.
+### Migration
+Add `PROCESSING` to enum + create the claim function:
+```sql
+ALTER TYPE notification_job_status ADD VALUE IF NOT EXISTS 'PROCESSING';
 
-### Files
-1. **Create** one new migration file with all policy drops/recreates above
+CREATE OR REPLACE FUNCTION public.claim_notification_jobs(...) ...;
+```
+
+### Files to modify
+1. **`src/pages/MaintenancePage.tsx`** — store path, generate signed URLs at read time
+2. **`supabase/functions/reset-cleaning-event/index.ts`** — delete storage objects, batch queries
+3. **`supabase/functions/dispatch-notifications/index.ts`** — use atomic claim RPC
+4. **New migration** — add PROCESSING enum value + claim function
 
