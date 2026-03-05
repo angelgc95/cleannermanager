@@ -1,9 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, forwardRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import Dashboard from "./Dashboard";
 
-const Index = () => {
+const Index = forwardRef<HTMLDivElement>(function Index(_props, _ref) {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
 
@@ -17,6 +17,6 @@ const Index = () => {
   if (!user) return null;
 
   return <Dashboard />;
-};
+});
 
 export default Index;

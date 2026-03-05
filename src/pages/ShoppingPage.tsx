@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,7 +33,7 @@ interface Submission {
 interface SelectedProduct { productId: string; quantity: number; note: string; }
 
 /* ═══════════════════════════════════════════ */
-export default function ShoppingPage() {
+const ShoppingPage = forwardRef<HTMLDivElement>(function ShoppingPage(_props, _ref) {
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
   const isAdmin = role === "host";
@@ -63,7 +63,8 @@ export default function ShoppingPage() {
   return isAdmin
     ? <AdminShoppingView submissions={submissions} items={items} products={products} user={user} hostId={hostId} toast={toast} onRefresh={fetchAll} />
     : <CleanerShoppingView submissions={submissions} items={items} products={products} user={user} hostId={hostId} toast={toast} onRefresh={fetchAll} />;
-}
+});
+export default ShoppingPage;
 
 /* ═══════════════════════════════════════════
    CLEANER VIEW

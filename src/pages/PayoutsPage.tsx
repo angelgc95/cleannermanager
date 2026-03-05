@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 
 interface PeriodGroup { period: any; payouts: any[]; }
 
-export default function PayoutsPage() {
+const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref) {
   const { role, user } = useAuth();
   const { toast } = useToast();
   const isHost = role === "host";
@@ -239,4 +239,5 @@ export default function PayoutsPage() {
       </div>
     </div>
   );
-}
+});
+export default PayoutsPage;

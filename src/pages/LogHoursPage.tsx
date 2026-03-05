@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +13,7 @@ import { format } from "date-fns";
 import { Plus, X, Clock, User, Pencil, Trash2 } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 
-export default function LogHoursPage() {
+const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _ref) {
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
   const [entries, setEntries] = useState<any[]>([]);
@@ -214,4 +214,5 @@ export default function LogHoursPage() {
       </div>
     </div>
   );
-}
+});
+export default LogHoursPage;

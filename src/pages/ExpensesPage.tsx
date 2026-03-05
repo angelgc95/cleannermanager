@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,7 +18,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-export default function ExpensesPage() {
+const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _ref) {
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
   const [entries, setEntries] = useState<any[]>([]);
@@ -179,4 +179,5 @@ export default function ExpensesPage() {
       </Dialog>
     </div>
   );
-}
+});
+export default ExpensesPage;
