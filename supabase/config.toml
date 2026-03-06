@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.rls-smoke-test]
 verify_jwt = false
+
+[functions.schedule-ops-v1]
+verify_jwt = false
