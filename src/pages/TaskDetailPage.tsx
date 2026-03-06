@@ -1,4 +1,4 @@
-import { useEffect, useState, forwardRef } from "react";
+import { useState, forwardRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, AlertTriangle, CheckCircle2, Loader2, Save, Bell } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -27,21 +28,13 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
   const navigate = useNavigate();
   const { user, role, hostId } = useAuth();
   const { toast } = useToast();
-  const [event, setEvent] = useState<any>(null);
+  const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [listingTimezone, setListingTimezone] = useState<string>("UTC");
 
-  const [checklistRun, setChecklistRun] = useState<any>(null);
-  const [runPhotos, setRunPhotos] = useState<any[]>([]);
-  const [runShoppingItems, setRunShoppingItems] = useState<any[]>([]);
-  const [latestRunForStatus, setLatestRunForStatus] = useState<{ id: string; finished_at: string | null } | null>(null);
-
-  const [cleaners, setCleaners] = useState<any[]>([]);
   const [assigningCleaner, setAssigningCleaner] = useState<string>("");
-  const [templateName, setTemplateName] = useState<string | null>(null);
 
   // Pending edits for explicit save
   const [pendingCleaner, setPendingCleaner] = useState<string | null>(null);
@@ -49,132 +42,154 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
   const [saving, setSaving] = useState(false);
 
   const isAdmin = role === "host";
-  const details = event?.event_details_json || {};
-  const hasPendingChanges = pendingCleaner !== null || pendingStatus !== null;
 
   // Query latest checklist run for effectiveStatus
-  useEffect(() => {
-    if (!id) return;
-    supabase
-      .from("checklist_runs")
-      .select("id, finished_at")
-      .eq("cleaning_event_id", id)
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .then(({ data }) => {
-        setLatestRunForStatus(data && data.length > 0 ? data[0] : null);
-      });
-  }, [id]);
+  const { data: latestRunForStatus = null } = useQuery({
+    queryKey: ["event-latest-run", id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("checklist_runs")
+        .select("id, finished_at")
+        .eq("cleaning_event_id", id!)
+        .order("started_at", { ascending: false })
+        .limit(1);
+      return data && data.length > 0 ? data[0] : null;
+    },
+  });
 
-  useEffect(() => {
-    if (!id) return;
-    supabase
-      .from("cleaning_events")
-      .select("*, listings(name, timezone)")
-      .eq("id", id)
-      .single()
-      .then(({ data }) => {
-        setEvent(data);
-        if (data?.listings?.timezone) {
-          setListingTimezone(data.listings.timezone);
-        }
-        if (data?.assigned_cleaner_id) {
-          setAssigningCleaner(data.assigned_cleaner_id);
-        }
-        // Load template name
-        if (data?.checklist_template_id) {
-          supabase
-            .from("checklist_templates")
-            .select("name")
-            .eq("id", data.checklist_template_id)
-            .single()
-            .then(({ data: tpl }) => {
-              setTemplateName(tpl?.name || "Assigned");
-            });
-        } else if (data?.listing_id) {
-          supabase
-            .from("checklist_templates")
-            .select("id, name")
-            .eq("listing_id", data.listing_id)
-            .eq("active", true)
-            .limit(1)
-            .then(({ data: tpls }) => {
-              if (tpls && tpls.length > 0) {
-                setTemplateName(tpls[0].name);
-              } else {
-                setTemplateName(null);
-              }
-            });
-        } else {
-          setTemplateName(null);
-        }
-      });
-  }, [id]);
+  const { data: event = null } = useQuery({
+    queryKey: ["event", id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("cleaning_events")
+        .select("*, listings(name, timezone)")
+        .eq("id", id!)
+        .single();
+      return data;
+    },
+  });
 
-  useEffect(() => {
-    if (!isAdmin || !event || !hostId) return;
+  const listingTimezone = event?.listings?.timezone || "UTC";
+  const details = event?.event_details_json as Record<string, any> || {};
 
-    const loadCleaners = async () => {
+  // Set assigningCleaner from event when it loads
+  if (event?.assigned_cleaner_id && assigningCleaner !== event.assigned_cleaner_id && pendingCleaner === null) {
+    setAssigningCleaner(event.assigned_cleaner_id);
+  }
+
+  // Template name query
+  const { data: templateName = null } = useQuery({
+    queryKey: ["event-template", event?.checklist_template_id, event?.listing_id],
+    enabled: !!event,
+    queryFn: async () => {
+      if (event!.checklist_template_id) {
+        const { data: tpl } = await supabase
+          .from("checklist_templates")
+          .select("name")
+          .eq("id", event!.checklist_template_id)
+          .single();
+        return tpl?.name || "Assigned";
+      } else if (event!.listing_id) {
+        const { data: tpls } = await supabase
+          .from("checklist_templates")
+          .select("id, name")
+          .eq("listing_id", event!.listing_id)
+          .eq("active", true)
+          .limit(1);
+        return tpls && tpls.length > 0 ? tpls[0].name : null;
+      }
+      return null;
+    },
+  });
+
+  // Cleaners query
+  const { data: cleanersData } = useQuery({
+    queryKey: ["event-cleaners", hostId],
+    enabled: isAdmin && !!hostId,
+    queryFn: async () => {
       const { data: assignments } = await supabase
         .from("cleaner_assignments")
         .select("cleaner_user_id, listing_id")
-        .eq("host_user_id", hostId);
-      if (!assignments) return;
+        .eq("host_user_id", hostId!);
+      if (!assignments) return { cleaners: [] as any[], assignments: [] as any[] };
       const cleanerIds = [...new Set(assignments.map(a => a.cleaner_user_id))];
-      if (cleanerIds.length === 0) return;
+      if (cleanerIds.length === 0) return { cleaners: [], assignments };
       const { data: profiles } = await supabase
         .from("profiles")
         .select("user_id, name, email")
         .in("user_id", cleanerIds);
-      if (!profiles) return;
-      setCleaners(profiles);
+      return { cleaners: profiles || [], assignments };
+    },
+  });
+  const cleaners = cleanersData?.cleaners || [];
 
-      // Pre-select default cleaner in the dropdown (but don't auto-save to DB)
-      if (!event.assigned_cleaner_id && event.listing_id) {
-        const listingAssignment = assignments.find(a => a.listing_id === event.listing_id);
-        if (listingAssignment) {
-          setPendingCleaner(listingAssignment.cleaner_user_id);
-        }
-      }
-    };
-    loadCleaners();
-
-    if (event.checklist_run_id) {
-      const loadRunSummary = async () => {
-        const { data: run } = await supabase
-          .from("checklist_runs")
-          .select("*")
-          .eq("id", event.checklist_run_id)
-          .single();
-        setChecklistRun(run);
-
-        const { data: photos } = await supabase
-          .from("checklist_photos")
-          .select("photo_url, item_id")
-          .eq("run_id", event.checklist_run_id);
-        // Generate signed URLs for private bucket
-        const photosWithSignedUrls = await Promise.all(
-          (photos || []).map(async (p: any) => {
-            if (p.photo_url && !p.photo_url.startsWith("http")) {
-              const { data: signed } = await supabase.storage
-                .from("checklist-photos")
-                .createSignedUrl(p.photo_url, 86400);
-              return { ...p, signed_url: signed?.signedUrl || p.photo_url };
-            }
-            return { ...p, signed_url: p.photo_url };
-          })
-        );
-        setRunPhotos(photosWithSignedUrls);
-
-        const { data: shopItems } = await supabase
-          .from("shopping_list")
-          .select("*, products(name)")
-          .eq("checklist_run_id", event.checklist_run_id);
-        setRunShoppingItems(shopItems || []);
-      };
-      loadRunSummary();
+  // Pre-select default cleaner
+  if (cleanersData && event && !event.assigned_cleaner_id && event.listing_id && pendingCleaner === null) {
+    const listingAssignment = cleanersData.assignments.find((a: any) => a.listing_id === event.listing_id);
+    if (listingAssignment && pendingCleaner === null) {
+      setPendingCleaner(listingAssignment.cleaner_user_id);
     }
-  }, [isAdmin, event, hostId]);
+  }
+
+  // Checklist run summary
+  const { data: checklistRun = null } = useQuery({
+    queryKey: ["event-checklist-run", event?.checklist_run_id],
+    enabled: isAdmin && !!event?.checklist_run_id,
+    queryFn: async () => {
+      const { data: run } = await supabase
+        .from("checklist_runs")
+        .select("*")
+        .eq("id", event!.checklist_run_id!)
+        .single();
+      return run;
+    },
+  });
+
+  const { data: runPhotos = [] } = useQuery({
+    queryKey: ["event-run-photos", event?.checklist_run_id],
+    enabled: isAdmin && !!event?.checklist_run_id,
+    queryFn: async () => {
+      const { data: photos } = await supabase
+        .from("checklist_photos")
+        .select("photo_url, item_id")
+        .eq("run_id", event!.checklist_run_id!);
+      return await Promise.all(
+        (photos || []).map(async (p: any) => {
+          if (p.photo_url && !p.photo_url.startsWith("http")) {
+            const { data: signed } = await supabase.storage
+              .from("checklist-photos")
+              .createSignedUrl(p.photo_url, 86400);
+            return { ...p, signed_url: signed?.signedUrl || p.photo_url };
+          }
+          return { ...p, signed_url: p.photo_url };
+        })
+      );
+    },
+  });
+
+  const { data: runShoppingItems = [] } = useQuery({
+    queryKey: ["event-run-shopping", event?.checklist_run_id],
+    enabled: isAdmin && !!event?.checklist_run_id,
+    queryFn: async () => {
+      const { data: shopItems } = await supabase
+        .from("shopping_list")
+        .select("*, products(name)")
+        .eq("checklist_run_id", event!.checklist_run_id!);
+      return shopItems || [];
+    },
+  });
+
+  const hasPendingChanges = pendingCleaner !== null || pendingStatus !== null;
+
+  const invalidateEvent = () => {
+    queryClient.invalidateQueries({ queryKey: ["event", id] });
+    queryClient.invalidateQueries({ queryKey: ["event-latest-run", id] });
+    queryClient.invalidateQueries({ queryKey: ["event-checklist-run"] });
+    queryClient.invalidateQueries({ queryKey: ["event-run-photos"] });
+    queryClient.invalidateQueries({ queryKey: ["event-run-shopping"] });
+  };
 
   const cancelEvent = async () => {
     if (!id || !cancelReason.trim()) return;
@@ -182,7 +197,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
       .from("cleaning_events")
       .update({ status: "CANCELLED", notes: cancelReason.trim() })
       .eq("id", id);
-    setEvent((prev: any) => ({ ...prev, status: "CANCELLED", notes: cancelReason.trim() }));
+    invalidateEvent();
     setCancelOpen(false);
     setCancelReason("");
     toast({ title: "Event cancelled" });
@@ -203,10 +218,10 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      setEvent((prev: any) => ({ ...prev, ...updates }));
       if (pendingCleaner !== null) setAssigningCleaner(pendingCleaner);
       setPendingCleaner(null);
       setPendingStatus(null);
+      invalidateEvent();
       toast({ title: "Event updated" });
     }
   };
@@ -221,13 +236,9 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      setEvent((prev: any) => ({ ...prev, checklist_run_id: null, status: "TODO" }));
-      setChecklistRun(null);
-      setRunPhotos([]);
-      setRunShoppingItems([]);
-      setLatestRunForStatus(null);
       setPendingStatus(null);
       setResetOpen(false);
+      invalidateEvent();
       toast({ title: "Event reset", description: "Previous checklist has been removed. The event is ready to be redone." });
     } catch (err: any) {
       toast({ title: "Error resetting event", description: err.message, variant: "destructive" });
