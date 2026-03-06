@@ -323,6 +323,56 @@ async function invokeAutomations(
   }
 }
 
+async function invokeWebhooks(
+  supabaseUrl: string,
+  serviceKey: string,
+  payload: Record<string, unknown>,
+) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/dispatch-webhooks-v1`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceKey}`,
+        "x-internal-service-key": serviceKey,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.warn("sync-ics-v1 webhook invoke failed", response.status, body);
+    }
+  } catch (error) {
+    console.warn("sync-ics-v1 webhook invoke error", error);
+  }
+}
+
+async function writeSystemLog(
+  service: any,
+  args: {
+    organizationId: string | null;
+    source: string;
+    level: "INFO" | "WARN" | "ERROR";
+    message: string;
+    context?: Record<string, unknown>;
+  },
+) {
+  const { error } = await service
+    .from("v1_system_logs")
+    .insert({
+      organization_id: args.organizationId,
+      source: args.source,
+      level: args.level,
+      message: args.message,
+      context: args.context || {},
+    });
+
+  if (error) {
+    console.warn("sync-ics-v1 failed to write system log", error.message);
+  }
+}
+
 async function ensureCancellationDriftException(
   service: any,
   organizationId: string,
@@ -510,6 +560,15 @@ Deno.serve(async (req) => {
                 trigger_type: "BOOKING_CANCELLED",
                 event_id: event.id,
               });
+              await invokeWebhooks(supabaseUrl, serviceKey, {
+                organization_id: listing.organization_id,
+                event_type: "EVENT_CANCELLED",
+                payload: {
+                  event_id: event.id,
+                  booking_uid: parsed.uid,
+                  reason: "ical_status_cancelled",
+                },
+              });
             }
           }
 
@@ -592,6 +651,15 @@ Deno.serve(async (req) => {
             trigger_type: "BOOKING_CANCELLED",
             event_id: event.id,
           });
+          await invokeWebhooks(supabaseUrl, serviceKey, {
+            organization_id: listing.organization_id,
+            event_type: "EVENT_CANCELLED",
+            payload: {
+              event_id: event.id,
+              booking_uid: stale.ical_uid,
+              reason: "ical_drift_cancelled",
+            },
+          });
         }
       }
     }
@@ -608,6 +676,18 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error("sync-ics-v1 error", error);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const service = createClient(supabaseUrl, serviceKey);
+    await writeSystemLog(service, {
+      organizationId: null,
+      source: "sync-ics-v1",
+      level: "ERROR",
+      message: "Top-level ICS sync failure",
+      context: {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
     return new Response(JSON.stringify({ error: "Internal error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

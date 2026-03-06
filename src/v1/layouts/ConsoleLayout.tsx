@@ -20,6 +20,8 @@ const navItems = [
   { to: "/console/templates", label: "Templates" },
   { to: "/console/automations", label: "Automations" },
   { to: "/console/reports", label: "Reports" },
+  { to: "/console/integrations", label: "Integrations" },
+  { to: "/console/system", label: "System" },
   { to: "/console/notifications", label: "Notifications" },
 ];
 

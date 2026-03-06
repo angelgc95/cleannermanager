@@ -114,6 +114,31 @@ async function invokeAutomations(
   }
 }
 
+async function invokeWebhooks(
+  supabaseUrl: string,
+  serviceKey: string,
+  payload: Record<string, unknown>,
+) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/dispatch-webhooks-v1`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceKey}`,
+        "x-internal-service-key": serviceKey,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.warn("checklist-submit-v1 webhook invoke failed", response.status, body);
+    }
+  } catch (error) {
+    console.warn("checklist-submit-v1 webhook invoke error", error);
+  }
+}
+
 async function ensureQaReviewException(service: any, organizationId: string, eventId: string) {
   const { data: existing } = await service
     .from("v1_event_exceptions")
@@ -124,9 +149,9 @@ async function ensureQaReviewException(service: any, organizationId: string, eve
     .in("status", ["OPEN", "ACKNOWLEDGED"])
     .maybeSingle();
 
-  if (existing?.id) return;
+  if (existing?.id) return { id: existing.id as string, created: false };
 
-  await service
+  const { data, error } = await service
     .from("v1_event_exceptions")
     .insert({
       organization_id: organizationId,
@@ -135,7 +160,67 @@ async function ensureQaReviewException(service: any, organizationId: string, eve
       severity: "MEDIUM",
       status: "OPEN",
       notes: "Checklist submitted with failed items; QA review required.",
-    });
+    })
+    .select("id")
+    .single();
+
+  if (error || !data?.id) {
+    throw error || new Error("Failed to create QA review exception");
+  }
+
+  return { id: data.id as string, created: true };
+}
+
+async function enforceRateLimit(
+  service: any,
+  args: { organizationId: string; userId: string; action: string; limit: number; windowMinutes: number },
+) {
+  const now = new Date();
+  const windowMs = args.windowMinutes * 60 * 1000;
+  const windowStart = new Date(Math.floor(now.getTime() / windowMs) * windowMs).toISOString();
+
+  const { data: existing, error: existingError } = await service
+    .from("v1_rate_limits")
+    .select("count")
+    .eq("organization_id", args.organizationId)
+    .eq("user_id", args.userId)
+    .eq("action", args.action)
+    .eq("window_start", windowStart)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+
+  const currentCount = Number(existing?.count || 0);
+  if (currentCount >= args.limit) {
+    return false;
+  }
+
+  if (existing) {
+    const { error } = await service
+      .from("v1_rate_limits")
+      .update({ count: currentCount + 1, updated_at: now.toISOString() })
+      .eq("organization_id", args.organizationId)
+      .eq("user_id", args.userId)
+      .eq("action", args.action)
+      .eq("window_start", windowStart);
+
+    if (error) throw error;
+  } else {
+    const { error } = await service
+      .from("v1_rate_limits")
+      .insert({
+        organization_id: args.organizationId,
+        user_id: args.userId,
+        action: args.action,
+        window_start: windowStart,
+        count: 1,
+        updated_at: now.toISOString(),
+      });
+
+    if (error) throw error;
+  }
+
+  return true;
 }
 
 Deno.serve(async (req) => {
@@ -197,6 +282,18 @@ Deno.serve(async (req) => {
       return json(403, { error: "Only assigned cleaner or manager/qa can submit" });
     }
 
+    const allowedByRateLimit = await enforceRateLimit(service, {
+      organizationId: eventRow.organization_id,
+      userId,
+      action: "checklist-submit-v1",
+      limit: 12,
+      windowMinutes: 5,
+    });
+
+    if (!allowedByRateLimit) {
+      return json(429, { error: "Too many checklist submissions. Try again shortly." });
+    }
+
     if (eventRow.status === "CANCELLED") {
       return json(400, { error: "Cannot submit checklist for cancelled event" });
     }
@@ -213,17 +310,14 @@ Deno.serve(async (req) => {
     }
 
     if (!runRow) {
-      const { data: template } = await service
-        .from("v1_checklist_templates")
-        .select("id")
-        .eq("organization_id", eventRow.organization_id)
-        .eq("listing_id", eventRow.listing_id)
-        .eq("active", true)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data: templateId, error: templateResolveError } = await userClient
+        .rpc("v1_resolve_listing_template", { _listing_id: eventRow.listing_id });
 
-      if (!template?.id) {
+      if (templateResolveError) {
+        return json(400, { error: templateResolveError.message });
+      }
+
+      if (!templateId) {
         return json(400, { error: "No active checklist template for this listing" });
       }
 
@@ -232,7 +326,7 @@ Deno.serve(async (req) => {
         .insert({
           organization_id: eventRow.organization_id,
           event_id: eventRow.id,
-          template_id: template.id,
+          template_id: templateId,
           cleaner_id: eventRow.assigned_cleaner_id || userId,
           status: "IN_PROGRESS",
         })
@@ -394,7 +488,28 @@ Deno.serve(async (req) => {
         return json(400, { error: qaError.message });
       }
 
-      await ensureQaReviewException(service, eventRow.organization_id, eventRow.id);
+      const qaException = await ensureQaReviewException(service, eventRow.organization_id, eventRow.id);
+      await invokeWebhooks(supabaseUrl, serviceKey, {
+        organization_id: eventRow.organization_id,
+        event_type: "QA_REQUIRED",
+        payload: {
+          event_id: eventRow.id,
+          run_id: runRow.id,
+          exception_id: qaException.id,
+        },
+      });
+      if (qaException.created) {
+        await invokeWebhooks(supabaseUrl, serviceKey, {
+          organization_id: eventRow.organization_id,
+          event_type: "EXCEPTION_CREATED",
+          payload: {
+            event_id: eventRow.id,
+            run_id: runRow.id,
+            exception_id: qaException.id,
+            exception_type: "QA_REVIEW_REQUIRED",
+          },
+        });
+      }
     }
 
     await invokeAutomations(supabaseUrl, serviceKey, {
