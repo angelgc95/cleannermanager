@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, forwardRef } from "react";
+import { useState, useMemo, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,18 +8,21 @@ import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useQuery } from "@tanstack/react-query";
+import type { CleaningEvent, PricingSuggestion } from "@/types/domain";
 
 const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _ref) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [events, setEvents] = useState<any[]>([]);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const navigate = useNavigate();
   const { role } = useAuth();
   const isHost = role === "host";
 
-  useEffect(() => {
-    const fetchEvents = async () => {
+  const monthKey = format(currentMonth, "yyyy-MM");
+
+  const { data: events = [] } = useQuery({
+    queryKey: ["calendar-events", monthKey],
+    queryFn: async () => {
       const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
       const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
       const { data } = await supabase
@@ -28,23 +31,19 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
         .gte("start_at", start.toISOString())
         .lte("start_at", end.toISOString())
         .order("start_at");
-      setEvents(data || []);
-    };
-    fetchEvents();
-  }, [currentMonth]);
+      return (data as CleaningEvent[]) || [];
+    },
+  });
 
-  useEffect(() => {
-    if (!isHost) return;
-    const fetchSuggestions = async () => {
-      // Check if pricing suggestions are enabled
+  const { data: suggestions = [] } = useQuery({
+    queryKey: ["pricing-suggestions", monthKey],
+    enabled: isHost,
+    queryFn: async () => {
       const { data: settings } = await supabase
         .from("host_settings")
         .select("nightly_price_suggestions_enabled")
         .single();
-      if (!settings?.nightly_price_suggestions_enabled) {
-        setSuggestions([]);
-        return;
-      }
+      if (!settings?.nightly_price_suggestions_enabled) return [];
       const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
       const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
       const { data } = await supabase
@@ -52,10 +51,9 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
         .select("*, listings(name)")
         .gte("date", format(start, "yyyy-MM-dd"))
         .lte("date", format(end, "yyyy-MM-dd"));
-      setSuggestions(data || []);
-    };
-    fetchSuggestions();
-  }, [currentMonth, isHost]);
+      return (data as PricingSuggestion[]) || [];
+    },
+  });
 
   const days = useMemo(() => {
     const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
@@ -67,7 +65,7 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
   }, [currentMonth]);
 
   const eventsByDate = useMemo(() => {
-    const map: Record<string, any[]> = {};
+    const map: Record<string, CleaningEvent[]> = {};
     events.forEach((ev) => {
       if (ev.start_at) {
         const key = format(new Date(ev.start_at), "yyyy-MM-dd");
@@ -79,7 +77,7 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
   }, [events]);
 
   const suggestionsByDate = useMemo(() => {
-    const map: Record<string, any[]> = {};
+    const map: Record<string, PricingSuggestion[]> = {};
     suggestions.forEach((s) => {
       if (!map[s.date]) map[s.date] = [];
       map[s.date].push(s);
@@ -97,7 +95,7 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
     red: "bg-red-500/20 text-red-700 dark:text-red-400",
   };
 
-  const details = (ev: any) => ev.event_details_json || {};
+  const details = (ev: CleaningEvent) => ev.event_details_json as Record<string, any> || {};
 
   return (
     <div className="flex flex-col h-full">
@@ -119,7 +117,7 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
             const dayEvents = eventsByDate[key] || [];
             const daySuggestions = isHost ? (suggestionsByDate[key] || []) : [];
             const topSuggestion = daySuggestions.length > 0
-              ? daySuggestions.reduce((a: any, b: any) => (b.uplift_pct > a.uplift_pct ? b : a))
+              ? daySuggestions.reduce((a, b) => (b.uplift_pct > a.uplift_pct ? b : a))
               : null;
 
             return (
@@ -141,7 +139,7 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
                   )}
                 </div>
                 <div className="mt-1 space-y-1">
-                  {dayEvents.slice(0, 3).map((ev: any) => {
+                  {dayEvents.slice(0, 3).map((ev) => {
                     const isCancelled = ev.status === "CANCELLED";
                     return (
                       <button key={ev.id} onClick={(e) => { e.stopPropagation(); navigate(`/events/${ev.id}`); }} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", isCancelled ? "bg-muted text-muted-foreground line-through opacity-60" : ev.status === "DONE" ? "bg-[hsl(var(--status-done)/0.15)] text-[hsl(var(--status-done))]" : ev.status === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
@@ -164,7 +162,7 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
             <SheetTitle>Price Suggestions — {selectedDay}</SheetTitle>
           </SheetHeader>
           <div className="mt-4 space-y-4">
-            {selectedSuggestions.map((s: any) => (
+            {selectedSuggestions.map((s) => (
               <div key={s.id} className="border border-border rounded-lg p-4 space-y-3">
                 {s.listings?.name && (
                   <p className="text-xs font-medium text-muted-foreground">{s.listings.name}</p>
@@ -187,7 +185,7 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
                 </div>
                 <div>
                   <p className="text-xs font-medium mb-1.5">Why this price:</p>
-                  {s.reasons && Array.isArray(s.reasons) && s.reasons.length > 0 ? (
+                  {s.reasons && Array.isArray(s.reasons) && (s.reasons as any[]).length > 0 ? (
                     <ul className="space-y-1.5">
                       {(s.reasons as any[]).map((r: any, i: number) => (
                         <li key={i} className="text-xs flex items-center gap-1.5">

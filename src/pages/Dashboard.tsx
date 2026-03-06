@@ -1,4 +1,4 @@
-import { useEffect, useState, forwardRef } from "react";
+import { useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ import { format } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { CleaningEvent, TaskItem } from "@/types/domain";
 
 interface StatCardProps {
   title: string;
@@ -41,28 +43,12 @@ function StatCard({ title, value, icon: Icon, color }: StatCardProps) {
   );
 }
 
-interface TaskItem {
-  id: string;
-  label: string;
-  type: string;
-  required: boolean;
-  help_text: string | null;
-  due_date: string | null;
-  status: string;
-  completed_at: string | null;
-  assigned_cleaner_id: string;
-  created_at: string;
-}
-
 const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
   const navigate = useNavigate();
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const isHost = role === "host";
-  const [todayEvents, setTodayEvents] = useState<any[]>([]);
-  const [stats, setStats] = useState({ hoursThisWeek: 0, openMaintenance: 0, missingItems: 0 });
-  const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [cleaners, setCleaners] = useState<{ id: string; name: string }[]>([]);
 
   // Host create task form
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -72,82 +58,69 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
   const [taskHelpText, setTaskHelpText] = useState("");
   const [taskDueDate, setTaskDueDate] = useState<Date | undefined>();
   const [taskCleanerId, setTaskCleanerId] = useState("");
-  const [creatingTask, setCreatingTask] = useState(false);
 
-  const fetchTasks = async () => {
-    const { data } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
-    setTasks((data as TaskItem[]) || []);
-  };
+  const today = format(new Date(), "yyyy-MM-dd");
 
-  useEffect(() => {
-    const fetchData = async () => {
-      const today = format(new Date(), "yyyy-MM-dd");
-
-      const { data: events } = await supabase
+  const { data: todayEvents = [] } = useQuery({
+    queryKey: ["dashboard-events", today],
+    queryFn: async () => {
+      const { data } = await supabase
         .from("cleaning_events")
         .select("*, listings(name)")
         .gte("start_at", `${today}T00:00:00`)
         .lte("start_at", `${today}T23:59:59`)
         .order("start_at");
+      return (data as CleaningEvent[]) || [];
+    },
+  });
 
-      setTodayEvents(events || []);
+  const { data: stats = { openMaintenance: 0, missingItems: 0 } } = useQuery({
+    queryKey: ["dashboard-stats"],
+    queryFn: async () => {
+      const [{ count: maintenanceCount }, { count: missingCount }] = await Promise.all([
+        supabase.from("maintenance_tickets").select("*", { count: "exact", head: true }).neq("status", "DONE"),
+        supabase.from("shopping_list").select("*", { count: "exact", head: true }).eq("status", "MISSING"),
+      ]);
+      return { openMaintenance: maintenanceCount || 0, missingItems: missingCount || 0 };
+    },
+  });
 
-      const { count: maintenanceCount } = await supabase
-        .from("maintenance_tickets")
-        .select("*", { count: "exact", head: true })
-        .neq("status", "DONE");
+  const { data: tasks = [] } = useQuery({
+    queryKey: ["dashboard-tasks"],
+    queryFn: async () => {
+      const { data } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
+      return (data as TaskItem[]) || [];
+    },
+  });
 
-      const { count: missingCount } = await supabase
-        .from("shopping_list")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "MISSING");
-
-      setStats({
-        hoursThisWeek: 0,
-        openMaintenance: maintenanceCount || 0,
-        missingItems: missingCount || 0,
-      });
-    };
-    fetchData();
-    fetchTasks();
-  }, []);
-
-  // Fetch cleaners for host task assignment
-  useEffect(() => {
-    if (!isHost || !user) return;
-    const fetchCleaners = async () => {
+  const { data: cleaners = [] } = useQuery({
+    queryKey: ["dashboard-cleaners", user?.id],
+    enabled: isHost && !!user,
+    queryFn: async () => {
       const { data: assignments } = await supabase
         .from("cleaner_assignments")
         .select("cleaner_user_id")
-        .eq("host_user_id", user.id);
+        .eq("host_user_id", user!.id);
       const ids = [...new Set((assignments || []).map((a) => a.cleaner_user_id))];
-      if (ids.length === 0) { setCleaners([]); return; }
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("user_id, name")
-        .in("user_id", ids);
-      setCleaners((profiles || []).map((p) => ({ id: p.user_id, name: p.name })));
-    };
-    fetchCleaners();
-  }, [isHost, user]);
+      if (ids.length === 0) return [];
+      const { data: profiles } = await supabase.from("profiles").select("user_id, name").in("user_id", ids);
+      return (profiles || []).map((p) => ({ id: p.user_id, name: p.name }));
+    },
+  });
 
-  const handleCreateTask = async () => {
-    if (!user || !taskLabel.trim() || !taskCleanerId) return;
-    setCreatingTask(true);
-    const { error } = await supabase.from("tasks").insert({
-      host_user_id: user.id,
-      assigned_cleaner_id: taskCleanerId,
-      label: taskLabel.trim(),
-      type: taskType,
-      required: taskRequired,
-      help_text: taskHelpText.trim() || null,
-      due_date: taskDueDate ? format(taskDueDate, "yyyy-MM-dd") : null,
-    });
-    setCreatingTask(false);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      // Send in-app notification to cleaner
+  const createTaskMutation = useMutation({
+    mutationFn: async () => {
+      if (!user || !taskLabel.trim() || !taskCleanerId) throw new Error("Missing fields");
+      const { error } = await supabase.from("tasks").insert({
+        host_user_id: user.id,
+        assigned_cleaner_id: taskCleanerId,
+        label: taskLabel.trim(),
+        type: taskType,
+        required: taskRequired,
+        help_text: taskHelpText.trim() || null,
+        due_date: taskDueDate ? format(taskDueDate, "yyyy-MM-dd") : null,
+      });
+      if (error) throw error;
       await supabase.from("in_app_notifications").insert({
         user_id: taskCleanerId,
         host_user_id: user.id,
@@ -155,6 +128,9 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
         body: taskLabel.trim(),
         link: "/",
       });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dashboard-tasks"] });
       toast({ title: "Task created" });
       setShowTaskForm(false);
       setTaskLabel("");
@@ -163,29 +139,39 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
       setTaskHelpText("");
       setTaskDueDate(undefined);
       setTaskCleanerId("");
-      fetchTasks();
-    }
-  };
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
 
-  const handleMarkDone = async (taskId: string) => {
-    const { error } = await supabase.from("tasks").update({ status: "DONE", completed_at: new Date().toISOString() }).eq("id", taskId);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, status: "DONE", completed_at: new Date().toISOString() } : t));
+  const markDoneMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      const { error } = await supabase.from("tasks").update({ status: "DONE", completed_at: new Date().toISOString() }).eq("id", taskId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dashboard-tasks"] });
       toast({ title: "Task completed!" });
-    }
-  };
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
 
-  const handleDeleteTask = async (taskId: string) => {
-    await supabase.from("tasks").delete().eq("id", taskId);
-    setTasks((prev) => prev.filter((t) => t.id !== taskId));
-  };
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      await supabase.from("tasks").delete().eq("id", taskId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dashboard-tasks"] });
+    },
+  });
 
   const pendingTasks = tasks.filter((t) => t.status === "TODO");
   const completedTasks = tasks.filter((t) => t.status === "DONE");
 
-  const details = (ev: any) => ev.event_details_json || {};
+  const details = (ev: CleaningEvent) => ev.event_details_json as Record<string, any> || {};
 
   const getCleanerName = (id: string) => cleaners.find((c) => c.id === id)?.name || "Cleaner";
 
@@ -195,7 +181,7 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard title="Today's Cleanings" value={todayEvents.length} icon={CalendarDays} />
-          <StatCard title="Hours This Week" value={stats.hoursThisWeek} icon={Clock} />
+          <StatCard title="Hours This Week" value={0} icon={Clock} />
           <StatCard title="Open Maintenance" value={stats.openMaintenance} icon={Wrench} />
           <StatCard title="Missing Items" value={stats.missingItems} icon={ShoppingCart} />
         </div>
@@ -210,7 +196,7 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
               <p className="text-muted-foreground text-sm py-4 text-center">No cleaning events scheduled for today.</p>
             ) : (
               <div className="space-y-3">
-                {todayEvents.map((ev: any) => (
+                {todayEvents.map((ev) => (
                   <div
                     key={ev.id}
                     onClick={() => navigate(`/events/${ev.id}`)}
@@ -302,8 +288,8 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
                       <Label htmlFor="task-required">Required</Label>
                     </div>
                   </div>
-                  <Button onClick={handleCreateTask} disabled={creatingTask || !taskLabel.trim() || !taskCleanerId} className="gap-1">
-                    {creatingTask ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Create Task
+                  <Button onClick={() => createTaskMutation.mutate()} disabled={createTaskMutation.isPending || !taskLabel.trim() || !taskCleanerId} className="gap-1">
+                    {createTaskMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Create Task
                   </Button>
                 </CardContent>
               </Card>
@@ -330,12 +316,12 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           {!isHost && (
-                            <Button size="sm" variant="default" onClick={() => handleMarkDone(task.id)} className="gap-1 h-8">
+                            <Button size="sm" variant="default" onClick={() => markDoneMutation.mutate(task.id)} className="gap-1 h-8">
                               <Check className="h-3.5 w-3.5" /> Done
                             </Button>
                           )}
                           {isHost && (
-                            <Button size="sm" variant="ghost" className="text-destructive h-8 w-8 p-0" onClick={() => handleDeleteTask(task.id)}>
+                            <Button size="sm" variant="ghost" className="text-destructive h-8 w-8 p-0" onClick={() => deleteTaskMutation.mutate(task.id)}>
                               <X className="h-4 w-4" />
                             </Button>
                           )}
@@ -359,7 +345,7 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
                           </p>
                         </div>
                         {isHost && (
-                          <Button size="sm" variant="ghost" className="text-destructive h-8 w-8 p-0" onClick={() => handleDeleteTask(task.id)}>
+                          <Button size="sm" variant="ghost" className="text-destructive h-8 w-8 p-0" onClick={() => deleteTaskMutation.mutate(task.id)}>
                             <X className="h-4 w-4" />
                           </Button>
                         )}
