@@ -8,10 +8,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { db } from "@/v1/lib/db";
+import { supabase } from "@/integrations/supabase/client";
+
+type EventRow = {
+  id: string;
+  listing_id: string;
+  start_at: string;
+  status: string;
+};
 
 export default function ExtrasPage() {
   const { user, organizationsV1, organizationId } = useAuth();
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  const [suppliesEventId, setSuppliesEventId] = useState<string | null>(null);
+  const [events, setEvents] = useState<EventRow[]>([]);
   const [message, setMessage] = useState<string | null>(null);
 
   const [hoursMinutes, setHoursMinutes] = useState("60");
@@ -39,6 +49,35 @@ export default function ExtrasPage() {
 
     setSelectedOrgId(null);
   }, [organizationId, organizationsV1]);
+
+  useEffect(() => {
+    if (!user?.id || !selectedOrgId) {
+      setEvents([]);
+      setSuppliesEventId(null);
+      return;
+    }
+
+    const loadEvents = async () => {
+      const { data } = await db
+        .from("v1_events")
+        .select("id, listing_id, start_at, status")
+        .eq("organization_id", selectedOrgId)
+        .eq("assigned_cleaner_id", user.id)
+        .neq("status", "CANCELLED")
+        .order("start_at", { ascending: true })
+        .limit(50);
+
+      const rows = (data || []) as EventRow[];
+      setEvents(rows);
+      if (rows.length > 0) {
+        setSuppliesEventId(rows[0].id);
+      } else {
+        setSuppliesEventId(null);
+      }
+    };
+
+    loadEvents();
+  }, [selectedOrgId, user?.id]);
 
   const requiresSelection = organizationsV1.length > 1 && !selectedOrgId;
 
@@ -100,6 +139,26 @@ export default function ExtrasPage() {
     setExpenseNote("");
   };
 
+  const reportSuppliesLow = async () => {
+    if (!selectedOrgId || !suppliesEventId) return;
+    setMessage(null);
+
+    const { data, error } = await supabase.functions.invoke("run-automations-v1", {
+      body: {
+        organization_id: selectedOrgId,
+        trigger_type: "SUPPLIES_LOW",
+        event_id: suppliesEventId,
+      },
+    });
+
+    if (error || data?.error) {
+      setMessage(error?.message || data?.error || "Supplies low report failed.");
+      return;
+    }
+
+    setMessage("Supplies low exception created and automations evaluated.");
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -120,6 +179,29 @@ export default function ExtrasPage() {
             </div>
           )}
           {requiresSelection && <p className="text-xs text-amber-600">Select Organization before submitting manual entries.</p>}
+
+          <div className="space-y-2 border-t border-border pt-2">
+            <p className="text-xs font-medium text-muted-foreground">Supplies low (quick action)</p>
+            <Select
+              value={suppliesEventId || "__none"}
+              onValueChange={(value) => setSuppliesEventId(value === "__none" ? null : value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select event" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">Select event</SelectItem>
+                {events.map((event) => (
+                  <SelectItem key={event.id} value={event.id}>
+                    {new Date(event.start_at).toLocaleString()} · {event.status}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" onClick={reportSuppliesLow} disabled={requiresSelection || !suppliesEventId}>
+              Report Supplies Low
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

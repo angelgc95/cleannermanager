@@ -131,6 +131,12 @@ Deno.serve(async (req) => {
       .update({ status: "TODO" })
       .eq("id", eventId);
 
+    await service
+      .from("v1_event_exceptions")
+      .delete()
+      .eq("event_id", eventId)
+      .in("status", ["OPEN", "ACKNOWLEDGED"]);
+
     return new Response(JSON.stringify({ ok: true, event_id: eventId }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

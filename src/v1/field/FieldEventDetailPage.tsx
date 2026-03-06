@@ -14,12 +14,14 @@ type EventRow = {
 };
 
 type RunRow = { id: string; status: string; started_at: string; finished_at: string | null };
+type QaRow = { status: "PENDING" | "APPROVED" | "REJECTED"; notes: string | null };
 
 export default function FieldEventDetailPage() {
   const { eventId } = useParams();
   const { user } = useAuth();
   const [eventRow, setEventRow] = useState<EventRow | null>(null);
   const [runRow, setRunRow] = useState<RunRow | null>(null);
+  const [qaRow, setQaRow] = useState<QaRow | null>(null);
 
   useEffect(() => {
     if (!eventId || !user?.id) return;
@@ -41,6 +43,17 @@ export default function FieldEventDetailPage() {
 
       setEventRow((eventData || null) as EventRow | null);
       setRunRow((runData || null) as RunRow | null);
+
+      if (runData?.id) {
+        const { data: qaData } = await db
+          .from("v1_qa_reviews")
+          .select("status, notes")
+          .eq("run_id", runData.id)
+          .maybeSingle();
+        setQaRow((qaData || null) as QaRow | null);
+      } else {
+        setQaRow(null);
+      }
     };
 
     load();
@@ -65,6 +78,16 @@ export default function FieldEventDetailPage() {
       <Card>
         <CardHeader><CardTitle>Checklist</CardTitle></CardHeader>
         <CardContent className="space-y-3 text-sm">
+          {qaRow?.status === "PENDING" && (
+            <p className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+              QA review pending. A manager/QA reviewer will approve or reject this run.
+            </p>
+          )}
+          {qaRow?.status === "REJECTED" && (
+            <p className="rounded border border-red-300 bg-red-50 px-2 py-1 text-xs text-red-700">
+              Fix required. QA rejected this run{qaRow.notes ? `: ${qaRow.notes}` : "."}
+            </p>
+          )}
           {runRow ? (
             <>
               <p>Run status: <span className="font-medium">{runRow.status}</span></p>
