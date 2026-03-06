@@ -22,6 +22,7 @@ import AutomationsPage from "@/v1/console/AutomationsPage";
 import OperationsInboxPage from "@/v1/console/OperationsInboxPage";
 import QAReviewPage from "@/v1/console/QAReviewPage";
 import ReportsPage from "@/v1/console/ReportsPage";
+import NotificationsPage from "@/v1/shared/NotificationsPage";
 
 import TodayPage from "@/v1/field/TodayPage";
 import FieldCalendarPage from "@/v1/field/FieldCalendarPage";
@@ -106,6 +107,10 @@ const App = () => {
                     <Route path="templates" element={<TemplatesPage />} />
                     <Route path="automations" element={<AutomationsPage />} />
                     <Route path="reports" element={<ReportsPage />} />
+                    <Route
+                      path="notifications"
+                      element={<NotificationsPage title="Console Notifications" eventHrefPrefix="/console/events" />}
+                    />
                   </Route>
                 </Route>
 
@@ -118,6 +123,10 @@ const App = () => {
                     <Route path="events/:eventId/checklist" element={<ChecklistWizardPage />} />
                     <Route path="extras" element={<ExtrasPage />} />
                     <Route path="guides" element={<GuidesPage />} />
+                    <Route
+                      path="notifications"
+                      element={<NotificationsPage title="Field Notifications" eventHrefPrefix="/field/events" />}
+                    />
                   </Route>
                 </Route>
 
