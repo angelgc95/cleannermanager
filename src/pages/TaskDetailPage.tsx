@@ -22,6 +22,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { deriveEffectiveStatus } from "@/lib/domain/effectiveStatus";
+import { EventDebugPanel } from "@/components/EventDebugPanel";
 
 const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props, ref) {
   const { id } = useParams();
