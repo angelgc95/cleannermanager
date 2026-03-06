@@ -170,8 +170,8 @@ Deno.serve(async (req) => {
         await supabase.from("log_hours").update({ payout_id: payout.id }).in("id", logHours!.map((l: any) => l.id));
       }
 
-      for (const run of orphanRuns) {
-        await supabase.from("log_hours").insert({
+      if (orphanRuns.length > 0) {
+        const orphanRows = orphanRuns.map((run: any) => ({
           user_id: cleanerId,
           host_user_id: hostUserId,
           date: run.finished_at.split("T")[0],
@@ -183,7 +183,8 @@ Deno.serve(async (req) => {
           cleaning_event_id: run.cleaning_event_id,
           listing_id: run.listing_id || null,
           payout_id: payout.id,
-        });
+        }));
+        await supabase.from("log_hours").insert(orphanRows);
       }
 
       payoutsCreated++;

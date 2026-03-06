@@ -24,9 +24,16 @@ export function useEffectiveStatuses(eventIds: string[]) {
 
       const result: Record<string, EffectiveStatus> = {};
 
-      // For each event, find the latest run
+      // Build map in single pass (runs are sorted by started_at DESC, so first occurrence per event is latest)
+      const latestRunMap = new Map<string, { finished_at: string | null }>();
+      for (const r of (runs || [])) {
+        if (!latestRunMap.has(r.cleaning_event_id)) {
+          latestRunMap.set(r.cleaning_event_id, r);
+        }
+      }
+
       for (const eid of eventIds) {
-        const latestRun = (runs || []).find((r) => r.cleaning_event_id === eid);
+        const latestRun = latestRunMap.get(eid);
         if (!latestRun) {
           result[eid] = "TODO";
         } else if (latestRun.finished_at) {

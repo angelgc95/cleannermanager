@@ -105,11 +105,11 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
   };
 
   const handleDeletePeriod = async (periodId: string) => {
-    // Delete payouts in this period first (unlink log_hours)
     const { data: periodPayouts } = await supabase.from("payouts").select("id").eq("period_id", periodId);
-    for (const p of (periodPayouts || [])) {
-      await supabase.from("log_hours").update({ payout_id: null }).eq("payout_id", p.id);
-      await supabase.from("payouts").delete().eq("id", p.id);
+    const payoutIds = (periodPayouts || []).map((p: any) => p.id);
+    if (payoutIds.length > 0) {
+      await supabase.from("log_hours").update({ payout_id: null } as any).in("payout_id", payoutIds);
+      await supabase.from("payouts").delete().eq("period_id", periodId);
     }
     const { error } = await supabase.from("payout_periods").delete().eq("id", periodId);
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
