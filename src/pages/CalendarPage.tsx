@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useQuery } from "@tanstack/react-query";
 import type { CleaningEvent, PricingSuggestion } from "@/types/domain";
+import { useEffectiveStatuses } from "@/hooks/useEffectiveStatus";
 
 const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _ref) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -54,6 +55,9 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
       return (data as PricingSuggestion[]) || [];
     },
   });
+
+  const eventIds = useMemo(() => events.map(e => e.id), [events]);
+  const { statuses: effectiveStatuses } = useEffectiveStatuses(eventIds);
 
   const days = useMemo(() => {
     const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
@@ -140,9 +144,10 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
                 </div>
                 <div className="mt-1 space-y-1">
                   {dayEvents.slice(0, 3).map((ev) => {
-                    const isCancelled = ev.status === "CANCELLED";
+                    const displayStatus = effectiveStatuses[ev.id] || ev.status;
+                    const isCancelled = displayStatus === "CANCELLED";
                     return (
-                      <button key={ev.id} onClick={(e) => { e.stopPropagation(); navigate(`/events/${ev.id}`); }} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", isCancelled ? "bg-muted text-muted-foreground line-through opacity-60" : ev.status === "DONE" ? "bg-[hsl(var(--status-done)/0.15)] text-[hsl(var(--status-done))]" : ev.status === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
+                      <button key={ev.id} onClick={(e) => { e.stopPropagation(); navigate(`/events/${ev.id}`); }} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", isCancelled ? "bg-muted text-muted-foreground line-through opacity-60" : displayStatus === "COMPLETED" || displayStatus === "DONE" ? "bg-[hsl(var(--status-done)/0.15)] text-[hsl(var(--status-done))]" : displayStatus === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
                         {ev.listings?.name || "Cleaning"}{details(ev).nights != null ? ` · ${details(ev).nights}N` : ""}{details(ev).guests != null ? ` · ${details(ev).guests}G` : ""}
                       </button>
                     );

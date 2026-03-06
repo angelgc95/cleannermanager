@@ -19,6 +19,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CleaningEvent, TaskItem } from "@/types/domain";
+import { deriveEffectiveStatus } from "@/lib/domain/effectiveStatus";
 
 interface StatCardProps {
   title: string;
@@ -212,7 +213,7 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
                         {details(ev).guests != null ? ` · ${details(ev).guests} guests` : ""}
                       </p>
                     </div>
-                    <StatusBadge status={ev.status} />
+                    <StatusBadge status={deriveEffectiveStatus(ev.status, null)} />
                   </div>
                 ))}
               </div>
