@@ -12,6 +12,7 @@ interface ICSEvent {
   dtstart: string;
   dtend: string;
   description: string;
+  status: string;
 }
 
 function parseICS(icsText: string): ICSEvent[] {
