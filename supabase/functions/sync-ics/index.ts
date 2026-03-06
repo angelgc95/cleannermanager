@@ -40,9 +40,14 @@ function parseICS(icsText: string): ICSEvent[] {
     event.dtstart = getField("DTSTART");
     event.dtend = getField("DTEND");
     event.description = getField("DESCRIPTION");
+    event.status = getField("STATUS");
 
     if (event.uid && event.dtstart && event.dtend) {
       events.push(event as ICSEvent);
+    }
+    // Also include cancelled events (they have uid but may lack dtend)
+    if (event.uid && event.status?.toUpperCase() === "CANCELLED" && !events.find(e => e.uid === event.uid)) {
+      events.push({ ...event, dtstart: event.dtstart || "", dtend: event.dtend || "" } as ICSEvent);
     }
   }
   return events;
