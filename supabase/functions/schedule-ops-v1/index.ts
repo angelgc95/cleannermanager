@@ -9,6 +9,7 @@ type SchedulerPayload = {
   organization_id?: string;
   lookahead_minutes?: number;
   overdue_minutes?: number;
+  enable_cleaner_reminders?: boolean;
 };
 
 type OrgRow = { id: string };
@@ -17,20 +18,37 @@ type EventRow = {
   id: string;
   organization_id: string;
   listing_id: string;
+  assigned_cleaner_id: string | null;
   start_at: string;
   end_at: string;
+  ready_by_override_at: string | null;
   status: string;
 };
 
 type ChecklistRunRow = {
+  id: string;
   event_id: string;
   status: string;
   started_at: string | null;
 };
 
+type QaReviewRow = {
+  run_id: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+};
+
 type ListingRow = {
   id: string;
   unit_id: string;
+  name: string;
+  timezone: string;
+};
+
+type ReminderStateRow = {
+  event_id: string;
+  last_reminder_60_at: string | null;
+  last_reminder_30_at: string | null;
+  last_reminder_15_at: string | null;
 };
 
 type ExceptionRow = {
@@ -58,6 +76,80 @@ function json(status: number, payload: Record<string, unknown>) {
 
 function uniq(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
+}
+
+function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeTimeZone(input: string | null | undefined): string {
+  const candidate = (input || "").trim() || "UTC";
+  return isValidTimeZone(candidate) ? candidate : "UTC";
+}
+
+function formatDeadlineLocal(deadlineIso: string, listingTimeZone: string): string {
+  const timeZone = normalizeTimeZone(listingTimeZone);
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    dateStyle: "medium",
+    timeStyle: "short",
+    hourCycle: "h23",
+  }).format(new Date(deadlineIso));
+}
+
+function getEventDeadlineIso(event: EventRow): string {
+  return event.ready_by_override_at || event.end_at;
+}
+
+function isWithinReminderWindow(deadlineMs: number, nowMs: number, targetMinutes: number): boolean {
+  const diffMs = deadlineMs - nowMs;
+  const upper = targetMinutes * 60 * 1000;
+  const lower = (targetMinutes - 1) * 60 * 1000;
+  return diffMs <= upper && diffMs >= lower;
+}
+
+function reminderFieldForTarget(targetMinutes: 60 | 30 | 15): keyof ReminderStateRow {
+  if (targetMinutes === 60) return "last_reminder_60_at";
+  if (targetMinutes === 30) return "last_reminder_30_at";
+  return "last_reminder_15_at";
+}
+
+function isEventReady(
+  run: ChecklistRunRow | undefined,
+  qaReview: QaReviewRow | undefined,
+): boolean {
+  if (!run) return false;
+  if (run.status === "COMPLETED") return true;
+  if (qaReview?.status === "APPROVED") return true;
+  return false;
+}
+
+async function hasRecentUnreadReminder(
+  service: any,
+  args: {
+    organizationId: string;
+    eventId: string;
+    recipientUserId: string;
+    title: string;
+    cutoffIso: string;
+  },
+): Promise<boolean> {
+  const { count } = await service
+    .from("v1_notifications")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", args.organizationId)
+    .eq("event_id", args.eventId)
+    .eq("recipient_user_id", args.recipientUserId)
+    .eq("title", args.title)
+    .is("read_at", null)
+    .gte("created_at", args.cutoffIso);
+
+  return (count || 0) > 0;
 }
 
 async function invokeAutomations(
@@ -242,6 +334,7 @@ Deno.serve(async (req) => {
     const payload = (await req.json().catch(() => ({}))) as SchedulerPayload;
     const lookaheadMinutes = Math.max(1, Number(payload.lookahead_minutes ?? 60));
     const overdueMinutes = Math.max(1, Number(payload.overdue_minutes ?? 15));
+    const enableCleanerReminders = payload.enable_cleaner_reminders ?? true;
 
     const service = createClient(supabaseUrl, serviceKey);
 
@@ -257,20 +350,22 @@ Deno.serve(async (req) => {
     }
 
     const now = new Date();
+    const nowMs = now.getTime();
     const nowIso = now.toISOString();
-    const lookaheadEnd = new Date(now.getTime() + lookaheadMinutes * 60 * 1000);
-    const overdueCutoff = new Date(now.getTime() - overdueMinutes * 60 * 1000);
+    const lookaheadEnd = new Date(nowMs + lookaheadMinutes * 60 * 1000);
+    const overdueCutoff = new Date(nowMs - overdueMinutes * 60 * 1000);
 
     let soonTriggered = 0;
     let overdueTriggered = 0;
     let lateExceptionsEnsured = 0;
     let missingChecklistEnsured = 0;
     let missingChecklistEscalations = 0;
+    let cleanerRemindersSent = 0;
 
     for (const org of orgRows) {
       const { data: soonEvents } = await service
         .from("v1_events")
-        .select("id, organization_id, listing_id, start_at, end_at, status")
+        .select("id, organization_id, listing_id, assigned_cleaner_id, start_at, end_at, ready_by_override_at, status")
         .eq("organization_id", org.id)
         .in("status", ["TODO", "IN_PROGRESS"])
         .gte("start_at", nowIso)
@@ -289,7 +384,7 @@ Deno.serve(async (req) => {
 
       const { data: overdueCandidates } = await service
         .from("v1_events")
-        .select("id, organization_id, listing_id, start_at, end_at, status")
+        .select("id, organization_id, listing_id, assigned_cleaner_id, start_at, end_at, ready_by_override_at, status")
         .eq("organization_id", org.id)
         .eq("status", "TODO")
         .lt("start_at", overdueCutoff.toISOString())
@@ -323,16 +418,181 @@ Deno.serve(async (req) => {
         overdueTriggered += 1;
       }
 
+      if (enableCleanerReminders) {
+        const reminderPastCutoffIso = new Date(nowMs - 70 * 60 * 1000).toISOString();
+
+        const { data: reminderCandidates } = await service
+          .from("v1_events")
+          .select("id, organization_id, listing_id, assigned_cleaner_id, start_at, end_at, ready_by_override_at, status")
+          .eq("organization_id", org.id)
+          .in("status", ["TODO", "IN_PROGRESS"])
+          .not("assigned_cleaner_id", "is", null)
+          .or(`end_at.gte.${reminderPastCutoffIso},ready_by_override_at.not.is.null`)
+          .order("end_at", { ascending: true })
+          .limit(2000);
+
+        const reminderRows = (reminderCandidates || []) as EventRow[];
+        if (reminderRows.length > 0) {
+          const eventIds = reminderRows.map((row) => row.id);
+          const listingIds = uniq(reminderRows.map((row) => row.listing_id));
+
+          const [{ data: runRows }, { data: listingRows }, { data: reminderStates }] = await Promise.all([
+            service
+              .from("v1_checklist_runs")
+              .select("id, event_id, status, started_at")
+              .in("event_id", eventIds),
+            service
+              .from("v1_listings")
+              .select("id, unit_id, name, timezone")
+              .in("id", listingIds),
+            service
+              .from("v1_event_reminder_state")
+              .select("event_id, last_reminder_60_at, last_reminder_30_at, last_reminder_15_at")
+              .in("event_id", eventIds),
+          ]);
+
+          const runsByEventId = new Map<string, ChecklistRunRow>();
+          for (const run of (runRows || []) as ChecklistRunRow[]) {
+            runsByEventId.set(run.event_id, run);
+          }
+
+          const runIds = uniq((runRows || []).map((row: ChecklistRunRow) => row.id));
+          const qaByRunId = new Map<string, QaReviewRow>();
+          if (runIds.length > 0) {
+            const { data: qaRows } = await service
+              .from("v1_qa_reviews")
+              .select("run_id, status")
+              .in("run_id", runIds);
+
+            for (const qaRow of (qaRows || []) as QaReviewRow[]) {
+              qaByRunId.set(qaRow.run_id, qaRow);
+            }
+          }
+
+          const listingById = new Map<string, ListingRow>();
+          for (const listing of (listingRows || []) as ListingRow[]) {
+            listingById.set(listing.id, listing);
+          }
+
+          const reminderStateByEventId = new Map<string, ReminderStateRow>();
+          for (const state of (reminderStates || []) as ReminderStateRow[]) {
+            reminderStateByEventId.set(state.event_id, state);
+          }
+
+          const reminderSafetyCutoffIso = new Date(nowMs - 2 * 60 * 60 * 1000).toISOString();
+
+          for (const event of reminderRows) {
+            if (!event.assigned_cleaner_id) continue;
+
+            const run = runsByEventId.get(event.id);
+            const qa = run ? qaByRunId.get(run.id) : undefined;
+            if (isEventReady(run, qa)) {
+              continue;
+            }
+
+            const deadlineIso = getEventDeadlineIso(event);
+            const deadlineMs = new Date(deadlineIso).getTime();
+            if (Number.isNaN(deadlineMs)) continue;
+
+            const listing = listingById.get(event.listing_id);
+            const localDeadline = formatDeadlineLocal(deadlineIso, listing?.timezone || "UTC");
+            const listingName = listing?.name || `Listing ${event.listing_id}`;
+
+            const existingState = reminderStateByEventId.get(event.id) || {
+              event_id: event.id,
+              last_reminder_60_at: null,
+              last_reminder_30_at: null,
+              last_reminder_15_at: null,
+            };
+
+            const nextState: ReminderStateRow = {
+              ...existingState,
+            };
+
+            for (const targetMinutes of [60, 30, 15] as const) {
+              if (!isWithinReminderWindow(deadlineMs, nowMs, targetMinutes)) {
+                continue;
+              }
+
+              const field = reminderFieldForTarget(targetMinutes);
+              if (nextState[field]) {
+                continue;
+              }
+
+              const title = `Turnover due in ${targetMinutes} minutes`;
+
+              const recentUnreadExists = await hasRecentUnreadReminder(service, {
+                organizationId: event.organization_id,
+                eventId: event.id,
+                recipientUserId: event.assigned_cleaner_id,
+                title,
+                cutoffIso: reminderSafetyCutoffIso,
+              });
+
+              if (recentUnreadExists) {
+                continue;
+              }
+
+              const { error: notificationError } = await service
+                .from("v1_notifications")
+                .insert({
+                  organization_id: event.organization_id,
+                  recipient_user_id: event.assigned_cleaner_id,
+                  event_id: event.id,
+                  type: "SYSTEM",
+                  title,
+                  body: `${listingName} is due by ${localDeadline}.`,
+                });
+
+              if (notificationError) {
+                throw notificationError;
+              }
+
+              nextState[field] = nowIso;
+              cleanerRemindersSent += 1;
+            }
+
+            if (
+              nextState.last_reminder_60_at !== existingState.last_reminder_60_at
+              || nextState.last_reminder_30_at !== existingState.last_reminder_30_at
+              || nextState.last_reminder_15_at !== existingState.last_reminder_15_at
+            ) {
+              const { error: stateError } = await service
+                .from("v1_event_reminder_state")
+                .upsert({
+                  organization_id: event.organization_id,
+                  event_id: event.id,
+                  last_reminder_60_at: nextState.last_reminder_60_at,
+                  last_reminder_30_at: nextState.last_reminder_30_at,
+                  last_reminder_15_at: nextState.last_reminder_15_at,
+                }, { onConflict: "event_id" });
+
+              if (stateError) {
+                throw stateError;
+              }
+
+              reminderStateByEventId.set(event.id, nextState);
+            }
+          }
+        }
+      }
+
       const { data: endedEvents } = await service
         .from("v1_events")
-        .select("id, organization_id, listing_id, start_at, end_at, status")
+        .select("id, organization_id, listing_id, assigned_cleaner_id, start_at, end_at, ready_by_override_at, status")
         .eq("organization_id", org.id)
         .neq("status", "CANCELLED")
-        .lte("end_at", nowIso)
+        .or(`end_at.lte.${nowIso},ready_by_override_at.not.is.null`)
         .order("end_at", { ascending: true })
-        .limit(1500);
+        .limit(2000);
 
-      const endedRows = (endedEvents || []) as EventRow[];
+      const endedRows = ((endedEvents || []) as EventRow[]).filter((row) => {
+        const deadlineIso = getEventDeadlineIso(row);
+        const deadlineMs = new Date(deadlineIso).getTime();
+        if (Number.isNaN(deadlineMs)) return false;
+        return deadlineMs <= nowMs;
+      });
+
       if (endedRows.length === 0) continue;
 
       const eventIds = endedRows.map((row) => row.id);
@@ -341,11 +601,11 @@ Deno.serve(async (req) => {
       const [{ data: runRows }, { data: listingRows }] = await Promise.all([
         service
           .from("v1_checklist_runs")
-          .select("event_id, status, started_at")
+          .select("id, event_id, status, started_at")
           .in("event_id", eventIds),
         service
           .from("v1_listings")
-          .select("id, unit_id")
+          .select("id, unit_id, name, timezone")
           .in("id", listingIds),
       ]);
 
@@ -384,7 +644,7 @@ Deno.serve(async (req) => {
         }
 
         const nextEscalationAt = exception.next_escalation_at ? new Date(exception.next_escalation_at) : now;
-        if (nextEscalationAt.getTime() > now.getTime()) {
+        if (nextEscalationAt.getTime() > nowMs) {
           continue;
         }
 
@@ -446,6 +706,8 @@ Deno.serve(async (req) => {
       late_exceptions_ensured: lateExceptionsEnsured,
       missing_checklist_ensured: missingChecklistEnsured,
       missing_checklist_escalations: missingChecklistEscalations,
+      cleaner_reminders_sent: cleanerRemindersSent,
+      enable_cleaner_reminders: enableCleanerReminders,
       lookahead_minutes: lookaheadMinutes,
       overdue_minutes: overdueMinutes,
     });
