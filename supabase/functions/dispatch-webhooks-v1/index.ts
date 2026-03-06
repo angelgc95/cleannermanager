@@ -81,6 +81,31 @@ async function canManageWebhooks(service: any, organizationId: string, userId: s
   return !!membership?.role;
 }
 
+async function writeSystemLog(
+  service: any,
+  args: {
+    organizationId: string | null;
+    source: string;
+    level: "INFO" | "WARN" | "ERROR";
+    message: string;
+    context?: Record<string, unknown>;
+  },
+) {
+  const { error } = await service
+    .from("v1_system_logs")
+    .insert({
+      organization_id: args.organizationId,
+      source: args.source,
+      level: args.level,
+      message: args.message,
+      context: args.context || {},
+    });
+
+  if (error) {
+    console.warn("dispatch-webhooks-v1 failed to write system log", error.message);
+  }
+}
+
 async function postWebhook(webhook: WebhookRow, payloadText: string) {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -210,6 +235,17 @@ Deno.serve(async (req) => {
           webhook_id: webhook.id,
           event_type: eventType,
           error: result.error,
+        });
+        await writeSystemLog(service, {
+          organizationId,
+          source: "dispatch-webhooks-v1",
+          level: "ERROR",
+          message: "Webhook delivery failed",
+          context: {
+            webhook_id: webhook.id,
+            event_type: eventType,
+            error: result.error,
+          },
         });
         failed.push({ webhook_id: webhook.id, name: webhook.name, error: result.error });
       }

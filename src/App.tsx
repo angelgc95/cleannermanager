@@ -23,6 +23,7 @@ import OperationsInboxPage from "@/v1/console/OperationsInboxPage";
 import QAReviewPage from "@/v1/console/QAReviewPage";
 import ReportsPage from "@/v1/console/ReportsPage";
 import IntegrationsPage from "@/v1/console/IntegrationsPage";
+import SystemPage from "@/v1/console/SystemPage";
 import NotificationsPage from "@/v1/shared/NotificationsPage";
 
 import TodayPage from "@/v1/field/TodayPage";
@@ -109,6 +110,7 @@ const App = () => {
                     <Route path="automations" element={<AutomationsPage />} />
                     <Route path="reports" element={<ReportsPage />} />
                     <Route path="integrations" element={<IntegrationsPage />} />
+                    <Route path="system" element={<SystemPage />} />
                     <Route
                       path="notifications"
                       element={<NotificationsPage title="Console Notifications" eventHrefPrefix="/console/events" />}

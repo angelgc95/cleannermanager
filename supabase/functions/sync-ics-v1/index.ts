@@ -348,6 +348,31 @@ async function invokeWebhooks(
   }
 }
 
+async function writeSystemLog(
+  service: any,
+  args: {
+    organizationId: string | null;
+    source: string;
+    level: "INFO" | "WARN" | "ERROR";
+    message: string;
+    context?: Record<string, unknown>;
+  },
+) {
+  const { error } = await service
+    .from("v1_system_logs")
+    .insert({
+      organization_id: args.organizationId,
+      source: args.source,
+      level: args.level,
+      message: args.message,
+      context: args.context || {},
+    });
+
+  if (error) {
+    console.warn("sync-ics-v1 failed to write system log", error.message);
+  }
+}
+
 async function ensureCancellationDriftException(
   service: any,
   organizationId: string,
@@ -651,6 +676,18 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error("sync-ics-v1 error", error);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const service = createClient(supabaseUrl, serviceKey);
+    await writeSystemLog(service, {
+      organizationId: null,
+      source: "sync-ics-v1",
+      level: "ERROR",
+      message: "Top-level ICS sync failure",
+      context: {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
     return new Response(JSON.stringify({ error: "Internal error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

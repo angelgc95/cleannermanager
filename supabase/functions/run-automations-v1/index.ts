@@ -206,6 +206,31 @@ async function invokeWebhooks(
   }
 }
 
+async function writeSystemLog(
+  service: any,
+  args: {
+    organizationId: string | null;
+    source: string;
+    level: "INFO" | "WARN" | "ERROR";
+    message: string;
+    context?: Record<string, unknown>;
+  },
+) {
+  const { error } = await service
+    .from("v1_system_logs")
+    .insert({
+      organization_id: args.organizationId,
+      source: args.source,
+      level: args.level,
+      message: args.message,
+      context: args.context || {},
+    });
+
+  if (error) {
+    console.warn("run-automations-v1 failed to write system log", error.message);
+  }
+}
+
 async function resolveRecipients(
   service: any,
   organizationId: string,
@@ -818,10 +843,10 @@ Deno.serve(async (req) => {
             event: eventRow,
             runId: runRow?.id || null,
             triggerType,
-          actorUserId,
-          supabaseUrl,
-          serviceKey,
-        });
+            actorUserId,
+            supabaseUrl,
+            serviceKey,
+          });
         }
 
         await service.from("v1_rule_runs").insert({
@@ -846,6 +871,19 @@ Deno.serve(async (req) => {
           status: "FAILED",
           error: message,
         });
+        await writeSystemLog(service, {
+          organizationId,
+          source: "run-automations-v1",
+          level: "ERROR",
+          message: "Automation rule execution failed",
+          context: {
+            rule_id: rule.id,
+            trigger_type: triggerType,
+            event_id: eventRow?.id || null,
+            run_id: runRow?.id || null,
+            error: message,
+          },
+        });
       }
     }
 
@@ -861,6 +899,18 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error("run-automations-v1 error", error);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const service = createClient(supabaseUrl, serviceKey);
+    await writeSystemLog(service, {
+      organizationId: null,
+      source: "run-automations-v1",
+      level: "ERROR",
+      message: "Top-level automation function failure",
+      context: {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
     return json(500, { error: "Internal error" });
   }
 });
