@@ -529,7 +529,7 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
         run_id: runId,
         item_id: itemId,
         yesno_value: val,
-        host_user_id: hostId,
+        host_user_id: event?.host_user_id,
       }));
 
     if (responseEntries.length > 0) {
