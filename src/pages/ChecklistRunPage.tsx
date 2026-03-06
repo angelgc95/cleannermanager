@@ -552,7 +552,7 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
       cleaning_event_id: eventId,
       listing_id: event?.listing_id || null,
       description: workNotes || null,
-      host_user_id: hostId,
+      host_user_id: event?.host_user_id,
     } as any, { onConflict: "checklist_run_id" });
 
     for (const item of missingItems) {
