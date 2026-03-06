@@ -109,7 +109,29 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
 
       const icsEvents = parseICS(icsText);
 
+      const seenExternalUids = new Set<string>();
+
       for (const icsEvent of icsEvents) {
+        const externalUid = `${platform}:${icsEvent.uid}`;
+
+        // Handle cancelled VEVENTs
+        if (icsEvent.status?.toUpperCase() === "CANCELLED") {
+          const { data: cancelledBooking } = await supabase
+            .from("bookings")
+            .select("id")
+            .eq("external_uid", externalUid)
+            .maybeSingle();
+          if (cancelledBooking) {
+            // Cancel related cleaning events
+            await supabase
+              .from("cleaning_events")
+              .update({ status: "CANCELLED" })
+              .eq("booking_id", cancelledBooking.id)
+              .in("status", ["TODO", "IN_PROGRESS"]);
+          }
+          continue;
+        }
+
         const startDate = extractDateOnly(icsEvent.dtstart);
         const endDate = extractDateOnly(icsEvent.dtend);
         if (!startDate || !endDate) continue;
@@ -121,7 +143,7 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
         const end = new Date(endDate);
         const nights = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
 
-        const externalUid = `${platform}:${icsEvent.uid}`;
+        seenExternalUids.add(externalUid);
 
         let confirmationCode = "";
         if (icsEvent.description) {
@@ -145,6 +167,7 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
             checkin_at: `${startDate}T${listing.default_checkin_time || "15:00:00"}`,
             checkout_at: `${endDate}T${listing.default_checkout_time || "11:00:00"}`,
             raw_ics_payload: JSON.stringify(icsEvent),
+            last_seen_at: new Date().toISOString(),
           }, { onConflict: "external_uid" })
           .select()
           .single();
@@ -202,6 +225,26 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
             })
             .eq("id", existingEvent.id);
         }
+      }
+
+      // Grace window: cancel bookings not seen for 48+ hours
+      const graceMs = 48 * 60 * 60 * 1000;
+      const cutoff = new Date(Date.now() - graceMs).toISOString();
+      const { data: staleBookings } = await supabase
+        .from("bookings")
+        .select("id")
+        .eq("listing_id", listing.id)
+        .eq("source_platform", platform)
+        .not("last_seen_at", "is", null)
+        .lt("last_seen_at", cutoff)
+        .gte("end_date", new Date().toISOString().split("T")[0]); // only future bookings
+
+      for (const stale of (staleBookings || [])) {
+        await supabase
+          .from("cleaning_events")
+          .update({ status: "CANCELLED" })
+          .eq("booking_id", stale.id)
+          .in("status", ["TODO", "IN_PROGRESS"]);
       }
     } catch (err) {
       console.error(`Error syncing ${platform} for ${listing.name}:`, err);
