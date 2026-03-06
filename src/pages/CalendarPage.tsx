@@ -56,6 +56,9 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
     },
   });
 
+  const eventIds = useMemo(() => events.map(e => e.id), [events]);
+  const { statuses: effectiveStatuses } = useEffectiveStatuses(eventIds);
+
   const days = useMemo(() => {
     const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
     const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
