@@ -1,67 +1,92 @@
 
 
-## Plan: Phase 2 — Performance Optimization
+## Plan: Phase 3 — Quality and Maintainability
 
-### A) Database Indexes (single migration)
+### A) Edge Function Integration Tests
 
-Add all critical indexes to eliminate sequential scans on hot query paths:
+Create Deno test files for the three most critical edge functions. These tests call the deployed function endpoints and verify correct behavior.
 
-```sql
--- cleaning_events
-CREATE INDEX IF NOT EXISTS idx_cleaning_events_host_start ON cleaning_events(host_user_id, start_at);
-CREATE INDEX IF NOT EXISTS idx_cleaning_events_cleaner_start ON cleaning_events(assigned_cleaner_id, start_at);
-CREATE INDEX IF NOT EXISTS idx_cleaning_events_listing_status ON cleaning_events(listing_id, status);
+**Files to create:**
+1. `supabase/functions/reset-cleaning-event/index.test.ts` — tests auth rejection (no token), missing body, and success response format
+2. `supabase/functions/dispatch-notifications/index.test.ts` — tests CRON_SECRET gating and basic invocation
+3. `supabase/functions/onboard-user/index.test.ts` — tests auth rejection and invalid type handling
 
--- notification_jobs (partial index for dispatcher)
-CREATE INDEX IF NOT EXISTS idx_notification_jobs_scheduled ON notification_jobs(status, scheduled_for)
-  WHERE status = 'SCHEDULED';
-
--- in_app_notifications
-CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON in_app_notifications(user_id, created_at DESC);
-
--- log_hours
-CREATE INDEX IF NOT EXISTS idx_log_hours_host_user_date ON log_hours(host_user_id, user_id, date);
-CREATE INDEX IF NOT EXISTS idx_log_hours_payout ON log_hours(payout_id);
-
--- shopping_list
-CREATE INDEX IF NOT EXISTS idx_shopping_list_host_status ON shopping_list(host_user_id, status, created_at);
-
--- cleaner_assignments
-CREATE INDEX IF NOT EXISTS idx_cleaner_assignments_host_cleaner ON cleaner_assignments(host_user_id, cleaner_user_id);
-
--- tasks
-CREATE INDEX IF NOT EXISTS idx_tasks_host_created ON tasks(host_user_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_tasks_cleaner_status ON tasks(assigned_cleaner_id, status, created_at DESC);
+Each test file follows the pattern:
+```typescript
+import "https://deno.land/std@0.224.0/dotenv/load.ts";
+// fetch the function URL, assert status codes and JSON shape
 ```
 
-### B) Bulk template assignment propagation
+### B) RLS Policy Regression Tests (SQL via edge function)
 
-**`src/pages/TasksPage.tsx` — `handleSaveAssignments`**: Currently loops through `pendingAssignments` with sequential awaits. Replace with parallel `Promise.all` — each listing update + event propagation pair runs concurrently.
+Create `supabase/functions/rls-smoke-test/index.ts` — a CRON_SECRET-gated edge function that:
+1. Uses service role to insert test rows into `cleaning_events`, `checklist_photos`, `maintenance_updates`
+2. Creates two test JWTs (host A, host B) via service role
+3. Queries as host B and asserts zero rows returned for host A's data
+4. Cleans up test rows
+5. Returns pass/fail JSON
 
-### C) Bulk payout period deletion
+This gives an invocable regression test for the Phase 0 owner-scoped RLS policies without needing a separate test framework.
 
-**`src/pages/PayoutsPage.tsx` — `handleDeletePeriod`**: Currently loops row-by-row unlinking log_hours and deleting payouts. Replace with:
-1. Get all payout IDs in one query (already done)
-2. Bulk unlink: `supabase.from("log_hours").update({ payout_id: null }).in("payout_id", payoutIds)`
-3. Bulk delete: `supabase.from("payouts").delete().eq("period_id", periodId)`
-4. Delete period
+### C) React Query Migration (Domain-Critical Pages)
 
-### D) Payout generation — batch orphan run inserts
+Replace `useEffect` + `useState` fetch patterns with `useQuery` on the 4 highest-traffic pages. React Query is already installed (`@tanstack/react-query`) with a `QueryClient` in `App.tsx` but zero `useQuery` calls exist.
 
-**`supabase/functions/generate-payouts/index.ts`**: The inner loop inserts `log_hours` one-by-one per orphan run. Replace with a single bulk `.insert([...rows])` per cleaner.
+**Pages to migrate:**
 
-### E) Optimize useEffectiveStatuses hook
+1. **`src/pages/Dashboard.tsx`** — Extract 3 fetches (today's events, stats counts, tasks) into `useQuery` hooks. Mutations for create/complete/delete task use `useMutation` with `queryClient.invalidateQueries`.
 
-**`src/hooks/useEffectiveStatus.ts`**: Currently O(n*m) — for each eventId, `.find()` scans the runs array. Fix:
-1. Build a `Map<eventId, latestRun>` in a single pass over the sorted runs array
-2. Then iterate eventIds once to derive status from the map
+2. **`src/pages/CalendarPage.tsx`** — Events fetch keyed by `["calendar-events", currentMonth]`. Suggestions fetch keyed by `["pricing-suggestions", currentMonth]`. Both auto-refetch on month change.
 
-This is a client-side O(n) fix. Moving the latest-run calc to SQL (a DB function with `DISTINCT ON`) would be a further optimization, but the current query volume doesn't warrant it yet — the O(n) map fix eliminates the bottleneck.
+3. **`src/pages/TaskDetailPage.tsx`** — Event detail fetch keyed by `["event", id]`. Checklist run, photos, shopping items as dependent queries.
 
-### Files
-1. **New migration** — all indexes
-2. **`src/pages/TasksPage.tsx`** — `Promise.all` in `handleSaveAssignments`
-3. **`src/pages/PayoutsPage.tsx`** — bulk unlink + delete in `handleDeletePeriod`
-4. **`supabase/functions/generate-payouts/index.ts`** — batch orphan run inserts
-5. **`src/hooks/useEffectiveStatus.ts`** — O(n) map-based status derivation
+4. **`src/pages/ShoppingPage.tsx`** — Products and shopping list as `useQuery`. Submit/clear actions as `useMutation` with invalidation.
+
+**Pattern for each page:**
+```typescript
+// Before:
+const [data, setData] = useState([]);
+useEffect(() => { fetchData().then(setData); }, [dep]);
+
+// After:
+const { data = [] } = useQuery({
+  queryKey: ["entity", dep],
+  queryFn: async () => { /* fetch */ },
+});
+```
+
+Mutations use:
+```typescript
+const mutation = useMutation({
+  mutationFn: async (args) => { /* insert/update/delete */ },
+  onSuccess: () => queryClient.invalidateQueries({ queryKey: ["entity"] }),
+});
+```
+
+### D) Replace `any` in Domain-Critical Paths
+
+Define proper TypeScript interfaces for the most-used data shapes to catch bugs at compile time:
+
+**`src/types/domain.ts`** (new file) — Export interfaces:
+- `CleaningEvent` (id, listing_id, host_user_id, status, start_at, end_at, assigned_cleaner_id, etc.)
+- `MaintenanceTicket` (id, issue, status, pic1_url, pic2_url, etc.)
+- `ShoppingListItem` (id, product_id, status, quantity_needed, etc.)
+- `TaskItem` (already partially defined in Dashboard — extract and share)
+
+Apply these types in the 4 migrated pages, replacing `any[]` state declarations.
+
+### Summary of Files
+
+| Action | File |
+|--------|------|
+| Create | `supabase/functions/reset-cleaning-event/index.test.ts` |
+| Create | `supabase/functions/dispatch-notifications/index.test.ts` |
+| Create | `supabase/functions/onboard-user/index.test.ts` |
+| Create | `supabase/functions/rls-smoke-test/index.ts` |
+| Create | `src/types/domain.ts` |
+| Edit | `src/pages/Dashboard.tsx` |
+| Edit | `src/pages/CalendarPage.tsx` |
+| Edit | `src/pages/TaskDetailPage.tsx` |
+| Edit | `src/pages/ShoppingPage.tsx` |
+| Edit | `supabase/config.toml` (add rls-smoke-test with verify_jwt=false) |
 
