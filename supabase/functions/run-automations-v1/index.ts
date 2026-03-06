@@ -14,6 +14,8 @@ type TriggerType =
   | "SUPPLIES_LOW"
   | "BOOKING_CANCELLED";
 
+type NotificationType = "AUTOMATION" | "EXCEPTION" | "QA" | "SYSTEM";
+
 type AutomationPayload = {
   organization_id?: string;
   trigger_type?: TriggerType;
@@ -98,6 +100,97 @@ function asObject(value: unknown): Record<string, unknown> {
 function asActions(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return [];
   return value.filter((entry) => entry && typeof entry === "object") as Array<Record<string, unknown>>;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry) => typeof entry === "string").map((entry) => String(entry));
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function parseNotificationType(value: unknown, fallback: NotificationType): NotificationType {
+  const valid: NotificationType[] = ["AUTOMATION", "EXCEPTION", "QA", "SYSTEM"];
+  if (typeof value === "string" && valid.includes(value as NotificationType)) {
+    return value as NotificationType;
+  }
+  return fallback;
+}
+
+async function createNotifications(
+  service: any,
+  args: {
+    organizationId: string;
+    recipientUserIds: string[];
+    type: NotificationType;
+    title: string;
+    body?: string | null;
+    eventId?: string | null;
+    exceptionId?: string | null;
+  },
+) {
+  if (args.recipientUserIds.length === 0) return;
+
+  const rows = args.recipientUserIds.map((recipientUserId) => ({
+    organization_id: args.organizationId,
+    recipient_user_id: recipientUserId,
+    event_id: args.eventId || null,
+    exception_id: args.exceptionId || null,
+    type: args.type,
+    title: args.title,
+    body: args.body || null,
+  }));
+
+  const { error } = await service
+    .from("v1_notifications")
+    .insert(rows);
+
+  if (error) throw error;
+}
+
+async function resolveRecipients(
+  service: any,
+  organizationId: string,
+  target: {
+    user_id?: unknown;
+    recipient_user_id?: unknown;
+    role?: unknown;
+    roles?: unknown;
+  },
+): Promise<string[]> {
+  const directUserId = typeof target.user_id === "string"
+    ? target.user_id
+    : typeof target.recipient_user_id === "string"
+      ? target.recipient_user_id
+      : null;
+
+  if (directUserId) {
+    return [directUserId];
+  }
+
+  const singleRole = typeof target.role === "string" ? target.role : null;
+  const roleList = singleRole ? [singleRole] : asStringArray(target.roles);
+  const roles = unique(roleList);
+
+  if (roles.length === 0) return [];
+
+  let query = service
+    .from("v1_organization_members")
+    .select("user_id")
+    .eq("organization_id", organizationId);
+
+  if (roles.length === 1) {
+    query = query.eq("role", roles[0]);
+  } else {
+    query = query.in("role", roles);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  return unique((data || []).map((row: { user_id: string }) => row.user_id));
 }
 
 async function ensureException(
@@ -249,6 +342,66 @@ function passesConditions(
   return true;
 }
 
+async function handleExceptionNotifications(
+  service: any,
+  args: {
+    action: Record<string, unknown>;
+    organizationId: string;
+    event: EventRow;
+    exceptionId: string;
+    exceptionType: string;
+  },
+) {
+  const notifyRaw = args.action.notify;
+  const notifyObject = asObject(notifyRaw);
+  const notifyEnabled = notifyRaw === true
+    || !!args.action.notify_role
+    || !!args.action.notify_roles
+    || !!args.action.notify_user_id
+    || notifyObject.assignee === true
+    || Object.keys(notifyObject).length > 0;
+
+  if (!notifyEnabled) return;
+
+  const recipients = new Set<string>();
+
+  const directRecipients = await resolveRecipients(service, args.organizationId, {
+    user_id: notifyObject.user_id ?? args.action.notify_user_id,
+    role: notifyObject.role ?? args.action.notify_role,
+    roles: notifyObject.roles ?? args.action.notify_roles,
+  });
+  for (const recipient of directRecipients) recipients.add(recipient);
+
+  const notifyAssignee = notifyObject.assignee === true || args.action.notify_assignee === true;
+  if (notifyAssignee && args.event.assigned_cleaner_id) {
+    recipients.add(args.event.assigned_cleaner_id);
+  }
+
+  if (recipients.size === 0 && notifyRaw === true) {
+    const managers = await resolveRecipients(service, args.organizationId, { roles: ["MANAGER", "QA"] });
+    for (const manager of managers) recipients.add(manager);
+  }
+
+  if (recipients.size === 0) return;
+
+  const title = typeof notifyObject.title === "string"
+    ? notifyObject.title
+    : `Exception created: ${args.exceptionType}`;
+  const body = typeof notifyObject.body === "string"
+    ? notifyObject.body
+    : `Event ${args.event.id} raised exception ${args.exceptionType}.`;
+
+  await createNotifications(service, {
+    organizationId: args.organizationId,
+    recipientUserIds: [...recipients],
+    type: "EXCEPTION",
+    title,
+    body,
+    eventId: args.event.id,
+    exceptionId: args.exceptionId,
+  });
+}
+
 async function executeAction(
   service: any,
   args: {
@@ -271,31 +424,78 @@ async function executeAction(
     const severity = typeof args.action.severity === "string" ? args.action.severity : "MEDIUM";
     const notes = typeof args.action.notes === "string" ? args.action.notes : null;
 
-    await ensureException(service, {
+    const exceptionId = await ensureException(service, {
       organizationId: args.organizationId,
       eventId: args.event.id,
       type: exceptionType,
       severity,
       notes,
     });
+
+    await handleExceptionNotifications(service, {
+      action: args.action,
+      organizationId: args.organizationId,
+      event: args.event,
+      exceptionId,
+      exceptionType,
+    });
+
     return;
   }
 
   if (actionType === "notify") {
-    console.log("run-automations-v1 notify", {
-      organization_id: args.organizationId,
-      event_id: args.event?.id || null,
-      run_id: args.runId,
-      role: args.action.role,
+    const recipients = new Set<string>();
+
+    const directRecipients = await resolveRecipients(service, args.organizationId, {
       user_id: args.action.user_id,
-      message: args.action.message,
-      actor_user_id: args.actorUserId,
+      recipient_user_id: args.action.recipient_user_id,
+      role: args.action.role,
+      roles: args.action.roles,
     });
+    for (const recipient of directRecipients) recipients.add(recipient);
+
+    if (args.action.assignee === true && args.event?.assigned_cleaner_id) {
+      recipients.add(args.event.assigned_cleaner_id);
+    }
+
+    if (recipients.size === 0) {
+      console.log("run-automations-v1 notify skipped (no recipients)", {
+        organization_id: args.organizationId,
+        event_id: args.event?.id || null,
+        run_id: args.runId,
+        action: args.action,
+      });
+      return;
+    }
+
+    const notificationType = parseNotificationType(args.action.notification_type, "AUTOMATION");
+
+    const title = typeof args.action.title === "string"
+      ? args.action.title
+      : `Automation trigger: ${args.triggerType}`;
+    const body = typeof args.action.body === "string"
+      ? args.action.body
+      : typeof args.action.message === "string"
+        ? args.action.message
+        : args.runId
+          ? `Event ${args.event?.id || "n/a"}, run ${args.runId}`
+          : `Event ${args.event?.id || "n/a"}`;
+
+    await createNotifications(service, {
+      organizationId: args.organizationId,
+      recipientUserIds: [...recipients],
+      type: notificationType,
+      title,
+      body,
+      eventId: args.event?.id || null,
+    });
+
     return;
   }
 
   if (actionType === "set_event_priority") {
     if (!args.event) return;
+
     const severity = typeof args.action.severity === "string" ? args.action.severity : "MEDIUM";
     const priority = args.action.priority;
 
@@ -306,6 +506,7 @@ async function executeAction(
       severity,
       notes: `set_event_priority requested (${String(priority || "n/a")})`,
     });
+
     return;
   }
 }
