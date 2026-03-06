@@ -38,7 +38,7 @@ const CLOCK_OUT_TAB_ID = "__clock_out__";
 const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_props, _ref) {
   const { eventId } = useParams();
   const navigate = useNavigate();
-  const { user, hostId, role } = useAuth();
+  const { user, role } = useAuth();
   const { toast } = useToast();
   const [templateId, setTemplateId] = useState<string>("");
 

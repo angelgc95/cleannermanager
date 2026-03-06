@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useQuery } from "@tanstack/react-query";
 import type { CleaningEvent, PricingSuggestion } from "@/types/domain";
+import { useEffectiveStatuses } from "@/hooks/useEffectiveStatus";
 
 const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _ref) {
   const [currentMonth, setCurrentMonth] = useState(new Date());

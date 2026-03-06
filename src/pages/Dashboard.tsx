@@ -213,7 +213,7 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
                         {details(ev).guests != null ? ` · ${details(ev).guests} guests` : ""}
                       </p>
                     </div>
-                    <StatusBadge status={ev.status} />
+                    <StatusBadge status={deriveEffectiveStatus(ev.status, null)} />
                   </div>
                 ))}
               </div>
