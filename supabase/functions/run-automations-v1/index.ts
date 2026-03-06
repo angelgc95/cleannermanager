@@ -129,11 +129,42 @@ async function createNotifications(
     body?: string | null;
     eventId?: string | null;
     exceptionId?: string | null;
+    noOverwhelmExceptionWindowMinutes?: number;
   },
 ) {
   if (args.recipientUserIds.length === 0) return;
 
-  const rows = args.recipientUserIds.map((recipientUserId) => ({
+  let recipientUserIds = unique(args.recipientUserIds);
+
+  if (
+    args.exceptionId
+    && typeof args.noOverwhelmExceptionWindowMinutes === "number"
+    && args.noOverwhelmExceptionWindowMinutes > 0
+  ) {
+    const cutoff = new Date(Date.now() - args.noOverwhelmExceptionWindowMinutes * 60 * 1000).toISOString();
+    const filteredRecipients: string[] = [];
+
+    for (const recipientUserId of recipientUserIds) {
+      const { count } = await service
+        .from("v1_notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", args.organizationId)
+        .eq("recipient_user_id", recipientUserId)
+        .eq("exception_id", args.exceptionId)
+        .is("read_at", null)
+        .gte("created_at", cutoff);
+
+      if ((count || 0) === 0) {
+        filteredRecipients.push(recipientUserId);
+      }
+    }
+
+    recipientUserIds = filteredRecipients;
+  }
+
+  if (recipientUserIds.length === 0) return;
+
+  const rows = recipientUserIds.map((recipientUserId) => ({
     organization_id: args.organizationId,
     recipient_user_id: recipientUserId,
     event_id: args.eventId || null,
@@ -469,6 +500,8 @@ async function executeAction(
     }
 
     const notificationType = parseNotificationType(args.action.notification_type, "AUTOMATION");
+    const exceptionId = typeof args.action.exception_id === "string" ? args.action.exception_id : null;
+    const eventIdFromAction = typeof args.action.event_id === "string" ? args.action.event_id : null;
 
     const title = typeof args.action.title === "string"
       ? args.action.title
@@ -487,7 +520,9 @@ async function executeAction(
       type: notificationType,
       title,
       body,
-      eventId: args.event?.id || null,
+      eventId: args.event?.id || eventIdFromAction,
+      exceptionId,
+      noOverwhelmExceptionWindowMinutes: exceptionId ? 30 : undefined,
     });
 
     return;
