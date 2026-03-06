@@ -171,6 +171,58 @@ async function ensureQaReviewException(service: any, organizationId: string, eve
   return { id: data.id as string, created: true };
 }
 
+async function enforceRateLimit(
+  service: any,
+  args: { organizationId: string; userId: string; action: string; limit: number; windowMinutes: number },
+) {
+  const now = new Date();
+  const windowMs = args.windowMinutes * 60 * 1000;
+  const windowStart = new Date(Math.floor(now.getTime() / windowMs) * windowMs).toISOString();
+
+  const { data: existing, error: existingError } = await service
+    .from("v1_rate_limits")
+    .select("count")
+    .eq("organization_id", args.organizationId)
+    .eq("user_id", args.userId)
+    .eq("action", args.action)
+    .eq("window_start", windowStart)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+
+  const currentCount = Number(existing?.count || 0);
+  if (currentCount >= args.limit) {
+    return false;
+  }
+
+  if (existing) {
+    const { error } = await service
+      .from("v1_rate_limits")
+      .update({ count: currentCount + 1, updated_at: now.toISOString() })
+      .eq("organization_id", args.organizationId)
+      .eq("user_id", args.userId)
+      .eq("action", args.action)
+      .eq("window_start", windowStart);
+
+    if (error) throw error;
+  } else {
+    const { error } = await service
+      .from("v1_rate_limits")
+      .insert({
+        organization_id: args.organizationId,
+        user_id: args.userId,
+        action: args.action,
+        window_start: windowStart,
+        count: 1,
+        updated_at: now.toISOString(),
+      });
+
+    if (error) throw error;
+  }
+
+  return true;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -228,6 +280,18 @@ Deno.serve(async (req) => {
 
     if (!assignedCleaner && !managerLike) {
       return json(403, { error: "Only assigned cleaner or manager/qa can submit" });
+    }
+
+    const allowedByRateLimit = await enforceRateLimit(service, {
+      organizationId: eventRow.organization_id,
+      userId,
+      action: "checklist-submit-v1",
+      limit: 12,
+      windowMinutes: 5,
+    });
+
+    if (!allowedByRateLimit) {
+      return json(429, { error: "Too many checklist submissions. Try again shortly." });
     }
 
     if (eventRow.status === "CANCELLED") {
