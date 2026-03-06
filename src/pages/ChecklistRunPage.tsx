@@ -579,7 +579,7 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
           created_from: "CHECKLIST" as const,
           checklist_run_id: runId,
           listing_id: event?.listing_id || null,
-          host_user_id: hostId,
+          host_user_id: event?.host_user_id,
         } as any);
       }
     }
