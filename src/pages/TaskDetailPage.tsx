@@ -254,13 +254,12 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
   const hasTemplate = !!event.checklist_template_id || templateName !== null;
 
   // Derive effectiveStatus from latest checklist run
-  const effectiveStatus = latestRunForStatus
-    ? latestRunForStatus.finished_at
-      ? "COMPLETED"
-      : "IN_PROGRESS"
-    : "TODO";
+   const effectiveStatus = deriveEffectiveStatus(
+     event.status,
+     latestRunForStatus,
+   );
 
-  const statusMismatch = event.status === "IN_PROGRESS" && effectiveStatus === "COMPLETED";
+   const statusMismatch = event.status === "IN_PROGRESS" && effectiveStatus === "COMPLETED";
 
   return (
     <div ref={ref}>
