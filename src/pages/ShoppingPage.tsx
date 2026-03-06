@@ -1,4 +1,4 @@
-import { useEffect, useState, forwardRef } from "react";
+import { useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,6 +17,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Plus, Trash2, Send, ShoppingCart, Package, Edit2, X, Check, Search, ChevronDown, ChevronRight } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 /* ─── types ─── */
 interface Product { id: string; name: string; category: string | null; }
@@ -36,33 +37,36 @@ interface SelectedProduct { productId: string; quantity: number; note: string; }
 const ShoppingPage = forwardRef<HTMLDivElement>(function ShoppingPage(_props, _ref) {
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const isAdmin = role === "host";
 
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [items, setItems] = useState<ShoppingItem[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ["shopping-data"],
+    queryFn: async () => {
+      const [{ data: subsData }, { data: itemsData }, { data: productsData }] = await Promise.all([
+        supabase.from("shopping_submissions").select("*").order("created_at", { ascending: true }),
+        supabase.from("shopping_list").select("*, products(name, category)").order("created_at", { ascending: true }),
+        supabase.from("products").select("*").eq("active", true).order("name"),
+      ]);
+      return {
+        submissions: (subsData as Submission[]) || [],
+        items: (itemsData as ShoppingItem[]) || [],
+        products: (productsData as Product[]) || [],
+      };
+    },
+  });
 
-  const fetchAll = async () => {
-    setLoading(true);
-    const [{ data: subsData }, { data: itemsData }, { data: productsData }] = await Promise.all([
-      supabase.from("shopping_submissions").select("*").order("created_at", { ascending: true }),
-      supabase.from("shopping_list").select("*, products(name, category)").order("created_at", { ascending: true }),
-      supabase.from("products").select("*").eq("active", true).order("name"),
-    ]);
-    setSubmissions((subsData as Submission[]) || []);
-    setItems((itemsData as ShoppingItem[]) || []);
-    setProducts((productsData as Product[]) || []);
-    setLoading(false);
-  };
+  const submissions = data?.submissions || [];
+  const items = data?.items || [];
+  const products = data?.products || [];
 
-  useEffect(() => { fetchAll(); }, []);
+  const onRefresh = () => queryClient.invalidateQueries({ queryKey: ["shopping-data"] });
 
   if (loading) return <div className="p-6 text-muted-foreground">Loading...</div>;
 
   return isAdmin
-    ? <AdminShoppingView submissions={submissions} items={items} products={products} user={user} hostId={hostId} toast={toast} onRefresh={fetchAll} />
-    : <CleanerShoppingView submissions={submissions} items={items} products={products} user={user} hostId={hostId} toast={toast} onRefresh={fetchAll} />;
+    ? <AdminShoppingView submissions={submissions} items={items} products={products} user={user} hostId={hostId} toast={toast} onRefresh={onRefresh} />
+    : <CleanerShoppingView submissions={submissions} items={items} products={products} user={user} hostId={hostId} toast={toast} onRefresh={onRefresh} />;
 });
 export default ShoppingPage;
 
