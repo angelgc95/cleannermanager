@@ -19,6 +19,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CleaningEvent, TaskItem } from "@/types/domain";
+import { deriveEffectiveStatus } from "@/lib/domain/effectiveStatus";
 
 interface StatCardProps {
   title: string;
