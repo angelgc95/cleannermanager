@@ -157,18 +157,19 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
     setAssigningListing(true);
     setSaved(false);
     try {
-      for (const [listingId, templateId] of Object.entries(pendingAssignments)) {
-        await supabase
-          .from("listings")
-          .update({ default_checklist_template_id: templateId } as any)
-          .eq("id", listingId);
-        // Propagate to active cleaning events (TODO/IN_PROGRESS) so cleaners see the updated template
-        await supabase
-          .from("cleaning_events")
-          .update({ checklist_template_id: templateId } as any)
-          .eq("listing_id", listingId)
-          .in("status", ["TODO", "IN_PROGRESS"]);
-      }
+      await Promise.all(
+        Object.entries(pendingAssignments).map(async ([listingId, templateId]) => {
+          await supabase
+            .from("listings")
+            .update({ default_checklist_template_id: templateId } as any)
+            .eq("id", listingId);
+          await supabase
+            .from("cleaning_events")
+            .update({ checklist_template_id: templateId } as any)
+            .eq("listing_id", listingId)
+            .in("status", ["TODO", "IN_PROGRESS"]);
+        })
+      );
       await fetchListings();
       setPendingAssignments({});
       setSaved(true);
