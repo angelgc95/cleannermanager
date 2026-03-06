@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
 import { db } from "@/v1/lib/db";
+import { supabase } from "@/integrations/supabase/client";
 
 type EventRow = {
   id: string;
@@ -205,25 +206,40 @@ export default function ChecklistWizardPage() {
   };
 
   const finishRun = async () => {
-    if (!runRow || !eventRow) return;
+    if (!eventRow) return;
     if (!canFinish) {
       setMessage("Checklist is incomplete. Complete required answers, required photos, and fail comments.");
       return;
     }
 
-    await saveResponses();
+    setLoading(true);
 
-    const nextStatus = qaReviewNeeded ? "QA_REVIEW" : "COMPLETED";
-    await db.from("v1_checklist_runs").update({
-      status: nextStatus,
-      finished_at: new Date().toISOString(),
-    }).eq("id", runRow.id);
+    const payload = items.map((item) => {
+      const response = responses[item.id] || { passed: null, comment: "" };
+      return {
+        item_id: item.id,
+        passed: response.passed,
+        comment: response.comment || null,
+        photos: photosByItem[item.id] || [],
+      };
+    });
 
-    await db.from("v1_events").update({
-      status: nextStatus === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS",
-    }).eq("id", eventRow.id);
+    const { data, error } = await supabase.functions.invoke("checklist-submit-v1", {
+      body: {
+        event_id: eventRow.id,
+        responses: payload,
+      },
+    });
 
-    setMessage(nextStatus === "COMPLETED" ? "Checklist completed." : "Checklist submitted for QA review.");
+    setLoading(false);
+
+    if (error || data?.error) {
+      setMessage(error?.message || data?.error || "Checklist submit failed.");
+      return;
+    }
+
+    const runStatus = data?.run_status as string | undefined;
+    setMessage(runStatus === "COMPLETED" ? "Checklist completed." : "Checklist submitted for QA review.");
     await load();
   };
 

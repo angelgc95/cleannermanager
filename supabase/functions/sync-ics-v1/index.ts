@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-service-key",
 };
 
 type ParsedEvent = {
@@ -73,42 +73,113 @@ async function canManageOrg(service: any, userId: string, organizationId: string
   return ["OWNER", "ORG_ADMIN", "MANAGER"].includes(member?.role || "");
 }
 
+async function invokeAutomations(
+  supabaseUrl: string,
+  serviceKey: string,
+  payload: Record<string, unknown>,
+) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/run-automations-v1`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceKey}`,
+        "x-internal-service-key": serviceKey,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.warn("sync-ics-v1 automation invoke failed", response.status, text);
+    }
+  } catch (error) {
+    console.warn("sync-ics-v1 automation invoke error", error);
+  }
+}
+
+async function ensureCancellationDriftException(
+  service: any,
+  organizationId: string,
+  eventId: string,
+) {
+  const { data: existing } = await service
+    .from("v1_event_exceptions")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("event_id", eventId)
+    .eq("type", "CANCELLATION_DRIFT")
+    .in("status", ["OPEN", "ACKNOWLEDGED"])
+    .maybeSingle();
+
+  if (existing?.id) return;
+
+  await service
+    .from("v1_event_exceptions")
+    .insert({
+      organization_id: organizationId,
+      event_id: eventId,
+      type: "CANCELLATION_DRIFT",
+      severity: "HIGH",
+      status: "OPEN",
+      notes: "Booking disappeared from iCal after grace window; event cancelled from drift detection.",
+    });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
     const service = createClient(supabaseUrl, serviceKey);
 
-    const { data: userData, error: userError } = await userClient.auth.getUser();
-    if (userError || !userData?.user) {
-      return new Response(JSON.stringify({ error: "Invalid token" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const bearer = req.headers.get("Authorization")?.replace("Bearer ", "").trim() || "";
+    const internalHeader = req.headers.get("x-internal-service-key") || "";
+    const internalCall = bearer === serviceKey || internalHeader === serviceKey;
+
+    let requesterId: string | null = null;
+
+    if (!internalCall) {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
       });
+
+      const { data: userData, error: userError } = await userClient.auth.getUser();
+      if (userError || !userData?.user) {
+        return new Response(JSON.stringify({ error: "Invalid token" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      requesterId = userData.user.id;
     }
 
     const body = await req.json().catch(() => ({}));
     const organizationId = (body.organization_id as string | undefined) || null;
     const listingId = (body.listing_id as string | undefined) || null;
-    const graceHours = Number(body.grace_hours ?? 48);
+    const graceHours = Math.max(1, Number(body.grace_hours ?? 48));
 
-    if (organizationId) {
-      const ok = await canManageOrg(service, userData.user.id, organizationId);
+    if (!internalCall && !organizationId) {
+      return new Response(JSON.stringify({ error: "organization_id is required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!internalCall && organizationId && requesterId) {
+      const ok = await canManageOrg(service, requesterId, organizationId);
       if (!ok) {
         return new Response(JSON.stringify({ error: "Forbidden" }), {
           status: 403,
@@ -131,6 +202,8 @@ Deno.serve(async (req) => {
 
     let bookingsUpserted = 0;
     let eventsUpserted = 0;
+    let bookingsCancelled = 0;
+    let driftExceptions = 0;
 
     for (const listing of rows) {
       if (!listing.ical_url) continue;
@@ -146,15 +219,15 @@ Deno.serve(async (req) => {
       const parsedEvents = parseIcs(feed);
       const seenUids = new Set<string>();
 
-      for (const event of parsedEvents) {
-        seenUids.add(event.uid);
+      for (const parsed of parsedEvents) {
+        seenUids.add(parsed.uid);
         const bookingPayload = {
           organization_id: listing.organization_id,
           listing_id: listing.id,
-          ical_uid: event.uid,
-          start_at: event.startAt || new Date().toISOString(),
-          end_at: event.endAt || event.startAt || new Date().toISOString(),
-          status: event.status,
+          ical_uid: parsed.uid,
+          start_at: parsed.startAt || new Date().toISOString(),
+          end_at: parsed.endAt || parsed.startAt || new Date().toISOString(),
+          status: parsed.status,
           last_seen_at: new Date().toISOString(),
         };
 
@@ -167,35 +240,70 @@ Deno.serve(async (req) => {
         if (bookingError || !booking) continue;
         bookingsUpserted += 1;
 
-        if (event.status === "CANCELLED") {
-          await service
+        if (parsed.status === "CANCELLED") {
+          const { data: cancelledEvents } = await service
             .from("v1_events")
-            .update({ status: "CANCELLED" })
+            .update({ status: "CANCELLED", start_at: bookingPayload.start_at, end_at: bookingPayload.end_at })
             .eq("booking_id", booking.id)
-            .neq("status", "COMPLETED");
+            .neq("status", "COMPLETED")
+            .select("id");
+
+          bookingsCancelled += 1;
+
+          for (const event of cancelledEvents || []) {
+            await invokeAutomations(supabaseUrl, serviceKey, {
+              organization_id: listing.organization_id,
+              trigger_type: "BOOKING_CANCELLED",
+              event_id: event.id,
+            });
+          }
+
           continue;
         }
 
         const { data: existingEvent } = await service
           .from("v1_events")
-          .select("id")
+          .select("id, status")
           .eq("booking_id", booking.id)
           .maybeSingle();
 
-        const eventPayload = {
+        const baseEventPayload = {
           organization_id: listing.organization_id,
           listing_id: listing.id,
           booking_id: booking.id,
           start_at: bookingPayload.start_at,
           end_at: bookingPayload.end_at,
-          status: "TODO",
         };
 
         if (existingEvent) {
-          await service.from("v1_events").update(eventPayload).eq("id", existingEvent.id);
+          const updatePayload: Record<string, unknown> = { ...baseEventPayload };
+          if (existingEvent.status === "CANCELLED") {
+            updatePayload.status = "TODO";
+          }
+
+          await service
+            .from("v1_events")
+            .update(updatePayload)
+            .eq("id", existingEvent.id);
         } else {
-          await service.from("v1_events").insert(eventPayload);
+          const { data: insertedEvent } = await service
+            .from("v1_events")
+            .insert({
+              ...baseEventPayload,
+              status: "TODO",
+            })
+            .select("id")
+            .single();
+
+          if (insertedEvent?.id) {
+            await invokeAutomations(supabaseUrl, serviceKey, {
+              organization_id: listing.organization_id,
+              trigger_type: "EVENT_CREATED",
+              event_id: insertedEvent.id,
+            });
+          }
         }
+
         eventsUpserted += 1;
       }
 
@@ -210,15 +318,31 @@ Deno.serve(async (req) => {
 
       for (const stale of staleBookings || []) {
         if (seenUids.has(stale.ical_uid)) continue;
+
         await service
           .from("v1_bookings")
           .update({ status: "CANCELLED" })
           .eq("id", stale.id);
-        await service
+
+        const { data: cancelledEvents } = await service
           .from("v1_events")
           .update({ status: "CANCELLED" })
           .eq("booking_id", stale.id)
-          .neq("status", "COMPLETED");
+          .neq("status", "COMPLETED")
+          .select("id");
+
+        bookingsCancelled += 1;
+
+        for (const event of cancelledEvents || []) {
+          await ensureCancellationDriftException(service, listing.organization_id, event.id);
+          driftExceptions += 1;
+
+          await invokeAutomations(supabaseUrl, serviceKey, {
+            organization_id: listing.organization_id,
+            trigger_type: "BOOKING_CANCELLED",
+            event_id: event.id,
+          });
+        }
       }
     }
 
@@ -227,6 +351,8 @@ Deno.serve(async (req) => {
         listings_processed: rows.length,
         bookings_upserted: bookingsUpserted,
         events_upserted: eventsUpserted,
+        bookings_cancelled: bookingsCancelled,
+        cancellation_drift_exceptions: driftExceptions,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

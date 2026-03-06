@@ -11,9 +11,12 @@ const navItems = [
   { to: "/console/listings", label: "Listings" },
   { to: "/console/people", label: "People & Roles" },
   { to: "/console/assignments", label: "Assignments" },
-  { to: "/console/operations", label: "Operations" },
+  { to: "/console/operations", label: "Operations Calendar" },
+  { to: "/console/inbox", label: "Ops Inbox" },
+  { to: "/console/qa", label: "QA Review" },
   { to: "/console/templates", label: "Templates" },
   { to: "/console/automations", label: "Automations" },
+  { to: "/console/reports", label: "Reports" },
 ];
 
 export default function ConsoleLayout() {

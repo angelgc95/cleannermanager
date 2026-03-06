@@ -19,6 +19,9 @@ import OperationsCalendarPage from "@/v1/console/OperationsCalendarPage";
 import ConsoleEventDetailPage from "@/v1/console/ConsoleEventDetailPage";
 import TemplatesPage from "@/v1/console/TemplatesPage";
 import AutomationsPage from "@/v1/console/AutomationsPage";
+import OperationsInboxPage from "@/v1/console/OperationsInboxPage";
+import QAReviewPage from "@/v1/console/QAReviewPage";
+import ReportsPage from "@/v1/console/ReportsPage";
 
 import TodayPage from "@/v1/field/TodayPage";
 import FieldCalendarPage from "@/v1/field/FieldCalendarPage";
@@ -97,9 +100,12 @@ const App = () => {
                     <Route path="people" element={<PeopleRolesPage />} />
                     <Route path="assignments" element={<AssignmentsPage />} />
                     <Route path="operations" element={<OperationsCalendarPage />} />
+                    <Route path="inbox" element={<OperationsInboxPage />} />
+                    <Route path="qa" element={<QAReviewPage />} />
                     <Route path="events/:eventId" element={<ConsoleEventDetailPage />} />
                     <Route path="templates" element={<TemplatesPage />} />
                     <Route path="automations" element={<AutomationsPage />} />
+                    <Route path="reports" element={<ReportsPage />} />
                   </Route>
                 </Route>
 
