@@ -1,36 +1,47 @@
-/**
- * Derives the effective status for a cleaning event based on
- * its latest checklist run state. This is the SINGLE SOURCE OF TRUTH
- * for event status across the entire application.
- *
- * Rules:
- *   - If event.status === "CANCELLED" → "CANCELLED"
- *   - If a run exists with finished_at not null → "COMPLETED"
- *   - If a run exists with finished_at null → "IN_PROGRESS"
- *   - Otherwise → "TODO"
- */
 export type EffectiveStatus = "TODO" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 
+export interface ComputeEffectiveStatusInput {
+  eventStatus: string | null | undefined;
+  latestRunFinishedAt: string | null | undefined;
+  isCancelled: boolean;
+}
+
+export function computeEffectiveStatus({
+  eventStatus,
+  latestRunFinishedAt,
+  isCancelled,
+}: ComputeEffectiveStatusInput): EffectiveStatus {
+  if (isCancelled || eventStatus === "CANCELLED") return "CANCELLED";
+  if (latestRunFinishedAt) return "COMPLETED";
+  if (eventStatus === "DONE") return "COMPLETED";
+  if (eventStatus === "IN_PROGRESS") return "IN_PROGRESS";
+  return "TODO";
+}
+
+export function computeStoredStatus(eventStatus: string | null | undefined): EffectiveStatus {
+  return computeEffectiveStatus({
+    eventStatus,
+    latestRunFinishedAt: null,
+    isCancelled: eventStatus === "CANCELLED",
+  });
+}
+
+// Backward-compatible wrappers used by existing code paths.
 export interface LatestRunInfo {
   finished_at: string | null;
 }
 
-/**
- * Derive effective status from the DB event status and latest run.
- * Use this everywhere instead of raw event.status.
- */
 export function deriveEffectiveStatus(
   eventStatus: string,
   latestRun: LatestRunInfo | null | undefined,
 ): EffectiveStatus {
-  if (eventStatus === "CANCELLED") return "CANCELLED";
-  if (!latestRun) return "TODO";
-  return latestRun.finished_at ? "COMPLETED" : "IN_PROGRESS";
+  return computeEffectiveStatus({
+    eventStatus,
+    latestRunFinishedAt: latestRun?.finished_at ?? null,
+    isCancelled: eventStatus === "CANCELLED",
+  });
 }
 
-/**
- * Batch version: given a map of eventId → latestRun, derive statuses.
- */
 export function deriveEffectiveStatuses(
   events: { id: string; status: string }[],
   latestRuns: Map<string, LatestRunInfo>,
