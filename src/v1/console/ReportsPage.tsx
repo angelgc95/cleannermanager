@@ -42,6 +42,19 @@ type HoursRow = {
 type ExceptionRow = {
   event_id: string;
 };
+type StatsRow = {
+  unit_id: string;
+  week_start: string;
+  metrics: {
+    turnoversCompleted?: number;
+    onTimePercent?: number;
+    qaRejectRate?: number;
+    avgMinutesPerTurnover?: number;
+    exceptionsPer100Events?: number;
+    eventCount?: number;
+  };
+  computed_at: string;
+};
 
 function startOfCurrentWeekIso() {
   const now = new Date();
@@ -95,16 +108,18 @@ export default function ReportsPage() {
   const [qaRows, setQaRows] = useState<QaRow[]>([]);
   const [hoursRows, setHoursRows] = useState<HoursRow[]>([]);
   const [exceptionRows, setExceptionRows] = useState<ExceptionRow[]>([]);
+  const [statsRows, setStatsRows] = useState<StatsRow[]>([]);
 
   const [selectedUnitId, setSelectedUnitId] = useState<string>("ALL");
 
   const weekStart = startOfCurrentWeekIso();
   const weekEnd = endOfCurrentWeekIso();
+  const weekStartDate = weekStart.slice(0, 10);
 
   const load = async () => {
     if (!organizationId) return;
 
-    const [{ data: unitData }, { data: listingData }, { data: eventData }, { data: hoursData }, { data: exceptionData }] = await Promise.all([
+    const [{ data: unitData }, { data: listingData }, { data: eventData }, { data: hoursData }, { data: exceptionData }, { data: statsData }] = await Promise.all([
       db
         .from("v1_org_units")
         .select("id, name, type, parent_id")
@@ -132,6 +147,11 @@ export default function ReportsPage() {
         .eq("organization_id", organizationId)
         .gte("created_at", weekStart)
         .lt("created_at", weekEnd),
+      db
+        .from("v1_unit_weekly_stats")
+        .select("unit_id, week_start, metrics, computed_at")
+        .eq("organization_id", organizationId)
+        .eq("week_start", weekStartDate),
     ]);
 
     const nextUnits = (unitData || []) as UnitRow[];
@@ -143,6 +163,7 @@ export default function ReportsPage() {
     setEvents(nextEvents);
     setHoursRows((hoursData || []) as HoursRow[]);
     setExceptionRows((exceptionData || []) as ExceptionRow[]);
+    setStatsRows((statsData || []) as StatsRow[]);
 
     const rootUnit = nextUnits.find((unit) => unit.type === "ORG_ROOT");
     if (selectedUnitId === "ALL" && rootUnit) {
@@ -219,7 +240,7 @@ export default function ReportsPage() {
     return map;
   }, [qaRows]);
 
-  const metrics = useMemo(() => {
+  const liveMetrics = useMemo(() => {
     const completed = eventsInScope.filter((event) => event.status === "COMPLETED");
 
     const onTimeGraceMinutes = 15;
@@ -265,6 +286,22 @@ export default function ReportsPage() {
       eventCount,
     };
   }, [eventIdsInScope, eventsInScope, exceptionRows, hoursRows, qaByRunId, runByEventId, runs]);
+
+  const metrics = useMemo(() => {
+    const stored = statsRows.find((row) => row.unit_id === selectedUnitId);
+    if (!stored?.metrics) {
+      return liveMetrics;
+    }
+
+    return {
+      turnoversCompleted: Number(stored.metrics.turnoversCompleted || 0),
+      onTimePercent: Number(stored.metrics.onTimePercent || 0),
+      qaRejectRate: Number(stored.metrics.qaRejectRate || 0),
+      avgMinutesPerTurnover: Number(stored.metrics.avgMinutesPerTurnover || 0),
+      exceptionsPer100Events: Number(stored.metrics.exceptionsPer100Events || 0),
+      eventCount: Number(stored.metrics.eventCount || 0),
+    };
+  }, [liveMetrics, selectedUnitId, statsRows]);
 
   return (
     <div className="space-y-4">

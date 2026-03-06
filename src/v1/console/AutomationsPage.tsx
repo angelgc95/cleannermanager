@@ -3,9 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
 import { db } from "@/v1/lib/db";
 
@@ -17,6 +20,8 @@ type TriggerType =
   | "CHECKLIST_FAILED"
   | "SUPPLIES_LOW"
   | "BOOKING_CANCELLED";
+
+type BulkMode = "CLONE" | "SCOPE_EXISTING";
 
 type Rule = {
   id: string;
@@ -41,6 +46,31 @@ type RuleRun = {
 
 type Unit = { id: string; name: string; type: string };
 
+type RuleDraft = {
+  name: string;
+  trigger_type: TriggerType;
+  scope_unit_id: string | null;
+  enabled: boolean;
+  conditionsText: string;
+  actionsText: string;
+};
+
+type BulkResult = {
+  dry_run: boolean;
+  batch_id: string | null;
+  summary: {
+    rules_total: number;
+    rules_updated: number;
+    rules_skipped: number;
+  };
+  preview: Array<{
+    source_rule_id: string;
+    source_rule_name: string;
+    action: "ASSIGNED" | "SKIPPED";
+    notes: string;
+  }>;
+};
+
 const triggers: TriggerType[] = [
   "EVENT_CREATED",
   "EVENT_STARTING_SOON",
@@ -50,15 +80,6 @@ const triggers: TriggerType[] = [
   "SUPPLIES_LOW",
   "BOOKING_CANCELLED",
 ];
-
-type RuleDraft = {
-  name: string;
-  trigger_type: TriggerType;
-  scope_unit_id: string | null;
-  enabled: boolean;
-  conditionsText: string;
-  actionsText: string;
-};
 
 function formatJson(value: unknown) {
   return JSON.stringify(value ?? {}, null, 2);
@@ -78,6 +99,13 @@ export default function AutomationsPage() {
   const [scopeUnitId, setScopeUnitId] = useState<string | null>(null);
   const [conditionsText, setConditionsText] = useState('{\n  "checklist": {\n    "has_fail": true\n  }\n}');
   const [actionsText, setActionsText] = useState('[\n  {\n    "type": "create_exception",\n    "exception_type": "CHECKLIST_FAILED",\n    "severity": "HIGH"\n  }\n]');
+
+  const [bulkMode, setBulkMode] = useState<BulkMode>("CLONE");
+  const [bulkTargetUnitId, setBulkTargetUnitId] = useState<string | null>(null);
+  const [bulkDryRun, setBulkDryRun] = useState(true);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkResult, setBulkResult] = useState<BulkResult | null>(null);
+  const [selectedRuleIds, setSelectedRuleIds] = useState<string[]>([]);
 
   const unitLabelMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -113,6 +141,7 @@ export default function AutomationsPage() {
     setRules(nextRules);
     setRuleRuns((runRows || []) as RuleRun[]);
     setUnits((unitRows || []) as Unit[]);
+    setSelectedRuleIds((current) => current.filter((ruleId) => nextRules.some((rule) => rule.id === ruleId)));
 
     const nextDrafts: Record<string, RuleDraft> = {};
     for (const rule of nextRules) {
@@ -131,6 +160,15 @@ export default function AutomationsPage() {
   useEffect(() => {
     load();
   }, [organizationId]);
+
+  const toggleSelectedRule = (ruleId: string, checked: boolean) => {
+    setSelectedRuleIds((current) => {
+      if (checked) {
+        return current.includes(ruleId) ? current : [...current, ruleId];
+      }
+      return current.filter((value) => value !== ruleId);
+    });
+  };
 
   const createRule = async () => {
     if (!organizationId || !name.trim()) return;
@@ -222,6 +260,36 @@ export default function AutomationsPage() {
     await load();
   };
 
+  const runBulkAction = async () => {
+    if (!organizationId || !bulkTargetUnitId || selectedRuleIds.length === 0) return;
+
+    setBulkSubmitting(true);
+    setStatusMessage(null);
+
+    const { data, error } = await db.functions.invoke("bulk-apply-rules-v1", {
+      body: {
+        organization_id: organizationId,
+        source_rule_ids: selectedRuleIds,
+        target_unit_id: bulkTargetUnitId,
+        mode: bulkMode,
+        dry_run: bulkDryRun,
+      },
+    });
+
+    setBulkSubmitting(false);
+
+    if (error || data?.error) {
+      setStatusMessage(error?.message || data?.error || "Bulk rule action failed.");
+      return;
+    }
+
+    setBulkResult(data as BulkResult);
+    setStatusMessage(bulkDryRun ? "Bulk rule dry run complete." : "Bulk rule action completed.");
+    if (!bulkDryRun) {
+      await load();
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card>
@@ -281,6 +349,110 @@ export default function AutomationsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Bulk Manage Rules</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <Label>Mode</Label>
+              <Select value={bulkMode} onValueChange={(value) => setBulkMode(value as BulkMode)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CLONE">CLONE</SelectItem>
+                  <SelectItem value="SCOPE_EXISTING">SCOPE_EXISTING</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label>Target Unit</Label>
+              <Select value={bulkTargetUnitId || ""} onValueChange={setBulkTargetUnitId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select unit" />
+                </SelectTrigger>
+                <SelectContent>
+                  {units.map((unit) => (
+                    <SelectItem key={unit.id} value={unit.id}>{unit.name} ({unit.type})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <label className="flex items-center justify-between gap-3 rounded border border-border px-3 py-2 text-sm">
+            <span>Dry run</span>
+            <Checkbox checked={bulkDryRun} onCheckedChange={(value) => setBulkDryRun(value === true)} />
+          </label>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Rules</Label>
+              <Badge variant="secondary">{selectedRuleIds.length} selected</Badge>
+            </div>
+            <div className="max-h-56 space-y-2 overflow-auto rounded border border-border p-3">
+              {rules.length === 0 && <p className="text-sm text-muted-foreground">No rules available.</p>}
+              {rules.map((rule) => (
+                <label key={rule.id} className="flex items-center gap-3 text-sm">
+                  <Checkbox checked={selectedRuleIds.includes(rule.id)} onCheckedChange={(value) => toggleSelectedRule(rule.id, value === true)} />
+                  <span className="truncate">
+                    {rule.name} · {rule.scope_unit_id ? (unitLabelMap[rule.scope_unit_id] || rule.scope_unit_id) : "Organization-wide"}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <Button onClick={runBulkAction} disabled={!bulkTargetUnitId || selectedRuleIds.length === 0 || bulkSubmitting}>
+            {bulkSubmitting ? "Running..." : bulkDryRun ? "Run Dry Run" : "Apply Bulk Rule Action"}
+          </Button>
+
+          {bulkResult && (
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={bulkResult.dry_run ? "outline" : "default"}>
+                  {bulkResult.dry_run ? "Dry Run" : "Applied"}
+                </Badge>
+                {bulkResult.batch_id && <Badge variant="secondary">Batch Logged</Badge>}
+              </div>
+
+              <div className="grid gap-2 text-sm sm:grid-cols-3">
+                <div>Rules selected: <span className="font-medium">{bulkResult.summary.rules_total}</span></div>
+                <div>Rules changed: <span className="font-medium">{bulkResult.summary.rules_updated}</span></div>
+                <div>Rules skipped: <span className="font-medium">{bulkResult.summary.rules_skipped}</span></div>
+              </div>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Rule</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead>Notes</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {bulkResult.preview.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-muted-foreground">No rules affected.</TableCell>
+                    </TableRow>
+                  )}
+                  {bulkResult.preview.map((row) => (
+                    <TableRow key={`${row.source_rule_id}:${row.action}`}>
+                      <TableCell>{row.source_rule_name}</TableCell>
+                      <TableCell>{row.action}</TableCell>
+                      <TableCell className="text-muted-foreground">{row.notes}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Rules</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -291,6 +463,16 @@ export default function AutomationsPage() {
 
             return (
               <div key={rule.id} className="space-y-3 rounded border border-border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="flex items-center gap-3 text-sm">
+                    <Checkbox checked={selectedRuleIds.includes(rule.id)} onCheckedChange={(value) => toggleSelectedRule(rule.id, value === true)} />
+                    <span>Include in bulk</span>
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Scope: {draft.scope_unit_id ? (unitLabelMap[draft.scope_unit_id] || draft.scope_unit_id) : "Organization-wide"}
+                  </p>
+                </div>
+
                 <div className="grid gap-3 md:grid-cols-3">
                   <div className="space-y-1 md:col-span-2">
                     <Label>Name</Label>
@@ -389,10 +571,6 @@ export default function AutomationsPage() {
                   <Button variant="outline" onClick={() => saveRule(rule.id)}>Save</Button>
                   <Button variant="destructive" onClick={() => removeRule(rule.id)}>Delete</Button>
                 </div>
-
-                <p className="text-xs text-muted-foreground">
-                  Scope: {draft.scope_unit_id ? (unitLabelMap[draft.scope_unit_id] || draft.scope_unit_id) : "Organization-wide"}
-                </p>
               </div>
             );
           })}
