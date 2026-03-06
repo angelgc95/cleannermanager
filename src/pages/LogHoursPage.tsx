@@ -1,4 +1,4 @@
-import { useEffect, useState, forwardRef } from "react";
+import { useEffect, useMemo, useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,26 +8,48 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useOrg } from "@/context/OrgContext";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Plus, X, Clock, User, Pencil, Trash2 } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 
 const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _ref) {
-  const { user, hostId, role } = useAuth();
+  const { user, hostId, hostIds, role } = useAuth();
+  const { organizations, organizationId, setOrganizationId } = useOrg();
   const { toast } = useToast();
   const [entries, setEntries] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ date: format(new Date(), "yyyy-MM-dd"), start_at: "09:00", end_at: "10:00", description: "", assignedCleaner: "" });
+  const [form, setForm] = useState({
+    date: format(new Date(), "yyyy-MM-dd"),
+    start_at: "09:00",
+    end_at: "10:00",
+    description: "",
+    assignedCleaner: "",
+    listingId: "",
+  });
   const [cleaners, setCleaners] = useState<{ user_id: string; name: string }[]>([]);
+  const [listings, setListings] = useState<{ id: string; name: string; host_user_id: string }[]>([]);
 
   const isHost = role === "host";
+  const isCleaner = role === "cleaner";
+  const requiresOrganizationSelection = isCleaner && organizations.length > 1 && !organizationId;
+  const resolvedOrganizationId = organizationId || hostId || (isHost ? user?.id ?? null : null);
 
   const fetchEntries = async () => {
     if (!user) return;
+
     let query = supabase.from("log_hours").select("*, payout_id").order("date", { ascending: false }).limit(50);
-    if (!isHost) query = query.eq("user_id", user.id);
+    if (isHost) {
+      query = query.eq("host_user_id", user.id);
+    } else {
+      if (hostIds.length === 0) {
+        setEntries([]);
+        return;
+      }
+      query = query.eq("user_id", user.id).in("host_user_id", hostIds);
+    }
     const { data } = await query;
 
     if (data && data.length > 0) {
@@ -52,7 +74,37 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
     }
   };
 
-  useEffect(() => { fetchEntries(); }, [user, role]);
+  useEffect(() => { fetchEntries(); }, [user, role, hostIds.join(",")]);
+
+  useEffect(() => {
+    if (!user) return;
+    const loadListings = async () => {
+      let query = supabase
+        .from("listings")
+        .select("id, name, host_user_id")
+        .order("name", { ascending: true });
+
+      if (isHost) {
+        query = query.eq("host_user_id", user.id);
+      } else {
+        if (hostIds.length === 0) {
+          setListings([]);
+          return;
+        }
+        query = query.in("host_user_id", hostIds);
+      }
+
+      const { data } = await query;
+      setListings((data as { id: string; name: string; host_user_id: string }[]) || []);
+    };
+
+    loadListings();
+  }, [user, isHost, hostIds.join(",")]);
+
+  const availableListings = useMemo(() => {
+    if (!resolvedOrganizationId) return [] as { id: string; name: string; host_user_id: string }[];
+    return listings.filter((listing) => listing.host_user_id === resolvedOrganizationId);
+  }, [listings, resolvedOrganizationId]);
 
   useEffect(() => {
     if (!isHost || !hostId) return;
@@ -74,14 +126,40 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
   }, [isHost, hostId]);
 
   const resetForm = () => {
-    setForm({ date: format(new Date(), "yyyy-MM-dd"), start_at: "09:00", end_at: "10:00", description: "", assignedCleaner: "" });
+    setForm({
+      date: format(new Date(), "yyyy-MM-dd"),
+      start_at: "09:00",
+      end_at: "10:00",
+      description: "",
+      assignedCleaner: "",
+      listingId: "",
+    });
     setEditingId(null);
     setShowForm(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !hostId) return;
+    if (!user) return;
+    if (requiresOrganizationSelection) {
+      toast({
+        title: "Select Organization",
+        description: "Select Organization",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!resolvedOrganizationId) {
+      toast({
+        title: "Host context required",
+        description: "Select Organization",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const selectedListing = availableListings.find((listing) => listing.id === form.listingId) || null;
     const [sh, sm] = form.start_at.split(":").map(Number);
     const [eh, em] = form.end_at.split(":").map(Number);
     const duration = (eh * 60 + em) - (sh * 60 + sm);
@@ -96,13 +174,16 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
     if (editingId) {
       const updates: any = { date: form.date, start_at: form.start_at, end_at: form.end_at, duration_minutes: duration > 0 ? duration : 0, description: form.description };
       if (isHost && form.assignedCleaner) updates.user_id = form.assignedCleaner;
+      updates.host_user_id = resolvedOrganizationId;
+      updates.listing_id = selectedListing?.id || null;
       const { error } = await supabase.from("log_hours").update(updates).eq("id", editingId);
       if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
       else { toast({ title: "Entry updated" }); resetForm(); fetchEntries(); }
     } else {
       const { error } = await supabase.from("log_hours").insert({
         user_id: targetUserId, date: form.date, start_at: form.start_at, end_at: form.end_at,
-        duration_minutes: duration > 0 ? duration : 0, description: form.description, host_user_id: hostId,
+        duration_minutes: duration > 0 ? duration : 0, description: form.description, host_user_id: resolvedOrganizationId,
+        listing_id: selectedListing?.id || null,
       });
       if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
       else { toast({ title: "Hours logged" }); resetForm(); fetchEntries(); }
@@ -110,7 +191,17 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
   };
 
   const handleEdit = (entry: any) => {
-    setForm({ date: entry.date, start_at: entry.start_at?.slice(0, 5) || "09:00", end_at: entry.end_at?.slice(0, 5) || "10:00", description: entry.description || "", assignedCleaner: entry.user_id || "" });
+    setForm({
+      date: entry.date,
+      start_at: entry.start_at?.slice(0, 5) || "09:00",
+      end_at: entry.end_at?.slice(0, 5) || "10:00",
+      description: entry.description || "",
+      assignedCleaner: entry.user_id || "",
+      listingId: entry.listing_id || "",
+    });
+    if (isCleaner && entry.host_user_id) {
+      setOrganizationId(entry.host_user_id);
+    }
     setEditingId(entry.id);
     setShowForm(true);
   };
@@ -158,13 +249,56 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
                   </Select>
                 </div>
               )}
+              {isCleaner && organizations.length > 1 && (
+                <div className="space-y-1">
+                  <Label>Organization</Label>
+                  <Select
+                    value={organizationId || "__none"}
+                    onValueChange={(value) => {
+                      setOrganizationId(value === "__none" ? null : value);
+                      setForm((prev) => ({ ...prev, listingId: "" }));
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Organization" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">Select Organization</SelectItem>
+                      {organizations.map((organization) => (
+                        <SelectItem key={organization.id} value={organization.id}>
+                          {organization.name || organization.id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label>Listing <span className="text-muted-foreground font-normal">(preferred)</span></Label>
+                <Select
+                  value={form.listingId || "__none"}
+                  onValueChange={(value) => setForm({ ...form, listingId: value === "__none" ? "" : value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">No listing selected</SelectItem>
+                    {availableListings.map((listing) => (
+                      <SelectItem key={listing.id} value={listing.id}>
+                        {listing.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1"><Label>Date</Label><Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required /></div>
                 <div className="space-y-1"><Label>Start</Label><Input type="time" value={form.start_at} onChange={(e) => setForm({ ...form, start_at: e.target.value })} required /></div>
                 <div className="space-y-1"><Label>End</Label><Input type="time" value={form.end_at} onChange={(e) => setForm({ ...form, end_at: e.target.value })} required /></div>
               </div>
               <div className="space-y-1"><Label>Description</Label><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What did you do?" /></div>
-              <Button type="submit">{editingId ? "Update" : "Save"}</Button>
+              <Button type="submit" disabled={requiresOrganizationSelection}>{editingId ? "Update" : "Save"}</Button>
             </form>
           </CardContent></Card>
         )}

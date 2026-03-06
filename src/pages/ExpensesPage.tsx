@@ -4,8 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useOrg } from "@/context/OrgContext";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 import { Plus, X, Pencil, Trash2, Loader2 } from "lucide-react";
@@ -19,7 +21,8 @@ import {
 } from "@/components/ui/dialog";
 
 const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _ref) {
-  const { user, hostId, role } = useAuth();
+  const { user, hostId, hostIds, role } = useAuth();
+  const { organizations, organizationId, setOrganizationId } = useOrg();
   const { toast } = useToast();
   const [entries, setEntries] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -29,13 +32,29 @@ const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _r
   const [deleting, setDeleting] = useState(false);
 
   const isAdmin = role === "host";
+  const isCleaner = role === "cleaner";
+  const requiresOrganizationSelection = isCleaner && organizations.length > 1 && !organizationId;
+  const resolvedOrganizationId = organizationId || hostId || (isAdmin ? user?.id ?? null : null);
 
   const fetchEntries = async () => {
-    const { data } = await supabase.from("expenses").select("*").order("date", { ascending: false }).limit(50);
+    if (!user) return;
+
+    let query = supabase.from("expenses").select("*").order("date", { ascending: false }).limit(50);
+    if (isAdmin) {
+      query = query.eq("host_user_id", user.id);
+    } else {
+      if (hostIds.length === 0) {
+        setEntries([]);
+        return;
+      }
+      query = query.in("host_user_id", hostIds);
+    }
+
+    const { data } = await query;
     setEntries(data || []);
   };
 
-  useEffect(() => { fetchEntries(); }, []);
+  useEffect(() => { fetchEntries(); }, [user, isAdmin, hostIds.join(",")]);
 
   const resetForm = () => {
     setForm({ date: format(new Date(), "yyyy-MM-dd"), name: "", amount: "", shop: "" });
@@ -45,7 +64,24 @@ const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _r
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !hostId) return;
+    if (!user) return;
+    if (requiresOrganizationSelection) {
+      toast({
+        title: "Select Organization",
+        description: "Select Organization",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!resolvedOrganizationId) {
+      toast({
+        title: "Host context required",
+        description: "Select Organization",
+        variant: "destructive",
+      });
+      return;
+    }
 
     if (editingId) {
       const { error } = await supabase.from("expenses").update({
@@ -53,6 +89,7 @@ const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _r
         name: form.name,
         amount: parseFloat(form.amount),
         shop: form.shop,
+        host_user_id: resolvedOrganizationId,
       }).eq("id", editingId);
       if (error) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -70,7 +107,7 @@ const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _r
       name: form.name,
       amount: parseFloat(form.amount),
       shop: form.shop,
-      host_user_id: hostId,
+      host_user_id: resolvedOrganizationId,
     });
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -119,13 +156,31 @@ const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _r
         {showForm && (
           <Card><CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="space-y-4">
+              {isCleaner && organizations.length > 1 && (
+                <div className="space-y-1">
+                  <Label>Organization</Label>
+                  <Select value={organizationId || "__none"} onValueChange={(value) => setOrganizationId(value === "__none" ? null : value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Organization" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">Select Organization</SelectItem>
+                      {organizations.map((organization) => (
+                        <SelectItem key={organization.id} value={organization.id}>
+                          {organization.name || organization.id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1"><Label>Date</Label><Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required /></div>
                 <div className="space-y-1"><Label>Amount (€)</Label><Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required /></div>
               </div>
               <div className="space-y-1"><Label>Description</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="What was purchased?" required /></div>
               <div className="space-y-1"><Label>Shop</Label><Input value={form.shop} onChange={(e) => setForm({ ...form, shop: e.target.value })} /></div>
-              <Button type="submit">{editingId ? "Update" : "Save"}</Button>
+              <Button type="submit" disabled={requiresOrganizationSelection}>{editingId ? "Update" : "Save"}</Button>
             </form>
           </CardContent></Card>
         )}

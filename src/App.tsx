@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { OrgProvider } from "@/context/OrgContext";
 import { AppLayout } from "@/components/AppLayout";
 import Auth from "./pages/Auth";
 import OnboardingPage from "./pages/OnboardingPage";
@@ -50,37 +51,39 @@ function OnboardingRoute() {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/onboarding" element={<OnboardingRoute />} />
-            <Route
-              element={
-                <ProtectedRoute>
-                  <AppLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="/" element={<Index />} />
-              <Route path="/calendar" element={<CalendarPage />} />
-              <Route path="/tasks" element={<TasksPage />} />
-              <Route path="/events/:id" element={<TaskDetailPage />} />
-              <Route path="/events/:eventId/checklist" element={<ChecklistRunPage />} />
-              <Route path="/hours" element={<LogHoursPage />} />
-              <Route path="/expenses" element={<ExpensesPage />} />
-              <Route path="/maintenance" element={<MaintenancePage />} />
-              <Route path="/shopping" element={<ShoppingPage />} />
-              <Route path="/payouts" element={<PayoutsPage />} />
-              <Route path="/guides" element={<GuidesPage />} />
-              <Route path="/settings" element={<SettingsRoute />} />
-            </Route>
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
+      <OrgProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/onboarding" element={<OnboardingRoute />} />
+              <Route
+                element={
+                  <ProtectedRoute>
+                    <AppLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route path="/" element={<Index />} />
+                <Route path="/calendar" element={<CalendarPage />} />
+                <Route path="/tasks" element={<TasksPage />} />
+                <Route path="/events/:id" element={<TaskDetailPage />} />
+                <Route path="/events/:eventId/checklist" element={<ChecklistRunPage />} />
+                <Route path="/hours" element={<LogHoursPage />} />
+                <Route path="/expenses" element={<ExpensesPage />} />
+                <Route path="/maintenance" element={<MaintenancePage />} />
+                <Route path="/shopping" element={<ShoppingPage />} />
+                <Route path="/payouts" element={<PayoutsPage />} />
+                <Route path="/guides" element={<GuidesPage />} />
+                <Route path="/settings" element={<SettingsRoute />} />
+              </Route>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </OrgProvider>
     </AuthProvider>
   </QueryClientProvider>
 );

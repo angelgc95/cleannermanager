@@ -9,6 +9,9 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   role: AppRole | null;
+  hostIds: string[];
+  organizations: { id: string; name?: string }[];
+  organizationId: string | null;
   hostId: string | null; // For hosts: own user_id. For cleaners: host_user_id from assignments.
   refreshProfile: () => Promise<void>;
 }
@@ -18,6 +21,9 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   role: null,
+  hostIds: [],
+  organizations: [],
+  organizationId: null,
   hostId: null,
   refreshProfile: async () => {},
 });
@@ -26,6 +32,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<AppRole | null>(null);
+  const [hostIds, setHostIds] = useState<string[]>([]);
+  const [organizations, setOrganizations] = useState<{ id: string; name?: string }[]>([]);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [hostId, setHostId] = useState<string | null>(null);
 
   const fetchRoleAndHost = async (userId: string) => {
@@ -40,17 +49,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRole(userRole);
 
     if (userRole === "host") {
+      setHostIds([userId]);
+      setOrganizations([{ id: userId }]);
+      setOrganizationId(userId);
       setHostId(userId);
     } else if (userRole === "cleaner") {
-      // Get host_user_id from first assignment
-      const { data: assignment } = await supabase
+      const { data: assignments } = await supabase
         .from("cleaner_assignments")
         .select("host_user_id")
         .eq("cleaner_user_id", userId)
-        .limit(1)
-        .single();
-      setHostId(assignment?.host_user_id || null);
+        .order("created_at", { ascending: true });
+
+      const uniqueHostIds = [
+        ...new Set((assignments || []).map((assignment) => assignment.host_user_id).filter((id): id is string => !!id)),
+      ];
+
+      let organizationOptions: { id: string; name?: string }[] = uniqueHostIds.map((id) => ({ id }));
+      if (uniqueHostIds.length > 0) {
+        const { data: hostProfiles } = await supabase
+          .from("profiles")
+          .select("user_id, name")
+          .in("user_id", uniqueHostIds);
+        const nameByUserId = new Map((hostProfiles || []).map((profile) => [profile.user_id, profile.name || undefined]));
+        organizationOptions = uniqueHostIds.map((id) => ({ id, name: nameByUserId.get(id) }));
+      }
+
+      setHostIds(uniqueHostIds);
+      setOrganizations(organizationOptions);
+      setOrganizationId(uniqueHostIds.length === 1 ? uniqueHostIds[0] : null);
+      setHostId(uniqueHostIds.length === 1 ? uniqueHostIds[0] : null);
     } else {
+      setHostIds([]);
+      setOrganizations([]);
+      setOrganizationId(null);
       setHostId(null);
     }
   };
@@ -68,6 +99,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setTimeout(() => fetchRoleAndHost(session.user.id), 0);
       } else {
         setRole(null);
+        setHostIds([]);
+        setOrganizations([]);
+        setOrganizationId(null);
         setHostId(null);
       }
       setLoading(false);
@@ -86,7 +120,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, role, hostId, refreshProfile }}>
+    <AuthContext.Provider value={{
+      session,
+      user: session?.user ?? null,
+      loading,
+      role,
+      hostIds,
+      organizations,
+      organizationId,
+      hostId,
+      refreshProfile,
+    }}>
       {children}
     </AuthContext.Provider>
   );

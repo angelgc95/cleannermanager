@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useOrg } from "@/context/OrgContext";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Plus, Trash2, Send, ShoppingCart, Package, Edit2, X, Check, Search, ChevronDown, ChevronRight } from "lucide-react";
@@ -32,26 +33,53 @@ interface Submission {
   host_user_id: string | null;
 }
 interface SelectedProduct { productId: string; quantity: number; note: string; }
+interface ListingContext { id: string; name: string; host_user_id: string; }
 
 /* ═══════════════════════════════════════════ */
 const ShoppingPage = forwardRef<HTMLDivElement>(function ShoppingPage(_props, _ref) {
-  const { user, hostId, role } = useAuth();
+  const { user, hostId, hostIds, role } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isAdmin = role === "host";
 
   const { data, isLoading: loading } = useQuery({
-    queryKey: ["shopping-data"],
+    queryKey: ["shopping-data", user?.id, role, hostIds.join(",")],
+    enabled: !!user,
     queryFn: async () => {
-      const [{ data: subsData }, { data: itemsData }, { data: productsData }] = await Promise.all([
-        supabase.from("shopping_submissions").select("*").order("created_at", { ascending: true }),
-        supabase.from("shopping_list").select("*, products(name, category)").order("created_at", { ascending: true }),
-        supabase.from("products").select("*").eq("active", true).order("name"),
+      const scopedHostIds = isAdmin ? [user!.id] : hostIds;
+      if (scopedHostIds.length === 0) {
+        return { submissions: [] as Submission[], items: [] as ShoppingItem[], products: [] as Product[], listings: [] as ListingContext[] };
+      }
+
+      let submissionsQuery = supabase.from("shopping_submissions").select("*").order("created_at", { ascending: true });
+      let itemsQuery = supabase.from("shopping_list").select("*, products(name, category)").order("created_at", { ascending: true });
+      let productsQuery = supabase.from("products").select("*").eq("active", true).order("name");
+      let listingsQuery = supabase.from("listings").select("id, name, host_user_id").order("name", { ascending: true });
+
+      if (scopedHostIds.length === 1) {
+        const onlyHostId = scopedHostIds[0];
+        submissionsQuery = submissionsQuery.eq("host_user_id", onlyHostId);
+        itemsQuery = itemsQuery.eq("host_user_id", onlyHostId);
+        productsQuery = productsQuery.eq("host_user_id", onlyHostId);
+        listingsQuery = listingsQuery.eq("host_user_id", onlyHostId);
+      } else {
+        submissionsQuery = submissionsQuery.in("host_user_id", scopedHostIds);
+        itemsQuery = itemsQuery.in("host_user_id", scopedHostIds);
+        productsQuery = productsQuery.in("host_user_id", scopedHostIds);
+        listingsQuery = listingsQuery.in("host_user_id", scopedHostIds);
+      }
+
+      const [{ data: subsData }, { data: itemsData }, { data: productsData }, { data: listingsData }] = await Promise.all([
+        submissionsQuery,
+        itemsQuery,
+        productsQuery,
+        listingsQuery,
       ]);
       return {
         submissions: (subsData as Submission[]) || [],
         items: (itemsData as ShoppingItem[]) || [],
         products: (productsData as Product[]) || [],
+        listings: (listingsData as ListingContext[]) || [],
       };
     },
   });
@@ -59,24 +87,29 @@ const ShoppingPage = forwardRef<HTMLDivElement>(function ShoppingPage(_props, _r
   const submissions = data?.submissions || [];
   const items = data?.items || [];
   const products = data?.products || [];
+  const listings = data?.listings || [];
 
   const onRefresh = () => queryClient.invalidateQueries({ queryKey: ["shopping-data"] });
 
   if (loading) return <div className="p-6 text-muted-foreground">Loading...</div>;
 
   return isAdmin
-    ? <AdminShoppingView submissions={submissions} items={items} products={products} user={user} hostId={hostId} toast={toast} onRefresh={onRefresh} />
-    : <CleanerShoppingView submissions={submissions} items={items} products={products} user={user} hostId={hostId} toast={toast} onRefresh={onRefresh} />;
+    ? <AdminShoppingView submissions={submissions} items={items} products={products} listings={listings} hostIds={hostIds} user={user} hostId={hostId} toast={toast} onRefresh={onRefresh} />
+    : <CleanerShoppingView submissions={submissions} items={items} products={products} listings={listings} hostIds={hostIds} user={user} hostId={hostId} toast={toast} onRefresh={onRefresh} />;
 });
 export default ShoppingPage;
 
 /* ═══════════════════════════════════════════
    CLEANER VIEW
    ═══════════════════════════════════════════ */
-function CleanerShoppingView({ submissions, items, products, user, hostId, toast, onRefresh }: any) {
+function CleanerShoppingView({ submissions, items, products, listings, hostIds, user, hostId, toast, onRefresh }: any) {
+  const { organizations, organizationId, setOrganizationId } = useOrg();
   const [selected, setSelected] = useState<SelectedProduct[]>([]);
   const [search, setSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [selectedListingId, setSelectedListingId] = useState("");
+  const requiresOrganizationSelection = organizations.length > 1 && !organizationId;
+  const resolvedOrganizationId = organizationId || hostId || null;
 
   // My submissions (oldest first)
   const mySubs = (submissions as Submission[])
@@ -95,14 +128,43 @@ function CleanerShoppingView({ submissions, items, products, user, hostId, toast
     setSelected((prev) => prev.map((s) => s.productId === productId ? { ...s, quantity: Math.max(1, qty) } : s));
   };
 
+  const availableListings = (listings as ListingContext[]).filter(
+    (listing) => !resolvedOrganizationId || listing.host_user_id === resolvedOrganizationId,
+  );
+
+  const getManualContext = () => {
+    const selectedListing = availableListings.find((listing) => listing.id === selectedListingId);
+    return {
+      hostUserId: resolvedOrganizationId,
+      listingId: selectedListing?.id || null,
+    };
+  };
+
   const handleSubmit = async () => {
     if (!user || selected.length === 0) return;
+    if (requiresOrganizationSelection) {
+      toast({
+        title: "Select Organization",
+        description: "Select Organization",
+        variant: "destructive",
+      });
+      return;
+    }
+    const context = getManualContext();
+    if (!context.hostUserId) {
+      toast({
+        title: "Host context required",
+        description: "Select Organization",
+        variant: "destructive",
+      });
+      return;
+    }
     setSubmitting(true);
 
     // 1. Create submission
     const { data: sub, error: subErr } = await supabase
       .from("shopping_submissions")
-      .insert({ created_by_user_id: user.id, host_user_id: hostId, status: "PENDING" } as any)
+      .insert({ created_by_user_id: user.id, host_user_id: context.hostUserId, status: "PENDING" } as any)
       .select("id")
       .single();
 
@@ -117,7 +179,8 @@ function CleanerShoppingView({ submissions, items, products, user, hostId, toast
       product_id: s.productId,
       created_by_user_id: user.id,
       status: "MISSING" as const,
-      host_user_id: hostId,
+      host_user_id: context.hostUserId,
+      listing_id: context.listingId,
       quantity_needed: s.quantity,
       note: s.note || null,
       created_from: "MANUAL" as const,
@@ -159,6 +222,53 @@ function CleanerShoppingView({ submissions, items, products, user, hostId, toast
             )}
           </div>
 
+          {organizations.length > 1 && (
+            <div className="space-y-1 mb-3">
+              <p className="text-xs font-medium text-muted-foreground">Organization</p>
+              <Select
+                value={organizationId || "__none"}
+                onValueChange={(value) => {
+                  setOrganizationId(value === "__none" ? null : value);
+                  setSelectedListingId("");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Organization" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">Select Organization</SelectItem>
+                  {organizations.map((organization) => (
+                    <SelectItem key={organization.id} value={organization.id}>
+                      {organization.name || organization.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-3 mb-3">
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Listing (preferred)</p>
+              <Select
+                value={selectedListingId || "__none"}
+                onValueChange={(value) => setSelectedListingId(value === "__none" ? "" : value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">No listing selected</SelectItem>
+                  {availableListings.map((listing) => (
+                    <SelectItem key={listing.id} value={listing.id}>
+                      {listing.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
@@ -196,12 +306,20 @@ function CleanerShoppingView({ submissions, items, products, user, hostId, toast
           <Card className="border-dashed">
             <CardContent className="p-3 space-y-2">
               <p className="text-sm font-medium">Add New Product</p>
-              <CleanerAddProduct hostId={hostId} onAdded={onRefresh} />
+              <CleanerAddProduct
+                hostUserId={getManualContext().hostUserId}
+                onMissingHostContext={() => toast({
+                  title: "Select Organization",
+                  description: "Select Organization",
+                  variant: "destructive",
+                })}
+                onAdded={onRefresh}
+              />
             </CardContent>
           </Card>
 
           {selected.length > 0 && (
-            <Button onClick={handleSubmit} disabled={submitting} className="w-full mt-4 gap-2">
+            <Button onClick={handleSubmit} disabled={submitting || requiresOrganizationSelection} className="w-full mt-4 gap-2">
               <Send className="h-4 w-4" /> Submit {selected.length} item{selected.length !== 1 ? "s" : ""}
             </Button>
           )}
@@ -274,13 +392,15 @@ function SubmissionCard({ submission, items, actions }: { submission: Submission
 /* ═══════════════════════════════════════════
    ADMIN VIEW
    ═══════════════════════════════════════════ */
-function AdminShoppingView({ submissions, items, products, user, hostId, toast, onRefresh }: any) {
+function AdminShoppingView({ submissions, items, products, listings, hostIds, user, hostId, toast, onRefresh }: any) {
+  const { organizationId } = useOrg();
   const [clearing, setClearing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState(1);
   const [editStatus, setEditStatus] = useState<string>("MISSING");
   const [adminSelected, setAdminSelected] = useState<SelectedProduct[]>([]);
   const [adminSearch, setAdminSearch] = useState("");
+  const [selectedListingId, setSelectedListingId] = useState("");
 
   // Product template management
   const [productSearch, setProductSearch] = useState("");
@@ -336,16 +456,33 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
     });
   };
 
+  const getManualContext = () => {
+    const selectedListing = (listings as ListingContext[]).find((listing) => listing.id === selectedListingId);
+    return {
+      hostUserId: organizationId || hostId || user?.id || null,
+      listingId: selectedListing?.id || null,
+    };
+  };
+
   const handleAdminAdd = async () => {
     if (!user || adminSelected.length === 0) return;
+    const context = getManualContext();
+    if (!context.hostUserId) {
+      toast({
+        title: "Host context required",
+        description: "Select Organization",
+        variant: "destructive",
+      });
+      return;
+    }
     // Create a submission for admin-added items too
     const { data: sub } = await supabase.from("shopping_submissions")
-      .insert({ created_by_user_id: user.id, host_user_id: hostId, status: "PENDING" } as any)
+      .insert({ created_by_user_id: user.id, host_user_id: context.hostUserId, status: "PENDING" } as any)
       .select("id").single();
     if (!sub) return;
     const rows = adminSelected.map((s) => ({
       product_id: s.productId, created_by_user_id: user.id, status: "MISSING" as const,
-      host_user_id: hostId, quantity_needed: s.quantity, created_from: "MANUAL" as const, submission_id: sub.id,
+      host_user_id: context.hostUserId, listing_id: context.listingId, quantity_needed: s.quantity, created_from: "MANUAL" as const, submission_id: sub.id,
     }));
     await supabase.from("shopping_list").insert(rows as any);
     setAdminSelected([]);
@@ -369,7 +506,16 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
 
   const handleAddProduct = async () => {
     if (!newProductName.trim()) return;
-    await supabase.from("products").insert({ name: newProductName.trim(), category: newProductCategory.trim() || null, host_user_id: hostId, active: true } as any);
+    const context = getManualContext();
+    if (!context.hostUserId) {
+      toast({
+        title: "Host context required",
+        description: "Select Organization",
+        variant: "destructive",
+      });
+      return;
+    }
+    await supabase.from("products").insert({ name: newProductName.trim(), category: newProductCategory.trim() || null, host_user_id: context.hostUserId, active: true } as any);
     setNewProductName("");
     setNewProductCategory("");
     toast({ title: "Product added" });
@@ -417,6 +563,31 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
         }
       />
       <div className="p-4 md:p-6 max-w-3xl">
+        <Card className="mb-4">
+          <CardContent className="p-3 grid grid-cols-1 gap-3">
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Listing (preferred)</p>
+              <Select
+                value={selectedListingId || "__none"}
+                onValueChange={(value) => setSelectedListingId(value === "__none" ? "" : value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">No listing selected</SelectItem>
+                  {(listings as ListingContext[])
+                    .filter((listing) => !organizationId || listing.host_user_id === organizationId)
+                    .map((listing) => (
+                    <SelectItem key={listing.id} value={listing.id}>
+                      {listing.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
         <Tabs defaultValue="lists">
           <TabsList className="mb-4">
             <TabsTrigger value="lists" className="gap-1.5">
@@ -636,15 +807,27 @@ function SubmissionStatusBadge({ status }: { status: string }) {
 }
 
 /* ─── Cleaner: Add new product inline ─── */
-function CleanerAddProduct({ hostId, onAdded }: { hostId: string | null; onAdded: () => void }) {
+function CleanerAddProduct({
+  hostUserId,
+  onMissingHostContext,
+  onAdded,
+}: {
+  hostUserId: string | null;
+  onMissingHostContext: () => void;
+  onAdded: () => void;
+}) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const { toast } = useToast();
   const { user } = useAuth();
 
   const handleAdd = async () => {
-    if (!name.trim() || !hostId || !user) return;
-    const { error } = await supabase.from("products").insert({ name: name.trim(), category: category.trim() || null, host_user_id: hostId, active: true } as any);
+    if (!name.trim() || !user) return;
+    if (!hostUserId) {
+      onMissingHostContext();
+      return;
+    }
+    const { error } = await supabase.from("products").insert({ name: name.trim(), category: category.trim() || null, host_user_id: hostUserId, active: true } as any);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
