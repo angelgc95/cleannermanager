@@ -323,6 +323,31 @@ async function invokeAutomations(
   }
 }
 
+async function invokeWebhooks(
+  supabaseUrl: string,
+  serviceKey: string,
+  payload: Record<string, unknown>,
+) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/dispatch-webhooks-v1`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceKey}`,
+        "x-internal-service-key": serviceKey,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.warn("sync-ics-v1 webhook invoke failed", response.status, body);
+    }
+  } catch (error) {
+    console.warn("sync-ics-v1 webhook invoke error", error);
+  }
+}
+
 async function ensureCancellationDriftException(
   service: any,
   organizationId: string,
@@ -510,6 +535,15 @@ Deno.serve(async (req) => {
                 trigger_type: "BOOKING_CANCELLED",
                 event_id: event.id,
               });
+              await invokeWebhooks(supabaseUrl, serviceKey, {
+                organization_id: listing.organization_id,
+                event_type: "EVENT_CANCELLED",
+                payload: {
+                  event_id: event.id,
+                  booking_uid: parsed.uid,
+                  reason: "ical_status_cancelled",
+                },
+              });
             }
           }
 
@@ -591,6 +625,15 @@ Deno.serve(async (req) => {
             organization_id: listing.organization_id,
             trigger_type: "BOOKING_CANCELLED",
             event_id: event.id,
+          });
+          await invokeWebhooks(supabaseUrl, serviceKey, {
+            organization_id: listing.organization_id,
+            event_type: "EVENT_CANCELLED",
+            payload: {
+              event_id: event.id,
+              booking_uid: stale.ical_uid,
+              reason: "ical_drift_cancelled",
+            },
           });
         }
       }

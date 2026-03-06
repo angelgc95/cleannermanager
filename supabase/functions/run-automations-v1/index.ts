@@ -181,6 +181,31 @@ async function createNotifications(
   if (error) throw error;
 }
 
+async function invokeWebhooks(
+  supabaseUrl: string,
+  serviceKey: string,
+  payload: Record<string, unknown>,
+) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/dispatch-webhooks-v1`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceKey}`,
+        "x-internal-service-key": serviceKey,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.warn("run-automations-v1 webhook invoke failed", response.status, body);
+    }
+  } catch (error) {
+    console.warn("run-automations-v1 webhook invoke error", error);
+  }
+}
+
 async function resolveRecipients(
   service: any,
   organizationId: string,
@@ -243,7 +268,9 @@ async function ensureException(
     .in("status", ["OPEN", "ACKNOWLEDGED"])
     .maybeSingle();
 
-  if (existing?.id) return existing.id as string;
+  if (existing?.id) {
+    return { id: existing.id as string, created: false };
+  }
 
   const { data, error } = await service
     .from("v1_event_exceptions")
@@ -259,7 +286,7 @@ async function ensureException(
     .single();
 
   if (error) throw error;
-  return data.id as string;
+  return { id: data.id as string, created: true };
 }
 
 async function buildChecklistFacts(service: any, run: RunRow | null): Promise<ChecklistFacts> {
@@ -442,6 +469,8 @@ async function executeAction(
     runId: string | null;
     triggerType: TriggerType;
     actorUserId: string | null;
+    supabaseUrl: string;
+    serviceKey: string;
   },
 ) {
   const actionType = typeof args.action.type === "string" ? args.action.type : "";
@@ -455,7 +484,7 @@ async function executeAction(
     const severity = typeof args.action.severity === "string" ? args.action.severity : "MEDIUM";
     const notes = typeof args.action.notes === "string" ? args.action.notes : null;
 
-    const exceptionId = await ensureException(service, {
+    const exceptionResult = await ensureException(service, {
       organizationId: args.organizationId,
       eventId: args.event.id,
       type: exceptionType,
@@ -467,9 +496,23 @@ async function executeAction(
       action: args.action,
       organizationId: args.organizationId,
       event: args.event,
-      exceptionId,
+      exceptionId: exceptionResult.id,
       exceptionType,
     });
+
+    if (exceptionResult.created) {
+      await invokeWebhooks(args.supabaseUrl, args.serviceKey, {
+        organization_id: args.organizationId,
+        event_type: "EXCEPTION_CREATED",
+        payload: {
+          event_id: args.event.id,
+          exception_id: exceptionResult.id,
+          exception_type: exceptionType,
+          trigger_type: args.triggerType,
+          run_id: args.runId,
+        },
+      });
+    }
 
     return;
   }
@@ -534,13 +577,27 @@ async function executeAction(
     const severity = typeof args.action.severity === "string" ? args.action.severity : "MEDIUM";
     const priority = args.action.priority;
 
-    await ensureException(service, {
+    const exceptionResult = await ensureException(service, {
       organizationId: args.organizationId,
       eventId: args.event.id,
       type: "LATE_START",
       severity,
       notes: `set_event_priority requested (${String(priority || "n/a")})`,
     });
+
+    if (exceptionResult.created) {
+      await invokeWebhooks(args.supabaseUrl, args.serviceKey, {
+        organization_id: args.organizationId,
+        event_type: "EXCEPTION_CREATED",
+        payload: {
+          event_id: args.event.id,
+          exception_id: exceptionResult.id,
+          exception_type: "LATE_START",
+          trigger_type: args.triggerType,
+          run_id: args.runId,
+        },
+      });
+    }
 
     return;
   }
@@ -666,13 +723,27 @@ Deno.serve(async (req) => {
     }
 
     if (triggerType === "SUPPLIES_LOW" && eventRow) {
-      await ensureException(service, {
+      const exceptionResult = await ensureException(service, {
         organizationId,
         eventId: eventRow.id,
         type: "SUPPLIES_LOW",
         severity: "MEDIUM",
         notes: "Supplies low reported from field app.",
       });
+
+      if (exceptionResult.created) {
+        await invokeWebhooks(supabaseUrl, serviceKey, {
+          organization_id: organizationId,
+          event_type: "EXCEPTION_CREATED",
+          payload: {
+            event_id: eventRow.id,
+            exception_id: exceptionResult.id,
+            exception_type: "SUPPLIES_LOW",
+            trigger_type: triggerType,
+            run_id: runRow?.id || null,
+          },
+        });
+      }
     }
 
     const { data: rulesData, error: rulesError } = await service
@@ -747,8 +818,10 @@ Deno.serve(async (req) => {
             event: eventRow,
             runId: runRow?.id || null,
             triggerType,
-            actorUserId,
-          });
+          actorUserId,
+          supabaseUrl,
+          serviceKey,
+        });
         }
 
         await service.from("v1_rule_runs").insert({

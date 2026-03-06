@@ -49,6 +49,31 @@ async function invokeAutomations(
   }
 }
 
+async function invokeWebhooks(
+  supabaseUrl: string,
+  serviceKey: string,
+  payload: Record<string, unknown>,
+) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/dispatch-webhooks-v1`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceKey}`,
+        "x-internal-service-key": serviceKey,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.warn("qa-decision-v1 webhook invoke failed", response.status, body);
+    }
+  } catch (error) {
+    console.warn("qa-decision-v1 webhook invoke error", error);
+  }
+}
+
 async function ensureChecklistFailedException(
   service: any,
   organizationId: string,
@@ -69,10 +94,10 @@ async function ensureChecklistFailedException(
       .from("v1_event_exceptions")
       .update({ notes: notes || null })
       .eq("id", existing.id);
-    return;
+    return { id: existing.id as string, created: false };
   }
 
-  await service
+  const { data, error } = await service
     .from("v1_event_exceptions")
     .insert({
       organization_id: organizationId,
@@ -81,7 +106,15 @@ async function ensureChecklistFailedException(
       severity: "HIGH",
       status: "OPEN",
       notes: notes || "QA rejected checklist submission.",
-    });
+    })
+    .select("id")
+    .single();
+
+  if (error || !data?.id) {
+    throw error || new Error("Failed to create checklist failed exception");
+  }
+
+  return { id: data.id as string, created: true };
 }
 
 async function canDecideQa(
@@ -230,6 +263,16 @@ Deno.serve(async (req) => {
         });
       }
 
+      await invokeWebhooks(supabaseUrl, serviceKey, {
+        organization_id: runRow.organization_id,
+        event_type: "QA_APPROVED",
+        payload: {
+          event_id: runRow.event_id,
+          run_id: runRow.id,
+          reviewer_id: userData.user.id,
+        },
+      });
+
       return json(200, {
         ok: true,
         run_id: runRow.id,
@@ -254,7 +297,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    await ensureChecklistFailedException(service, runRow.organization_id, runRow.event_id, notes || null);
+    const checklistFailedException = await ensureChecklistFailedException(service, runRow.organization_id, runRow.event_id, notes || null);
 
     await invokeAutomations(supabaseUrl, serviceKey, {
       organization_id: runRow.organization_id,
@@ -262,6 +305,30 @@ Deno.serve(async (req) => {
       event_id: runRow.event_id,
       run_id: runRow.id,
     });
+
+    await invokeWebhooks(supabaseUrl, serviceKey, {
+      organization_id: runRow.organization_id,
+      event_type: "QA_REJECTED",
+      payload: {
+        event_id: runRow.event_id,
+        run_id: runRow.id,
+        reviewer_id: userData.user.id,
+        exception_id: checklistFailedException.id,
+      },
+    });
+
+    if (checklistFailedException.created) {
+      await invokeWebhooks(supabaseUrl, serviceKey, {
+        organization_id: runRow.organization_id,
+        event_type: "EXCEPTION_CREATED",
+        payload: {
+          event_id: runRow.event_id,
+          run_id: runRow.id,
+          exception_id: checklistFailedException.id,
+          exception_type: "CHECKLIST_FAILED",
+        },
+      });
+    }
 
     return json(200, {
       ok: true,

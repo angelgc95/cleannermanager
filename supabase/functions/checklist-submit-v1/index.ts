@@ -114,6 +114,31 @@ async function invokeAutomations(
   }
 }
 
+async function invokeWebhooks(
+  supabaseUrl: string,
+  serviceKey: string,
+  payload: Record<string, unknown>,
+) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/dispatch-webhooks-v1`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceKey}`,
+        "x-internal-service-key": serviceKey,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.warn("checklist-submit-v1 webhook invoke failed", response.status, body);
+    }
+  } catch (error) {
+    console.warn("checklist-submit-v1 webhook invoke error", error);
+  }
+}
+
 async function ensureQaReviewException(service: any, organizationId: string, eventId: string) {
   const { data: existing } = await service
     .from("v1_event_exceptions")
@@ -124,9 +149,9 @@ async function ensureQaReviewException(service: any, organizationId: string, eve
     .in("status", ["OPEN", "ACKNOWLEDGED"])
     .maybeSingle();
 
-  if (existing?.id) return;
+  if (existing?.id) return { id: existing.id as string, created: false };
 
-  await service
+  const { data, error } = await service
     .from("v1_event_exceptions")
     .insert({
       organization_id: organizationId,
@@ -135,7 +160,15 @@ async function ensureQaReviewException(service: any, organizationId: string, eve
       severity: "MEDIUM",
       status: "OPEN",
       notes: "Checklist submitted with failed items; QA review required.",
-    });
+    })
+    .select("id")
+    .single();
+
+  if (error || !data?.id) {
+    throw error || new Error("Failed to create QA review exception");
+  }
+
+  return { id: data.id as string, created: true };
 }
 
 Deno.serve(async (req) => {
@@ -391,7 +424,28 @@ Deno.serve(async (req) => {
         return json(400, { error: qaError.message });
       }
 
-      await ensureQaReviewException(service, eventRow.organization_id, eventRow.id);
+      const qaException = await ensureQaReviewException(service, eventRow.organization_id, eventRow.id);
+      await invokeWebhooks(supabaseUrl, serviceKey, {
+        organization_id: eventRow.organization_id,
+        event_type: "QA_REQUIRED",
+        payload: {
+          event_id: eventRow.id,
+          run_id: runRow.id,
+          exception_id: qaException.id,
+        },
+      });
+      if (qaException.created) {
+        await invokeWebhooks(supabaseUrl, serviceKey, {
+          organization_id: eventRow.organization_id,
+          event_type: "EXCEPTION_CREATED",
+          payload: {
+            event_id: eventRow.id,
+            run_id: runRow.id,
+            exception_id: qaException.id,
+            exception_type: "QA_REVIEW_REQUIRED",
+          },
+        });
+      }
     }
 
     await invokeAutomations(supabaseUrl, serviceKey, {

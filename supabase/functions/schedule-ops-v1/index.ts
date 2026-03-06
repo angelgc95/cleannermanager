@@ -177,6 +177,31 @@ async function invokeAutomations(
   }
 }
 
+async function invokeWebhooks(
+  supabaseUrl: string,
+  serviceKey: string,
+  payload: Record<string, unknown>,
+) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/dispatch-webhooks-v1`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceKey}`,
+        "x-internal-service-key": serviceKey,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.warn("schedule-ops-v1 webhook invoke failed", response.status, body);
+    }
+  } catch (error) {
+    console.warn("schedule-ops-v1 webhook invoke error", error);
+  }
+}
+
 async function ensureException(
   service: any,
   args: {
@@ -409,6 +434,17 @@ Deno.serve(async (req) => {
           nowIso,
         });
         if (ensured.created) lateExceptionsEnsured += 1;
+        if (ensured.created) {
+          await invokeWebhooks(supabaseUrl, serviceKey, {
+            organization_id: event.organization_id,
+            event_type: "EXCEPTION_CREATED",
+            payload: {
+              event_id: event.id,
+              exception_id: ensured.row.id,
+              exception_type: "LATE_START",
+            },
+          });
+        }
 
         await invokeAutomations(supabaseUrl, serviceKey, {
           organization_id: event.organization_id,
@@ -633,6 +669,27 @@ Deno.serve(async (req) => {
         });
 
         if (ensured.created) missingChecklistEnsured += 1;
+        if (ensured.created) {
+          await invokeWebhooks(supabaseUrl, serviceKey, {
+            organization_id: event.organization_id,
+            event_type: "EXCEPTION_CREATED",
+            payload: {
+              event_id: event.id,
+              exception_id: ensured.row.id,
+              exception_type: "MISSING_CHECKLIST",
+            },
+          });
+          await invokeWebhooks(supabaseUrl, serviceKey, {
+            organization_id: event.organization_id,
+            event_type: "SLA_BREACH",
+            payload: {
+              event_id: event.id,
+              exception_id: ensured.row.id,
+              exception_type: "MISSING_CHECKLIST",
+              ready_by_at: getEventDeadlineIso(event),
+            },
+          });
+        }
 
         const exception = ensured.row;
         if (exception.status === "ACKNOWLEDGED") {
@@ -693,6 +750,18 @@ Deno.serve(async (req) => {
         if (updateError) {
           throw updateError;
         }
+
+        await invokeWebhooks(supabaseUrl, serviceKey, {
+          organization_id: event.organization_id,
+          event_type: "EXCEPTION_ESCALATED",
+          payload: {
+            event_id: event.id,
+            exception_id: exception.id,
+            exception_type: "MISSING_CHECKLIST",
+            escalation_level: level + 1,
+            recipient_user_id: recipient,
+          },
+        });
 
         missingChecklistEscalations += 1;
       }
