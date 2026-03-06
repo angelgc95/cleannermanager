@@ -7,31 +7,55 @@ const corsHeaders = {
 
 type ParsedEvent = {
   uid: string;
-  startAt: string;
-  endAt: string;
+  dtStartRaw: string;
+  dtStartTzid: string | null;
+  dtStartHasTime: boolean;
+  dtEndRaw: string;
+  dtEndTzid: string | null;
   status: "CONFIRMED" | "CANCELLED";
+};
+
+type ParsedIcsValue =
+  | {
+    kind: "date";
+    year: number;
+    month: number;
+    day: number;
+  }
+  | {
+    kind: "date-time";
+    year: number;
+    month: number;
+    day: number;
+    hour: number;
+    minute: number;
+    second: number;
+    isUtc: boolean;
+  };
+
+type ListingRow = {
+  id: string;
+  organization_id: string;
+  ical_url: string | null;
+  active: boolean;
+  checkin_time_local: string;
+  timezone: string;
 };
 
 function unfoldIcs(input: string): string {
   return input.replace(/\r?\n[ \t]/g, "");
 }
 
-function parseDate(value: string): string {
-  const clean = value.trim().replace(/[^0-9TZ]/g, "");
-  if (clean.length >= 15) {
-    const year = clean.slice(0, 4);
-    const month = clean.slice(4, 6);
-    const day = clean.slice(6, 8);
-    const hour = clean.slice(9, 11) || "00";
-    const minute = clean.slice(11, 13) || "00";
-    const second = clean.slice(13, 15) || "00";
-    const suffix = clean.endsWith("Z") ? "Z" : "";
-    return `${year}-${month}-${day}T${hour}:${minute}:${second}${suffix}`;
+function extractParamValue(paramsRaw: string, key: string): string | null {
+  const pieces = paramsRaw.split(";").map((entry) => entry.trim()).filter(Boolean);
+  for (const piece of pieces) {
+    const [paramKey, ...rest] = piece.split("=");
+    if (!paramKey || rest.length === 0) continue;
+    if (paramKey.toUpperCase() === key.toUpperCase()) {
+      return rest.join("=");
+    }
   }
-  if (clean.length === 8) {
-    return `${clean.slice(0, 4)}-${clean.slice(4, 6)}-${clean.slice(6, 8)}T00:00:00`;
-  }
-  return "";
+  return null;
 }
 
 function parseIcs(ics: string): ParsedEvent[] {
@@ -42,24 +66,225 @@ function parseIcs(ics: string): ParsedEvent[] {
   for (const chunk of chunks) {
     const block = chunk.split("END:VEVENT")[0] || "";
     const uid = block.match(/^UID[:;](.*)$/m)?.[1]?.trim() || "";
-    const dtStartRaw = block.match(/^DTSTART(?:[^:]*)?:(.*)$/m)?.[1]?.trim() || "";
-    const dtEndRaw = block.match(/^DTEND(?:[^:]*)?:(.*)$/m)?.[1]?.trim() || "";
+
+    const dtStartMatch = block.match(/^DTSTART(?:;([^:]*))?:(.*)$/m);
+    const dtEndMatch = block.match(/^DTEND(?:;([^:]*))?:(.*)$/m);
+
+    const dtStartParams = dtStartMatch?.[1] || "";
+    const dtEndParams = dtEndMatch?.[1] || "";
+
+    const dtStartRaw = dtStartMatch?.[2]?.trim() || "";
+    const dtEndRaw = dtEndMatch?.[2]?.trim() || "";
+
     const statusRaw = (block.match(/^STATUS[:;](.*)$/m)?.[1]?.trim() || "CONFIRMED").toUpperCase();
 
-    if (!uid) continue;
-
-    const startAt = parseDate(dtStartRaw);
-    const endAt = parseDate(dtEndRaw || dtStartRaw);
+    if (!uid || !dtStartRaw) continue;
 
     parsed.push({
       uid,
-      startAt,
-      endAt,
+      dtStartRaw,
+      dtStartTzid: extractParamValue(dtStartParams, "TZID"),
+      dtStartHasTime: dtStartRaw.includes("T"),
+      dtEndRaw,
+      dtEndTzid: extractParamValue(dtEndParams, "TZID"),
       status: statusRaw === "CANCELLED" ? "CANCELLED" : "CONFIRMED",
     });
   }
 
   return parsed;
+}
+
+function parseIcsValue(raw: string): ParsedIcsValue | null {
+  const clean = raw.trim().toUpperCase();
+
+  const dateMatch = clean.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (dateMatch) {
+    return {
+      kind: "date",
+      year: Number(dateMatch[1]),
+      month: Number(dateMatch[2]),
+      day: Number(dateMatch[3]),
+    };
+  }
+
+  const dateTimeMatch = clean.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z)?$/);
+  if (dateTimeMatch) {
+    return {
+      kind: "date-time",
+      year: Number(dateTimeMatch[1]),
+      month: Number(dateTimeMatch[2]),
+      day: Number(dateTimeMatch[3]),
+      hour: Number(dateTimeMatch[4]),
+      minute: Number(dateTimeMatch[5]),
+      second: Number(dateTimeMatch[6] || "0"),
+      isUtc: !!dateTimeMatch[7],
+    };
+  }
+
+  return null;
+}
+
+function isValidTimeZone(timeZone: string): boolean {
+  try {
+    // Throws on invalid IANA timezone.
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeTimeZone(input: string | null | undefined): { timeZone: string; fellBack: boolean } {
+  const candidate = (input || "").trim() || "UTC";
+  if (isValidTimeZone(candidate)) {
+    return { timeZone: candidate, fellBack: false };
+  }
+  return { timeZone: "UTC", fellBack: true };
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function partsToYmd(parts: { year: number; month: number; day: number }): string {
+  return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`;
+}
+
+function normalizeCheckinTime(input: string | null | undefined): { hour: number; minute: number } {
+  const text = (input || "").trim();
+  const match = text.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) {
+    return { hour: 15, minute: 0 };
+  }
+
+  return {
+    hour: Number(match[1]),
+    minute: Number(match[2]),
+  };
+}
+
+function formatToPartsInTimeZone(instant: Date, timeZone: string) {
+  const dtf = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+
+  const pieces = dtf.formatToParts(instant);
+  const map: Record<string, number> = {};
+  for (const piece of pieces) {
+    if (piece.type === "literal") continue;
+    map[piece.type] = Number(piece.value);
+  }
+
+  return {
+    year: map.year,
+    month: map.month,
+    day: map.day,
+    hour: map.hour,
+    minute: map.minute,
+    second: map.second,
+  };
+}
+
+function zonedDateTimeToUtcIso(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  timeZone: string,
+): string {
+  let guessMs = Date.UTC(year, month - 1, day, hour, minute, second);
+
+  // Iteratively converge to the UTC instant that renders as the desired local datetime in target TZ.
+  for (let idx = 0; idx < 5; idx += 1) {
+    const rendered = formatToPartsInTimeZone(new Date(guessMs), timeZone);
+
+    const desiredMinutes = Math.floor(Date.UTC(year, month - 1, day, hour, minute, second) / 60000);
+    const renderedMinutes = Math.floor(
+      Date.UTC(rendered.year, rendered.month - 1, rendered.day, rendered.hour, rendered.minute, rendered.second) / 60000,
+    );
+
+    const deltaMinutes = desiredMinutes - renderedMinutes;
+    if (deltaMinutes === 0) {
+      break;
+    }
+
+    guessMs += deltaMinutes * 60 * 1000;
+  }
+
+  return new Date(guessMs).toISOString();
+}
+
+function parseIcsInstantToUtc(
+  raw: string,
+  tzid: string | null,
+  fallbackTimeZone: string,
+): string | null {
+  const parsed = parseIcsValue(raw);
+  if (!parsed) return null;
+
+  if (parsed.kind === "date") {
+    return zonedDateTimeToUtcIso(parsed.year, parsed.month, parsed.day, 0, 0, 0, fallbackTimeZone);
+  }
+
+  if (parsed.isUtc) {
+    return new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day, parsed.hour, parsed.minute, parsed.second)).toISOString();
+  }
+
+  const sourceTimeZone = normalizeTimeZone(tzid || fallbackTimeZone).timeZone;
+  return zonedDateTimeToUtcIso(
+    parsed.year,
+    parsed.month,
+    parsed.day,
+    parsed.hour,
+    parsed.minute,
+    parsed.second,
+    sourceTimeZone,
+  );
+}
+
+function getDateInTimeZone(utcIso: string, timeZone: string): string {
+  const parts = formatToPartsInTimeZone(new Date(utcIso), timeZone);
+  return partsToYmd(parts);
+}
+
+function deriveBookingDate(
+  event: ParsedEvent,
+  bookingStartUtc: string,
+  listingTimeZone: string,
+): string {
+  const parsed = parseIcsValue(event.dtStartRaw);
+  if (!parsed) {
+    return getDateInTimeZone(bookingStartUtc, listingTimeZone);
+  }
+
+  if (parsed.kind === "date") {
+    return partsToYmd(parsed);
+  }
+
+  return getDateInTimeZone(bookingStartUtc, listingTimeZone);
+}
+
+function computeReadyByAtUtc(
+  bookingDate: string,
+  checkinTimeLocal: string,
+  listingTimeZone: string,
+): string {
+  const [yearText, monthText, dayText] = bookingDate.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+
+  const checkin = normalizeCheckinTime(checkinTimeLocal);
+  return zonedDateTimeToUtcIso(year, month, day, checkin.hour, checkin.minute, 0, listingTimeZone);
 }
 
 async function canManageOrg(service: any, userId: string, organizationId: string): Promise<boolean> {
@@ -190,7 +415,7 @@ Deno.serve(async (req) => {
 
     let listingsQuery = service
       .from("v1_listings")
-      .select("id, organization_id, ical_url, active")
+      .select("id, organization_id, ical_url, active, checkin_time_local, timezone")
       .eq("active", true)
       .not("ical_url", "is", null);
 
@@ -198,7 +423,7 @@ Deno.serve(async (req) => {
     if (listingId) listingsQuery = listingsQuery.eq("id", listingId);
 
     const { data: listings } = await listingsQuery;
-    const rows = listings || [];
+    const rows = (listings || []) as ListingRow[];
 
     let bookingsUpserted = 0;
     let eventsUpserted = 0;
@@ -207,6 +432,16 @@ Deno.serve(async (req) => {
 
     for (const listing of rows) {
       if (!listing.ical_url) continue;
+
+      const tzResolution = normalizeTimeZone(listing.timezone);
+      const listingTimeZone = tzResolution.timeZone;
+      if (tzResolution.fellBack) {
+        console.warn("sync-ics-v1 invalid listing timezone, falling back to UTC", {
+          listing_id: listing.id,
+          configured_timezone: listing.timezone,
+        });
+      }
+
       let feed = "";
       try {
         const response = await fetch(listing.ical_url);
@@ -221,12 +456,20 @@ Deno.serve(async (req) => {
 
       for (const parsed of parsedEvents) {
         seenUids.add(parsed.uid);
+
+        const bookingStartAt = parseIcsInstantToUtc(parsed.dtStartRaw, parsed.dtStartTzid, listingTimeZone) || new Date().toISOString();
+        const bookingEndAt = parseIcsInstantToUtc(parsed.dtEndRaw || parsed.dtStartRaw, parsed.dtEndTzid || parsed.dtStartTzid, listingTimeZone)
+          || bookingStartAt;
+
+        const bookingDate = deriveBookingDate(parsed, bookingStartAt, listingTimeZone);
+        const readyByAt = computeReadyByAtUtc(bookingDate, listing.checkin_time_local, listingTimeZone);
+
         const bookingPayload = {
           organization_id: listing.organization_id,
           listing_id: listing.id,
           ical_uid: parsed.uid,
-          start_at: parsed.startAt || new Date().toISOString(),
-          end_at: parsed.endAt || parsed.startAt || new Date().toISOString(),
+          start_at: bookingStartAt,
+          end_at: bookingEndAt,
           status: parsed.status,
           last_seen_at: new Date().toISOString(),
         };
@@ -240,39 +483,46 @@ Deno.serve(async (req) => {
         if (bookingError || !booking) continue;
         bookingsUpserted += 1;
 
-        if (parsed.status === "CANCELLED") {
-          const { data: cancelledEvents } = await service
-            .from("v1_events")
-            .update({ status: "CANCELLED", start_at: bookingPayload.start_at, end_at: bookingPayload.end_at })
-            .eq("booking_id", booking.id)
-            .neq("status", "COMPLETED")
-            .select("id");
-
-          bookingsCancelled += 1;
-
-          for (const event of cancelledEvents || []) {
-            await invokeAutomations(supabaseUrl, serviceKey, {
-              organization_id: listing.organization_id,
-              trigger_type: "BOOKING_CANCELLED",
-              event_id: event.id,
-            });
-          }
-
-          continue;
-        }
-
         const { data: existingEvent } = await service
           .from("v1_events")
-          .select("id, status")
+          .select("id, status, ready_by_override_at")
           .eq("booking_id", booking.id)
           .maybeSingle();
+
+        const effectiveReadyBy = existingEvent?.ready_by_override_at || readyByAt;
+
+        if (parsed.status === "CANCELLED") {
+          if (existingEvent?.id) {
+            const { data: cancelledEvents } = await service
+              .from("v1_events")
+              .update({
+                status: "CANCELLED",
+                start_at: bookingPayload.start_at,
+                end_at: effectiveReadyBy,
+              })
+              .eq("id", existingEvent.id)
+              .neq("status", "COMPLETED")
+              .select("id");
+
+            for (const event of cancelledEvents || []) {
+              await invokeAutomations(supabaseUrl, serviceKey, {
+                organization_id: listing.organization_id,
+                trigger_type: "BOOKING_CANCELLED",
+                event_id: event.id,
+              });
+            }
+          }
+
+          bookingsCancelled += 1;
+          continue;
+        }
 
         const baseEventPayload = {
           organization_id: listing.organization_id,
           listing_id: listing.id,
           booking_id: booking.id,
           start_at: bookingPayload.start_at,
-          end_at: bookingPayload.end_at,
+          end_at: effectiveReadyBy,
         };
 
         if (existingEvent) {
