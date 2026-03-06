@@ -213,17 +213,14 @@ Deno.serve(async (req) => {
     }
 
     if (!runRow) {
-      const { data: template } = await service
-        .from("v1_checklist_templates")
-        .select("id")
-        .eq("organization_id", eventRow.organization_id)
-        .eq("listing_id", eventRow.listing_id)
-        .eq("active", true)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data: templateId, error: templateResolveError } = await userClient
+        .rpc("v1_resolve_listing_template", { _listing_id: eventRow.listing_id });
 
-      if (!template?.id) {
+      if (templateResolveError) {
+        return json(400, { error: templateResolveError.message });
+      }
+
+      if (!templateId) {
         return json(400, { error: "No active checklist template for this listing" });
       }
 
@@ -232,7 +229,7 @@ Deno.serve(async (req) => {
         .insert({
           organization_id: eventRow.organization_id,
           event_id: eventRow.id,
-          template_id: template.id,
+          template_id: templateId,
           cleaner_id: eventRow.assigned_cleaner_id || userId,
           status: "IN_PROGRESS",
         })

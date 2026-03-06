@@ -75,17 +75,15 @@ export default function ChecklistWizardPage() {
       .maybeSingle()).data as RunRow | null;
 
     if (!runData) {
-      const { data: template } = await db
-        .from("v1_checklist_templates")
-        .select("id")
-        .eq("organization_id", eventData.organization_id)
-        .eq("listing_id", eventData.listing_id)
-        .eq("active", true)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data: templateId, error: templateResolveError } = await db
+        .rpc("v1_resolve_listing_template", { _listing_id: eventData.listing_id });
 
-      if (!template?.id) {
+      if (templateResolveError) {
+        setMessage(templateResolveError.message);
+        return;
+      }
+
+      if (!templateId) {
         setMessage("No active checklist template configured for this listing.");
         return;
       }
@@ -95,7 +93,7 @@ export default function ChecklistWizardPage() {
         .insert({
           organization_id: eventData.organization_id,
           event_id: eventData.id,
-          template_id: template.id,
+          template_id: templateId,
           cleaner_id: user.id,
           status: "IN_PROGRESS",
         })
