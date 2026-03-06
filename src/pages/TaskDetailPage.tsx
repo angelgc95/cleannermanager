@@ -22,6 +22,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { deriveEffectiveStatus } from "@/lib/domain/effectiveStatus";
+import { EventDebugPanel } from "@/components/EventDebugPanel";
 
 const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props, ref) {
   const { id } = useParams();
@@ -252,13 +254,12 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
   const hasTemplate = !!event.checklist_template_id || templateName !== null;
 
   // Derive effectiveStatus from latest checklist run
-  const effectiveStatus = latestRunForStatus
-    ? latestRunForStatus.finished_at
-      ? "COMPLETED"
-      : "IN_PROGRESS"
-    : "TODO";
+   const effectiveStatus = deriveEffectiveStatus(
+     event.status,
+     latestRunForStatus,
+   );
 
-  const statusMismatch = event.status === "IN_PROGRESS" && effectiveStatus === "COMPLETED";
+   const statusMismatch = event.status === "IN_PROGRESS" && effectiveStatus === "COMPLETED";
 
   return (
     <div ref={ref}>
@@ -503,6 +504,9 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
             </p>
           </div>
         )}
+
+        {/* Debug Panel (host only) */}
+        <EventDebugPanel eventId={id!} />
 
         {/* === Action Buttons === */}
         <div className="flex gap-2 flex-wrap">
