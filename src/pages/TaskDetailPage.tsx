@@ -505,6 +505,9 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
           </div>
         )}
 
+        {/* Debug Panel (host only) */}
+        <EventDebugPanel eventId={id!} />
+
         {/* === Action Buttons === */}
         <div className="flex gap-2 flex-wrap">
           {!isAdmin && hasTemplate && effectiveStatus === "TODO" && (
