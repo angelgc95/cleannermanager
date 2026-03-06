@@ -32,7 +32,7 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
   const [listings, setListings] = useState<{ id: string; name: string; host_user_id: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const requiresOrganizationSelection = isCleaner && organizations.length > 1 && !organizationId;
-  const resolvedOrganizationId = organizationId || hostId || (isHost ? user?.id ?? null : null);
+  const resolvedOrganizationId = isHost ? (organizationId || (user?.id ?? null)) : (organizationId || null);
 
   const generateSignedUrls = async (ticketList: any[]) => {
     const urlMap: Record<string, { pic1?: string; pic2?: string }> = {};

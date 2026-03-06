@@ -34,7 +34,7 @@ const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _r
   const isAdmin = role === "host";
   const isCleaner = role === "cleaner";
   const requiresOrganizationSelection = isCleaner && organizations.length > 1 && !organizationId;
-  const resolvedOrganizationId = organizationId || hostId || (isAdmin ? user?.id ?? null : null);
+  const resolvedOrganizationId = isAdmin ? (organizationId || (user?.id ?? null)) : (organizationId || null);
 
   const fetchEntries = async () => {
     if (!user) return;

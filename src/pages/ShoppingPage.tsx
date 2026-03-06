@@ -109,7 +109,7 @@ function CleanerShoppingView({ submissions, items, products, listings, hostIds, 
   const [submitting, setSubmitting] = useState(false);
   const [selectedListingId, setSelectedListingId] = useState("");
   const requiresOrganizationSelection = organizations.length > 1 && !organizationId;
-  const resolvedOrganizationId = organizationId || hostId || null;
+  const resolvedOrganizationId = organizationId || null;
 
   // My submissions (oldest first)
   const mySubs = (submissions as Submission[])

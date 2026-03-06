@@ -35,7 +35,7 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
   const isHost = role === "host";
   const isCleaner = role === "cleaner";
   const requiresOrganizationSelection = isCleaner && organizations.length > 1 && !organizationId;
-  const resolvedOrganizationId = organizationId || hostId || (isHost ? user?.id ?? null : null);
+  const resolvedOrganizationId = isHost ? (organizationId || (user?.id ?? null)) : (organizationId || null);
 
   const fetchEntries = async () => {
     if (!user) return;
