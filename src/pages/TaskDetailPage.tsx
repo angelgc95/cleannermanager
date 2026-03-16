@@ -22,8 +22,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { computeEffectiveStatus, computeStoredStatus } from "@/lib/domain/effectiveStatus";
-import { EventDebugPanel } from "@/components/EventDebugPanel";
 
 const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props, ref) {
   const { id } = useParams();
@@ -52,7 +50,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
     queryFn: async () => {
       const { data } = await supabase
         .from("checklist_runs")
-        .select("finished_at, started_at")
+        .select("id, finished_at")
         .eq("cleaning_event_id", id!)
         .order("started_at", { ascending: false })
         .limit(1);
@@ -253,13 +251,14 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
 
   const hasTemplate = !!event.checklist_template_id || templateName !== null;
 
-  const effectiveStatus = computeEffectiveStatus({
-    eventStatus: event.status,
-    latestRunFinishedAt: latestRunForStatus?.finished_at ?? null,
-    isCancelled: event.status === "CANCELLED",
-  });
-  const storedStatus = computeStoredStatus(event.status);
-  const statusMismatch = storedStatus !== effectiveStatus;
+  // Derive effectiveStatus from latest checklist run
+  const effectiveStatus = latestRunForStatus
+    ? latestRunForStatus.finished_at
+      ? "COMPLETED"
+      : "IN_PROGRESS"
+    : "TODO";
+
+  const statusMismatch = event.status === "IN_PROGRESS" && effectiveStatus === "COMPLETED";
 
   return (
     <div ref={ref}>
@@ -277,14 +276,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">Cleaning Event</CardTitle>
-              <div className="flex items-center gap-2">
-                <StatusBadge status={effectiveStatus} />
-                {isAdmin && statusMismatch && (
-                  <span className="inline-flex rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                    out of sync
-                  </span>
-                )}
-              </div>
+              <StatusBadge status={effectiveStatus} />
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -503,7 +495,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
         )}
 
         {/* === Status Mismatch Warning === */}
-        {isAdmin && statusMismatch && (
+        {statusMismatch && (
           <div className="flex items-start gap-3 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3">
             <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <p className="text-sm text-amber-800 dark:text-amber-300">
@@ -511,9 +503,6 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
             </p>
           </div>
         )}
-
-        {/* Debug Panel (host only) */}
-        <EventDebugPanel eventId={id!} />
 
         {/* === Action Buttons === */}
         <div className="flex gap-2 flex-wrap">

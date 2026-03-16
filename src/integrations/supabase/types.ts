@@ -24,7 +24,6 @@ export type Database = {
           guests_count: number | null
           host_user_id: string
           id: string
-          last_seen_at: string | null
           listing_id: string
           nights: number | null
           raw_ics_payload: string | null
@@ -41,7 +40,6 @@ export type Database = {
           guests_count?: number | null
           host_user_id: string
           id?: string
-          last_seen_at?: string | null
           listing_id: string
           nights?: number | null
           raw_ics_payload?: string | null
@@ -58,7 +56,6 @@ export type Database = {
           guests_count?: number | null
           host_user_id?: string
           id?: string
-          last_seen_at?: string | null
           listing_id?: string
           nights?: number | null
           raw_ics_payload?: string | null
@@ -896,7 +893,6 @@ export type Database = {
       }
       maintenance_tickets: {
         Row: {
-          checklist_run_id: string | null
           created_at: string
           created_by_user_id: string
           date: string
@@ -910,7 +906,6 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          checklist_run_id?: string | null
           created_at?: string
           created_by_user_id: string
           date?: string
@@ -924,7 +919,6 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          checklist_run_id?: string | null
           created_at?: string
           created_by_user_id?: string
           date?: string
@@ -938,13 +932,6 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "maintenance_tickets_checklist_run_id_fkey"
-            columns: ["checklist_run_id"]
-            isOneToOne: false
-            referencedRelation: "checklist_runs"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "maintenance_tickets_listing_id_fkey"
             columns: ["listing_id"]

@@ -1,19 +1,11 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { computeEffectiveStatus, type EffectiveStatus } from "@/lib/domain/effectiveStatus";
 
-export type { EffectiveStatus };
+export type EffectiveStatus = "TODO" | "IN_PROGRESS" | "COMPLETED";
 
-interface EventStatusInput {
-  id: string;
-  status: string;
-}
-
-export function useEffectiveStatuses(events: EventStatusInput[]) {
+export function useEffectiveStatuses(eventIds: string[]) {
   const [statuses, setStatuses] = useState<Record<string, EffectiveStatus>>({});
   const [loading, setLoading] = useState(false);
-
-  const eventIds = events.map((event) => event.id);
 
   useEffect(() => {
     if (eventIds.length === 0) {
@@ -23,28 +15,32 @@ export function useEffectiveStatuses(events: EventStatusInput[]) {
 
     const fetch = async () => {
       setLoading(true);
-
-      // List surfaces fetch latest run information for visible events only.
+      // Fetch all runs for all events, ordered by started_at DESC
       const { data: runs } = await supabase
         .from("checklist_runs")
         .select("cleaning_event_id, finished_at, started_at")
         .in("cleaning_event_id", eventIds)
         .order("started_at", { ascending: false });
 
-      const latestRunMap = new Map<string, string | null>();
+      const result: Record<string, EffectiveStatus> = {};
+
+      // Build map in single pass (runs are sorted by started_at DESC, so first occurrence per event is latest)
+      const latestRunMap = new Map<string, { finished_at: string | null }>();
       for (const r of (runs || [])) {
         if (!latestRunMap.has(r.cleaning_event_id)) {
-          latestRunMap.set(r.cleaning_event_id, r.finished_at);
+          latestRunMap.set(r.cleaning_event_id, r);
         }
       }
 
-      const result: Record<string, EffectiveStatus> = {};
-      for (const event of events) {
-        result[event.id] = computeEffectiveStatus({
-          eventStatus: event.status,
-          latestRunFinishedAt: latestRunMap.get(event.id) ?? null,
-          isCancelled: event.status === "CANCELLED",
-        });
+      for (const eid of eventIds) {
+        const latestRun = latestRunMap.get(eid);
+        if (!latestRun) {
+          result[eid] = "TODO";
+        } else if (latestRun.finished_at) {
+          result[eid] = "COMPLETED";
+        } else {
+          result[eid] = "IN_PROGRESS";
+        }
       }
 
       setStatuses(result);
@@ -52,7 +48,7 @@ export function useEffectiveStatuses(events: EventStatusInput[]) {
     };
 
     fetch();
-  }, [events.map((event) => `${event.id}:${event.status}`).join(",")]);
+  }, [eventIds.join(",")]);
 
   return { statuses, loading };
 }
