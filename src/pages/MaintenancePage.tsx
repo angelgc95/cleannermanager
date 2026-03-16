@@ -12,27 +12,20 @@ import {
 } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useOrg } from "@/context/OrgContext";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Plus, X, Camera, Loader2, Trash2 } from "lucide-react";
 
 const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_props, _ref) {
-  const { user, hostId, hostIds, role } = useAuth();
-  const { organizations, organizationId, setOrganizationId } = useOrg();
+  const { user, hostId, role } = useAuth();
   const { toast } = useToast();
   const isHost = role === "host";
-  const isCleaner = role === "cleaner";
   const [tickets, setTickets] = useState<any[]>([]);
   const [signedUrls, setSignedUrls] = useState<Record<string, { pic1?: string; pic2?: string }>>({});
   const [showForm, setShowForm] = useState(false);
   const [issue, setIssue] = useState("");
   const [photos, setPhotos] = useState<{ file: File; preview: string }[]>([]);
-  const [selectedListingId, setSelectedListingId] = useState("");
-  const [listings, setListings] = useState<{ id: string; name: string; host_user_id: string }[]>([]);
   const [uploading, setUploading] = useState(false);
-  const requiresOrganizationSelection = isCleaner && organizations.length > 1 && !organizationId;
-  const resolvedOrganizationId = isHost ? (organizationId || (user?.id ?? null)) : (organizationId || null);
 
   const generateSignedUrls = async (ticketList: any[]) => {
     const urlMap: Record<string, { pic1?: string; pic2?: string }> = {};
@@ -62,56 +55,13 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
   };
 
   const fetchTickets = async () => {
-    if (!user) return;
-
-    let query = supabase
-      .from("maintenance_tickets")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    if (isHost) {
-      query = query.eq("host_user_id", user.id);
-    } else {
-      if (hostIds.length === 0) {
-        setTickets([]);
-        return;
-      }
-      query = query.in("host_user_id", hostIds);
-    }
-
-    const { data } = await query;
+    const { data } = await supabase.from("maintenance_tickets").select("*").order("created_at", { ascending: false }).limit(50);
     const list = data || [];
     setTickets(list);
     await generateSignedUrls(list);
   };
 
-  useEffect(() => { fetchTickets(); }, [user, isHost, hostIds.join(",")]);
-
-  useEffect(() => {
-    if (!user) return;
-    const loadListings = async () => {
-      let query = supabase
-        .from("listings")
-        .select("id, name, host_user_id")
-        .order("name", { ascending: true });
-
-      if (isHost) {
-        query = query.eq("host_user_id", user.id);
-      } else {
-        if (hostIds.length === 0) {
-          setListings([]);
-          return;
-        }
-        query = query.in("host_user_id", hostIds);
-      }
-
-      const { data } = await query;
-      setListings((data as { id: string; name: string; host_user_id: string }[]) || []);
-    };
-
-    loadListings();
-  }, [user, isHost, hostIds.join(",")]);
+  useEffect(() => { fetchTickets(); }, []);
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -135,28 +85,7 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
-    if (requiresOrganizationSelection) {
-      toast({
-        title: "Select Organization",
-        description: "Select Organization",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!resolvedOrganizationId) {
-      toast({
-        title: "Host context required",
-        description: "Select Organization",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const selectedListing = listings.find(
-      (listing) => listing.id === selectedListingId && listing.host_user_id === resolvedOrganizationId,
-    ) || null;
+    if (!user || !hostId) return;
     setUploading(true);
     let pic1_url: string | null = null;
     let pic2_url: string | null = null;
@@ -167,8 +96,7 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
       issue,
       pic1_url,
       pic2_url,
-      host_user_id: resolvedOrganizationId,
-      listing_id: selectedListing?.id || null,
+      host_user_id: hostId,
     }]);
     setUploading(false);
     if (error) {
@@ -177,7 +105,6 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
       toast({ title: "Ticket created" });
       setShowForm(false);
       setIssue("");
-      setSelectedListingId("");
       photos.forEach((p) => URL.revokeObjectURL(p.preview));
       setPhotos([]);
       fetchTickets();
@@ -210,51 +137,6 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
         {showForm && (
           <Card><CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="space-y-4">
-              {isCleaner && organizations.length > 1 && (
-                <div className="space-y-1">
-                  <Label>Organization</Label>
-                  <Select
-                    value={organizationId || "__none"}
-                    onValueChange={(value) => {
-                      setOrganizationId(value === "__none" ? null : value);
-                      setSelectedListingId("");
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Organization" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none">Select Organization</SelectItem>
-                      {organizations.map((organization) => (
-                        <SelectItem key={organization.id} value={organization.id}>
-                          {organization.name || organization.id}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              <div className="space-y-1">
-                <Label>Listing <span className="text-muted-foreground font-normal">(preferred)</span></Label>
-                <Select
-                  value={selectedListingId || "__none"}
-                  onValueChange={(value) => setSelectedListingId(value === "__none" ? "" : value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none">No listing selected</SelectItem>
-                    {listings
-                      .filter((listing) => !resolvedOrganizationId || listing.host_user_id === resolvedOrganizationId)
-                      .map((listing) => (
-                      <SelectItem key={listing.id} value={listing.id}>
-                        {listing.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               <div className="space-y-1"><Label>Issue Description</Label><Textarea value={issue} onChange={(e) => setIssue(e.target.value)} placeholder="Describe the issue" required /></div>
               <div className="space-y-2">
                 <Label>Photos (max 2)</Label>
@@ -273,7 +155,7 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
                   )}
                 </div>
               </div>
-              <Button type="submit" disabled={uploading || requiresOrganizationSelection}>{uploading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Uploading…</> : "Submit"}</Button>
+              <Button type="submit" disabled={uploading}>{uploading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Uploading…</> : "Submit"}</Button>
             </form>
           </CardContent></Card>
         )}

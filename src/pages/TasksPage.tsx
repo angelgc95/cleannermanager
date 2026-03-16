@@ -10,7 +10,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useEffectiveStatuses } from "@/hooks/useEffectiveStatus";
-import { computeStoredStatus } from "@/lib/domain/effectiveStatus";
 import { format } from "date-fns";
 import { Settings2, Plus, Loader2, Sparkles, Save, Check, Pencil, Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -286,35 +285,26 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
     }
   };
 
-  const eventStatusInputs = useMemo(
-    () => events.map((event: any) => ({ id: event.id, status: event.status })),
-    [events],
-  );
-  const { statuses: effectiveStatuses } = useEffectiveStatuses(eventStatusInputs);
-
-  const getEffectiveStatus = useCallback(
-    (event: any) => effectiveStatuses[event.id] ?? computeStoredStatus(event.status),
-    [effectiveStatuses],
-  );
+  const eventIds = useMemo(() => events.map((e: any) => e.id), [events]);
+  const { statuses: effectiveStatuses } = useEffectiveStatuses(eventIds);
 
   const { upcomingEvents, completedEvents, cancelledEvents } = useMemo(() => {
     const upcoming: any[] = []; const completed: any[] = []; const cancelled: any[] = [];
     for (const ev of events) {
-      const es = getEffectiveStatus(ev);
-      if (es === "CANCELLED") cancelled.push(ev);
-      else if (es === "COMPLETED") completed.push(ev);
+      const es = effectiveStatuses[ev.id];
+      if (ev.status === "CANCELLED") cancelled.push(ev);
+      else if (es === "COMPLETED" || ev.status === "DONE") completed.push(ev);
       else upcoming.push(ev);
     }
     completed.sort((a, b) => (b.start_at ? new Date(b.start_at).getTime() : 0) - (a.start_at ? new Date(a.start_at).getTime() : 0));
     return { upcomingEvents: upcoming, completedEvents: completed, cancelledEvents: cancelled };
-  }, [events, getEffectiveStatus]);
+  }, [events, effectiveStatuses]);
 
   const details = (ev: any) => ev.event_details_json || {};
 
   const EventCard = ({ event }: { event: any }) => {
-    const displayStatus = getEffectiveStatus(event);
-    const isCancelled = displayStatus === "CANCELLED";
-    const statusOutOfSync = computeStoredStatus(event.status) !== displayStatus;
+    const isCancelled = event.status === "CANCELLED";
+    const displayStatus = isCancelled ? "CANCELLED" : (effectiveStatuses[event.id] || event.status);
     return (
       <Card key={event.id} className={cn("cursor-pointer hover:shadow-md transition-shadow", isCancelled && "opacity-50")} onClick={() => navigate(`/events/${event.id}`)}>
         <CardContent className="flex items-center justify-between p-4">
@@ -330,11 +320,6 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
           <div className="flex items-center gap-2 shrink-0">
             {event.source === "AUTO" && <span className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">Auto</span>}
             <StatusBadge status={displayStatus} />
-            {isHost && statusOutOfSync && (
-              <span className="inline-flex rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                out of sync
-              </span>
-            )}
           </div>
         </CardContent>
       </Card>

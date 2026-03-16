@@ -1,3 +1,0 @@
-- Multi-tenant rule: `event.host_user_id` is the source of truth for host scoping.
-- `effectiveStatus` is the source of truth for status display.
-- No feature changes, minimal diffs, keep builds green.

@@ -38,7 +38,7 @@ const CLOCK_OUT_TAB_ID = "__clock_out__";
 const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_props, _ref) {
   const { eventId } = useParams();
   const navigate = useNavigate();
-  const { user, role } = useAuth();
+  const { user, hostId, role } = useAuth();
   const { toast } = useToast();
   const [templateId, setTemplateId] = useState<string>("");
 
@@ -529,7 +529,7 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
         run_id: runId,
         item_id: itemId,
         yesno_value: val,
-        host_user_id: event?.host_user_id,
+        host_user_id: hostId,
       }));
 
     if (responseEntries.length > 0) {
@@ -552,7 +552,7 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
       cleaning_event_id: eventId,
       listing_id: event?.listing_id || null,
       description: workNotes || null,
-      host_user_id: event?.host_user_id,
+      host_user_id: hostId,
     } as any, { onConflict: "checklist_run_id" });
 
     for (const item of missingItems) {
@@ -579,7 +579,7 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
           created_from: "CHECKLIST" as const,
           checklist_run_id: runId,
           listing_id: event?.listing_id || null,
-          host_user_id: event?.host_user_id,
+          host_user_id: hostId,
         } as any);
       }
     }
