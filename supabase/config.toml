@@ -1,5 +1,9 @@
 project_id = "rejerjibsoadxwfqofda"
 
+[auth]
+site_url = "http://127.0.0.1:8080"
+additional_redirect_urls = ["http://127.0.0.1:8080/**", "http://localhost:8080/**"]
+
 [functions.generate-payouts]
 verify_jwt = false
 
@@ -13,6 +17,15 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.compute-price-suggestions]
+verify_jwt = false
+
+[functions.generate-checklist-suggestions]
+verify_jwt = false
+
+[functions.onboard-user]
+verify_jwt = false
+
+[functions.reset-cleaning-event]
 verify_jwt = false
 
 [functions.rls-smoke-test]

@@ -17,10 +17,12 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useI18n } from "@/i18n/LanguageProvider";
 
 const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _ref) {
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
+  const { formatDate, t } = useI18n();
   const [entries, setEntries] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ date: format(new Date(), "yyyy-MM-dd"), name: "", amount: "", shop: "" });
@@ -114,7 +116,7 @@ const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _r
 
   return (
     <div>
-      <PageHeader title="Expenses" description="Track cleaning-related expenses" actions={<Button size="sm" onClick={() => { if (showForm) resetForm(); else setShowForm(true); }}>{showForm ? <><X className="h-4 w-4 mr-1" /> Cancel</> : <><Plus className="h-4 w-4 mr-1" /> Add Expense</>}</Button>} />
+      <PageHeader title={t("Expenses")} description={t("Track cleaning-related expenses")} actions={<Button size="sm" onClick={() => { if (showForm) resetForm(); else setShowForm(true); }}>{showForm ? <><X className="h-4 w-4 mr-1" /> {t("Cancel")}</> : <><Plus className="h-4 w-4 mr-1" /> {t("Add Expense")}</>}</Button>} />
       <div className="p-6 space-y-6 max-w-2xl">
         {showForm && (
           <Card><CardContent className="pt-6">
@@ -133,14 +135,14 @@ const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _r
           <div key={monthKey}>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                {format(parseISO(monthKey + "-01"), "MMMM yyyy")}
+                {formatDate(parseISO(`${monthKey}-01`), "MMMM yyyy")}
               </h3>
               <span className="text-sm font-semibold">€{total.toFixed(2)}</span>
             </div>
             <div className="space-y-2">
               {expenses.map((exp: any) => (
                 <Card key={exp.id}><CardContent className="flex items-center justify-between p-4">
-                  <div><p className="font-medium text-sm">{exp.name}</p><p className="text-xs text-muted-foreground">{format(parseISO(exp.date), "MMM d")} · {exp.shop || "—"}</p></div>
+                  <div><p className="font-medium text-sm">{exp.name}</p><p className="text-xs text-muted-foreground">{formatDate(parseISO(exp.date), "MMM d")} · {exp.shop || "—"}</p></div>
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-sm">€{Number(exp.amount).toFixed(2)}</span>
                     {isAdmin && (

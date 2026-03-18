@@ -10,12 +10,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useQuery } from "@tanstack/react-query";
 import type { CleaningEvent, PricingSuggestion } from "@/types/domain";
+import { useI18n } from "@/i18n/LanguageProvider";
 
 const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _ref) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const navigate = useNavigate();
   const { role } = useAuth();
+  const { formatDate, t } = useI18n();
   const isHost = role === "host";
 
   const monthKey = format(currentMonth, "yyyy-MM");
@@ -99,12 +101,12 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
 
   return (
     <div className="flex flex-col h-full">
-      <PageHeader title="Calendar" description="Cleaning schedule overview" actions={
+      <PageHeader title={t("Calendar")} description={t("Cleaning schedule overview")} actions={
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}><ChevronLeft className="h-4 w-4" /></Button>
-          <span className="text-sm font-medium min-w-[140px] text-center">{format(currentMonth, "MMMM yyyy")}</span>
+          <span className="text-sm font-medium min-w-[140px] text-center">{formatDate(currentMonth, "MMMM yyyy")}</span>
           <Button variant="outline" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}><ChevronRight className="h-4 w-4" /></Button>
-          <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date())}>Today</Button>
+          <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date())}>{t("Today")}</Button>
         </div>
       } />
       <div className="flex-1 p-4 overflow-auto">
@@ -143,7 +145,7 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
                     const isCancelled = ev.status === "CANCELLED";
                     return (
                       <button key={ev.id} onClick={(e) => { e.stopPropagation(); navigate(`/events/${ev.id}`); }} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", isCancelled ? "bg-muted text-muted-foreground line-through opacity-60" : ev.status === "DONE" ? "bg-[hsl(var(--status-done)/0.15)] text-[hsl(var(--status-done))]" : ev.status === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
-                        {ev.listings?.name || "Cleaning"}{details(ev).nights != null ? ` · ${details(ev).nights}N` : ""}{details(ev).guests != null ? ` · ${details(ev).guests}G` : ""}
+                        {ev.listings?.name || t("Cleaning")}{details(ev).nights != null ? ` · ${details(ev).nights}N` : ""}{details(ev).guests != null ? ` · ${details(ev).guests}G` : ""}
                       </button>
                     );
                   })}
@@ -159,7 +161,7 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
       <Sheet open={!!selectedDay} onOpenChange={(open) => !open && setSelectedDay(null)}>
         <SheetContent>
           <SheetHeader>
-            <SheetTitle>Price Suggestions — {selectedDay}</SheetTitle>
+            <SheetTitle>{`${t("Price Suggestions -")} ${selectedDay ? formatDate(selectedDay, "PPP") : ""}`}</SheetTitle>
           </SheetHeader>
           <div className="mt-4 space-y-4">
             {selectedSuggestions.map((s) => (
@@ -171,20 +173,20 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
                   <span className={cn("inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold", colorClasses[s.color_level] || colorClasses.green)}>
                     +{Math.round(s.uplift_pct)}%
                   </span>
-                  <span className="text-sm text-muted-foreground">Confidence: {Math.round(s.confidence * 100)}%</span>
+                  <span className="text-sm text-muted-foreground">{`${t("Confidence:")} ${Math.round(s.confidence * 100)}%`}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
-                    <p className="text-muted-foreground">Base Price</p>
+                    <p className="text-muted-foreground">{t("Base Price")}</p>
                     <p className="font-semibold">€{s.base_price}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Suggested Price</p>
+                    <p className="text-muted-foreground">{t("Suggested Price")}</p>
                     <p className="font-semibold text-primary">€{s.suggested_price}</p>
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-medium mb-1.5">Why this price:</p>
+                  <p className="text-xs font-medium mb-1.5">{t("Why this price:")}</p>
                   {s.reasons && Array.isArray(s.reasons) && (s.reasons as any[]).length > 0 ? (
                     <ul className="space-y-1.5">
                       {(s.reasons as any[]).map((r: any, i: number) => (
@@ -197,13 +199,13 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-xs text-muted-foreground italic">No specific events detected — based on minimum uplift setting.</p>
+                    <p className="text-xs text-muted-foreground italic">{t("No specific events detected - based on minimum uplift setting.")}</p>
                   )}
                 </div>
               </div>
             ))}
             {selectedSuggestions.length === 0 && (
-              <p className="text-sm text-muted-foreground">No suggestions for this date.</p>
+              <p className="text-sm text-muted-foreground">{t("No suggestions for this date.")}</p>
             )}
           </div>
         </SheetContent>

@@ -14,17 +14,21 @@ import {
   Bell,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useI18n } from "@/i18n/LanguageProvider";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { NotificationBell } from "@/components/NotificationBell";
 
 const mainNavItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard, roles: ["host", "cleaner"] },
@@ -38,6 +42,13 @@ const mainNavItems = [
   { title: "Guides", url: "/guides", icon: BookOpen, roles: ["host", "cleaner"] },
 ];
 
+const mobilePrimaryNavItems = [
+  { title: "Dashboard", url: "/", icon: LayoutDashboard, roles: ["host", "cleaner"] },
+  { title: "Calendar", url: "/calendar", icon: CalendarDays, roles: ["host", "cleaner"] },
+  { title: "Checklists", url: "/tasks", icon: ClipboardCheck, roles: ["host", "cleaner"] },
+  { title: "Settings", url: "/settings", icon: Settings, roles: ["host", "cleaner"] },
+];
+
 interface InAppNotification {
   id: string;
   title: string;
@@ -49,12 +60,17 @@ interface InAppNotification {
 
 export function AppSidebar() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { role, user } = useAuth();
+  const { t, formatDate } = useI18n();
+  const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+  const hideMobileBottomNav = /^\/events\/[^/]+\/checklist$/.test(pathname);
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
@@ -68,6 +84,10 @@ export function AppSidebar() {
   }, [user]);
 
   useEffect(() => {
+    if (isMobile) {
+      setNotifications([]);
+      return;
+    }
     fetchNotifications();
     if (!user) return;
     const channel = supabase
@@ -80,8 +100,10 @@ export function AppSidebar() {
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [user, fetchNotifications]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchNotifications, isMobile]);
 
   const markAsRead = async (id: string) => {
     await supabase.from("in_app_notifications").update({ read: true }).eq("id", id);
@@ -104,13 +126,122 @@ export function AppSidebar() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    setMobileMenuOpen(false);
     navigate("/auth");
   };
 
-  const filterByRole = (items: typeof mainNavItems) =>
+  const filterByRole = <T extends { roles: string[] }>(items: T[]) =>
     items.filter((item) => !role || item.roles.includes(role));
 
-  const displayName = user?.email?.split("@")[0] || "User";
+  const navItems = filterByRole(mainNavItems);
+  const mobileItems = filterByRole(mobilePrimaryNavItems);
+  const displayName = user?.email?.split("@")[0] || t("User");
+
+  if (isMobile) {
+    return (
+      <>
+        <div
+          className="fixed inset-x-0 top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden"
+          style={{ paddingTop: "env(safe-area-inset-top)" }}
+        >
+          <div className="flex h-14 items-center justify-between px-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label={t("Open navigation")}
+              title={t("Open navigation")}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <div className="min-w-0 text-center">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                {role ? t(role === "host" ? "Host" : "Cleaner") : ""}
+              </p>
+              <p className="truncate text-sm font-semibold text-foreground">CleannerManager</p>
+            </div>
+            <NotificationBell />
+          </div>
+        </div>
+
+        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+          <SheetContent side="left" className="w-[18rem] border-r border-sidebar-border bg-sidebar p-0 text-sidebar-foreground">
+            <div className="flex h-full flex-col">
+              <SheetHeader className="sr-only">
+                <SheetTitle>{t("Navigation menu")}</SheetTitle>
+                <SheetDescription>{t("Browse all sections of the app.")}</SheetDescription>
+              </SheetHeader>
+              <div className="border-b border-sidebar-border px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-sidebar-foreground/60">
+                  {role ? t(role === "host" ? "Host" : "Cleaner") : t("User")}
+                </p>
+                <p className="mt-1 truncate text-base font-semibold text-sidebar-primary-foreground">CleannerManager</p>
+                <p className="mt-2 truncate text-sm text-sidebar-foreground">{displayName}</p>
+              </div>
+
+              <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
+                {navItems.map((item) => (
+                  <NavLink
+                    key={item.url}
+                    to={item.url}
+                    end={item.url === "/"}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                  >
+                    <item.icon className="h-5 w-5 shrink-0" />
+                    <span className="truncate">{t(item.title)}</span>
+                  </NavLink>
+                ))}
+
+                <NavLink
+                  to="/settings"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                >
+                  <Settings className="h-5 w-5 shrink-0" />
+                  <span className="truncate">{t("Settings")}</span>
+                </NavLink>
+              </nav>
+
+              <div className="border-t border-sidebar-border p-2">
+                <button
+                  onClick={handleLogout}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                >
+                  <LogOut className="h-5 w-5 shrink-0" />
+                  <span>{t("Sign Out")}</span>
+                </button>
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        {!hideMobileBottomNav && (
+          <div
+            className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden"
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          >
+            <nav className="grid grid-cols-4 gap-1 px-2 py-2">
+              {mobileItems.map((item) => (
+                <NavLink
+                  key={item.url}
+                  to={item.url}
+                  end={item.url === "/"}
+                  className="flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted"
+                  activeClassName="bg-primary/10 font-semibold text-primary"
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{t(item.title)}</span>
+                </NavLink>
+              ))}
+            </nav>
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <aside
@@ -123,19 +254,19 @@ export function AppSidebar() {
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="p-1.5 rounded-md hover:bg-sidebar-accent text-sidebar-foreground"
+          title={t("Open navigation")}
         >
           <Menu className="h-5 w-5" />
         </button>
         {!collapsed && (
           <span className="font-semibold text-sm text-sidebar-primary-foreground truncate">
-            Cleaning Manager
+            CleannerManager
           </span>
         )}
       </div>
 
-      {/* Main nav */}
       <nav className="flex-1 py-2 overflow-y-auto">
-        {filterByRole(mainNavItems).map((item) => (
+        {navItems.map((item) => (
           <NavLink
             key={item.url}
             to={item.url}
@@ -147,12 +278,11 @@ export function AppSidebar() {
             activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
           >
             <item.icon className="h-5 w-5 shrink-0" />
-            {!collapsed && <span className="truncate">{item.title}</span>}
+            {!collapsed && <span className="truncate">{t(item.title)}</span>}
           </NavLink>
         ))}
       </nav>
 
-      {/* Middle section: Settings & Notifications */}
       <div className="border-t border-sidebar-border shrink-0">
         <div className="py-2">
           <NavLink
@@ -164,7 +294,7 @@ export function AppSidebar() {
             activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
           >
             <Settings className="h-5 w-5 shrink-0" />
-            {!collapsed && <span className="truncate">Settings</span>}
+            {!collapsed && <span className="truncate">{t("Settings")}</span>}
           </NavLink>
 
           <Popover open={notifOpen} onOpenChange={(open) => { setNotifOpen(open); if (open) fetchNotifications(); }}>
@@ -183,21 +313,21 @@ export function AppSidebar() {
                     </span>
                   )}
                 </div>
-                {!collapsed && <span className="truncate">Notifications</span>}
+                {!collapsed && <span className="truncate">{t("Notifications")}</span>}
               </button>
             </PopoverTrigger>
             <PopoverContent side="right" align="end" className="w-80 p-0 max-h-96 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                <h3 className="font-semibold text-sm">Notifications</h3>
+                <h3 className="font-semibold text-sm">{t("Notifications")}</h3>
                 {unreadCount > 0 && (
                   <button onClick={markAllRead} className="text-xs text-primary hover:underline">
-                    Mark all read
+                    {t("Mark all read")}
                   </button>
                 )}
               </div>
               <div className="overflow-y-auto max-h-72">
                 {notifications.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">No notifications</p>
+                  <p className="text-sm text-muted-foreground text-center py-6">{t("No notifications")}</p>
                 ) : (
                   notifications.map((n) => (
                     <button
@@ -213,7 +343,7 @@ export function AppSidebar() {
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium truncate">{n.title}</p>
                           {n.body && <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5 whitespace-pre-line">{n.body}</p>}
-                          <p className="text-xs text-muted-foreground mt-1">{format(new Date(n.created_at), "MMM d, HH:mm")}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{formatDate(n.created_at, "MMM d, HH:mm")}</p>
                         </div>
                       </div>
                     </button>
@@ -224,7 +354,6 @@ export function AppSidebar() {
           </Popover>
         </div>
 
-        {/* User info + sign out */}
         <div className="border-t border-sidebar-border px-2 py-3">
           {!collapsed && (
             <div className="px-3 mb-2">
@@ -238,7 +367,7 @@ export function AppSidebar() {
                       : "bg-accent text-accent-foreground"
                   )}
                 >
-                  {role}
+                  {t(role === "host" ? "Host" : "Cleaner")}
                 </span>
               )}
             </div>
@@ -265,7 +394,7 @@ export function AppSidebar() {
             )}
           >
             <LogOut className="h-5 w-5 shrink-0" />
-            {!collapsed && <span>Sign Out</span>}
+            {!collapsed && <span>{t("Sign Out")}</span>}
           </button>
         </div>
       </div>

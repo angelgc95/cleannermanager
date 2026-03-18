@@ -19,6 +19,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CleaningEvent, TaskItem } from "@/types/domain";
+import { useI18n } from "@/i18n/LanguageProvider";
 
 interface StatCardProps {
   title: string;
@@ -47,6 +48,7 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
   const navigate = useNavigate();
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
+  const { formatDate, t } = useI18n();
   const queryClient = useQueryClient();
   const isHost = role === "host";
 
@@ -177,23 +179,23 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
 
   return (
     <div>
-      <PageHeader title="Dashboard" description="Overview of today's activity" />
+      <PageHeader title={t("Dashboard")} description={t("Overview of today's activity")} />
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard title="Today's Cleanings" value={todayEvents.length} icon={CalendarDays} />
-          <StatCard title="Hours This Week" value={0} icon={Clock} />
-          <StatCard title="Open Maintenance" value={stats.openMaintenance} icon={Wrench} />
-          <StatCard title="Missing Items" value={stats.missingItems} icon={ShoppingCart} />
+          <StatCard title={t("Today's Cleanings")} value={todayEvents.length} icon={CalendarDays} />
+          <StatCard title={t("Hours This Week")} value={0} icon={Clock} />
+          <StatCard title={t("Open Maintenance")} value={stats.openMaintenance} icon={Wrench} />
+          <StatCard title={t("Missing Items")} value={stats.missingItems} icon={ShoppingCart} />
         </div>
 
         {/* Today's Cleaning Events */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Today's Cleaning Events</CardTitle>
+            <CardTitle className="text-lg">{t("Today's Cleaning Events")}</CardTitle>
           </CardHeader>
           <CardContent>
             {todayEvents.length === 0 ? (
-              <p className="text-muted-foreground text-sm py-4 text-center">No cleaning events scheduled for today.</p>
+              <p className="text-muted-foreground text-sm py-4 text-center">{t("No cleaning events scheduled for today.")}</p>
             ) : (
               <div className="space-y-3">
                 {todayEvents.map((ev) => (
@@ -204,7 +206,7 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
                   >
                     <div>
                       <p className="font-medium text-sm text-foreground">
-                        {ev.listings?.name || "Listing"}
+                        {ev.listings?.name || t("Listing")}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {ev.start_at ? format(new Date(ev.start_at), "HH:mm") : "—"} – {ev.end_at ? format(new Date(ev.end_at), "HH:mm") : "—"}
@@ -275,7 +277,7 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
                       <Popover>
                         <PopoverTrigger asChild>
                           <Button variant="outline" className={cn("w-full justify-start text-left font-normal h-9", !taskDueDate && "text-muted-foreground")}>
-                            {taskDueDate ? format(taskDueDate, "PPP") : "Pick a date"}
+                            {taskDueDate ? formatDate(taskDueDate, "PPP") : t("Pick a date")}
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="start">
@@ -309,7 +311,7 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
                           <p className="font-medium text-sm">{task.label}</p>
                           <p className="text-xs text-muted-foreground">
                             {task.type} {task.required && "· Required"}
-                            {task.due_date && ` · Due ${format(new Date(task.due_date), "MMM d")}`}
+                            {task.due_date && ` · ${t("Due")} ${formatDate(task.due_date, "MMM d")}`}
                             {isHost && ` · ${getCleanerName(task.assigned_cleaner_id)}`}
                           </p>
                           {task.help_text && <p className="text-xs text-muted-foreground mt-0.5">{task.help_text}</p>}
@@ -340,7 +342,7 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-sm text-muted-foreground line-through">{task.label}</p>
                           <p className="text-xs text-muted-foreground">
-                            Completed {task.completed_at ? format(new Date(task.completed_at), "MMM d, HH:mm") : ""}
+                            {`${t("Completed")} ${task.completed_at ? formatDate(task.completed_at, "MMM d, HH:mm") : ""}`}
                             {isHost && ` · ${getCleanerName(task.assigned_cleaner_id)}`}
                           </p>
                         </div>

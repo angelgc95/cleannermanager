@@ -124,6 +124,8 @@
   }
   body {
     @apply bg-background text-foreground;
+    min-height: 100svh;
+    overscroll-behavior-y: none;
   }
 }
 

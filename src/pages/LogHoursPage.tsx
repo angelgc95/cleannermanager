@@ -12,10 +12,12 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Plus, X, Clock, User, Pencil, Trash2 } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
+import { useI18n } from "@/i18n/LanguageProvider";
 
 const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _ref) {
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
+  const { formatDate, t } = useI18n();
   const [entries, setEntries] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -134,9 +136,9 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
 
   return (
     <div>
-      <PageHeader title="Log Hours" description={isHost ? "View submitted hours" : "Track extra hours outside scheduled cleanings"} actions={
+      <PageHeader title={t("Log Hours")} description={isHost ? t("View submitted hours") : t("Track extra hours outside scheduled cleanings")} actions={
         <Button size="sm" onClick={() => { if (showForm) resetForm(); else setShowForm(true); }}>
-          {showForm ? <><X className="h-4 w-4 mr-1" /> Cancel</> : <><Plus className="h-4 w-4 mr-1" /> Log Hours</>}
+          {showForm ? <><X className="h-4 w-4 mr-1" /> {t("Cancel")}</> : <><Plus className="h-4 w-4 mr-1" /> {t("Log Hours")}</>}
         </Button>
       } />
       <div className="p-6 space-y-6 max-w-3xl">
@@ -188,7 +190,7 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
                 <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center"><Clock className="h-4 w-4 text-muted-foreground" /></div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="font-medium text-sm">{format(new Date(entry.date), "MMM d, yyyy")}</p>
+                    <p className="font-medium text-sm">{formatDate(entry.date, "MMM d, yyyy")}</p>
                     {isHost && entry._user_name && <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">{entry._user_name}</span>}
                   </div>
                    <p className="text-xs text-muted-foreground">{entry.start_at?.slice(0, 5)} – {entry.end_at?.slice(0, 5)} · {entry.duration_minutes} min</p>

@@ -14,6 +14,7 @@ import { NotificationSettings } from "@/components/NotificationSettings";
 import { PricingSuggestionsSettings } from "@/components/PricingSuggestionsSettings";
 import { AdminCleanerManagement } from "@/components/admin/AdminCleanerManagement";
 import { ManualEventEntry } from "@/components/ManualEventEntry";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useNavigate } from "react-router-dom";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -187,7 +188,18 @@ const SettingsPage = forwardRef<HTMLDivElement>(function SettingsPage(_props, _r
 
   return (
     <div>
-      <PageHeader title="Settings" description="Manage listings, cleaners, and payout settings" actions={<Button size="sm" onClick={() => setShowAdd(!showAdd)}><Plus className="h-4 w-4 mr-1" /> Add Listing</Button>} />
+      <PageHeader
+        title="Settings"
+        description="Manage listings, cleaners, and payout settings"
+        actions={
+          <>
+            <LanguageSwitcher />
+            <Button size="sm" onClick={() => setShowAdd(!showAdd)}>
+              <Plus className="h-4 w-4 mr-1" /> Add Listing
+            </Button>
+          </>
+        }
+      />
       <div className="p-6 space-y-4 max-w-3xl">
         {showAdd && (
           <Card>

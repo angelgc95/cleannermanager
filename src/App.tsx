@@ -5,8 +5,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
+import { LanguageProvider, useI18n } from "@/i18n/LanguageProvider";
 import Auth from "./pages/Auth";
 import OnboardingPage from "./pages/OnboardingPage";
+import CompleteCleanerProfilePage from "./pages/CompleteCleanerProfilePage";
 import Index from "./pages/Index";
 import CalendarPage from "./pages/CalendarPage";
 import TasksPage from "./pages/TasksPage";
@@ -24,64 +26,83 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+function LoadingScreen() {
+  const { t } = useI18n();
+  return <div className="flex items-center justify-center min-h-screen text-muted-foreground">{t("Loading...")}</div>;
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, role } = useAuth();
-  if (loading) return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading...</div>;
+  const { user, loading, role, profileComplete } = useAuth();
+  if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/auth" replace />;
   if (!role) return <Navigate to="/onboarding" replace />;
+  if (role === "cleaner" && !profileComplete) return <Navigate to="/complete-profile" replace />;
   return <>{children}</>;
 }
 
 function SettingsRoute() {
   const { role, loading } = useAuth();
-  if (loading) return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading...</div>;
+  if (loading) return <LoadingScreen />;
   if (role === "cleaner") return <CleanerSettingsPage />;
   return <SettingsPage />;
 }
 
 function OnboardingRoute() {
   const { user, loading, role } = useAuth();
-  if (loading) return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading...</div>;
+  if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/auth" replace />;
   if (role) return <Navigate to="/" replace />;
   return <OnboardingPage />;
 }
 
+function CompleteProfileRoute() {
+  const { user, loading, role, profileComplete } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/auth" replace />;
+  if (!role) return <Navigate to="/onboarding" replace />;
+  if (role !== "cleaner") return <Navigate to="/" replace />;
+  if (profileComplete) return <Navigate to="/" replace />;
+  return <CompleteCleanerProfilePage />;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/onboarding" element={<OnboardingRoute />} />
-            <Route
-              element={
-                <ProtectedRoute>
-                  <AppLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="/" element={<Index />} />
-              <Route path="/calendar" element={<CalendarPage />} />
-              <Route path="/tasks" element={<TasksPage />} />
-              <Route path="/events/:id" element={<TaskDetailPage />} />
-              <Route path="/events/:eventId/checklist" element={<ChecklistRunPage />} />
-              <Route path="/hours" element={<LogHoursPage />} />
-              <Route path="/expenses" element={<ExpensesPage />} />
-              <Route path="/maintenance" element={<MaintenancePage />} />
-              <Route path="/shopping" element={<ShoppingPage />} />
-              <Route path="/payouts" element={<PayoutsPage />} />
-              <Route path="/guides" element={<GuidesPage />} />
-              <Route path="/settings" element={<SettingsRoute />} />
-            </Route>
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/onboarding" element={<OnboardingRoute />} />
+              <Route path="/complete-profile" element={<CompleteProfileRoute />} />
+              <Route
+                element={
+                  <ProtectedRoute>
+                    <AppLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route path="/" element={<Index />} />
+                <Route path="/calendar" element={<CalendarPage />} />
+                <Route path="/tasks" element={<TasksPage />} />
+                <Route path="/events/:id" element={<TaskDetailPage />} />
+                <Route path="/events/:eventId/checklist" element={<ChecklistRunPage />} />
+                <Route path="/hours" element={<LogHoursPage />} />
+                <Route path="/expenses" element={<ExpensesPage />} />
+                <Route path="/maintenance" element={<MaintenancePage />} />
+                <Route path="/shopping" element={<ShoppingPage />} />
+                <Route path="/payouts" element={<PayoutsPage />} />
+                <Route path="/guides" element={<GuidesPage />} />
+                <Route path="/settings" element={<SettingsRoute />} />
+              </Route>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </AuthProvider>
+    </LanguageProvider>
   </QueryClientProvider>
 );
 

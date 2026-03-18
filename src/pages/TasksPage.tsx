@@ -26,6 +26,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useI18n } from "@/i18n/LanguageProvider";
 
 interface TemplateOption { id: string; name: string; }
 interface ListingOption { id: string; name: string; default_checklist_template_id: string | null; }
@@ -111,6 +112,7 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { role, user } = useAuth();
   const { toast } = useToast();
+  const { formatDate, t } = useI18n();
   const isHost = role === "host";
   const [manageOpen, setManageOpen] = useState(false);
   const [templates, setTemplates] = useState<TemplateOption[]>([]);
@@ -311,14 +313,14 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
           <div className="min-w-0">
             <p className={cn("font-medium text-sm truncate", isCancelled && "line-through text-muted-foreground")}>{event.listings?.name || "Listing"}{event.reference ? ` · ${event.reference}` : ""}</p>
             <p className={cn("text-xs text-muted-foreground", isCancelled && "line-through")}>
-              {event.start_at ? format(new Date(event.start_at), "MMM d, HH:mm") : "No date"}
-              {event.end_at ? ` – ${format(new Date(event.end_at), "HH:mm")}` : ""}
+              {event.start_at ? formatDate(event.start_at, "MMM d, HH:mm") : t("No date")}
+              {event.end_at ? ` – ${formatDate(event.end_at, "HH:mm")}` : ""}
               {details(event).nights != null && ` · ${details(event).nights}N`}
               {details(event).guests != null ? ` · ${details(event).guests}G` : ""}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {event.source === "AUTO" && <span className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">Auto</span>}
+            {event.source === "AUTO" && <span className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">{t("Auto")}</span>}
             <StatusBadge status={displayStatus} />
           </div>
         </CardContent>
@@ -328,9 +330,9 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
 
   return (
     <div>
-      <PageHeader title="Checklists" description="Cleaning checklists for each scheduled event" actions={isHost ? (
+      <PageHeader title={t("Checklists")} description={t("Cleaning checklists for each scheduled event")} actions={isHost ? (
         <Button variant="outline" size="sm" onClick={() => openEditor()} className="gap-1.5">
-          <Settings2 className="h-4 w-4" /> Manage Templates
+          <Settings2 className="h-4 w-4" /> {t("Manage Templates")}
         </Button>
       ) : undefined} />
       <div className="p-6 space-y-4">

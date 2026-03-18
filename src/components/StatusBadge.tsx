@@ -1,5 +1,6 @@
 import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/LanguageProvider";
 
 type StatusVariant = "todo" | "in_progress" | "done" | "cancelled" | "open" | "missing" | "ordered" | "bought" | "ok" | "pending" | "paid";
 
@@ -23,6 +24,7 @@ interface StatusBadgeProps {
 }
 
 export const StatusBadge = forwardRef<HTMLSpanElement, StatusBadgeProps>(function StatusBadge({ status, className }, ref) {
+  const { tStatus } = useI18n();
   const key = status.toLowerCase().replace(/-/g, "_") as StatusVariant;
   return (
     <span
@@ -33,7 +35,7 @@ export const StatusBadge = forwardRef<HTMLSpanElement, StatusBadgeProps>(functio
         className
       )}
     >
-      {status.replace(/_/g, " ")}
+      {tStatus(status)}
     </span>
   );
 });

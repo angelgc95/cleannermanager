@@ -15,9 +15,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
 import { Plus, Trash2, Send, ShoppingCart, Package, Edit2, X, Check, Search, ChevronDown, ChevronRight } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useI18n } from "@/i18n/LanguageProvider";
 
 /* ─── types ─── */
 interface Product { id: string; name: string; category: string | null; }
@@ -37,6 +37,7 @@ interface SelectedProduct { productId: string; quantity: number; note: string; }
 const ShoppingPage = forwardRef<HTMLDivElement>(function ShoppingPage(_props, _ref) {
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const isAdmin = role === "host";
 
@@ -62,7 +63,7 @@ const ShoppingPage = forwardRef<HTMLDivElement>(function ShoppingPage(_props, _r
 
   const onRefresh = () => queryClient.invalidateQueries({ queryKey: ["shopping-data"] });
 
-  if (loading) return <div className="p-6 text-muted-foreground">Loading...</div>;
+  if (loading) return <div className="p-6 text-muted-foreground">{t("Loading...")}</div>;
 
   return isAdmin
     ? <AdminShoppingView submissions={submissions} items={items} products={products} user={user} hostId={hostId} toast={toast} onRefresh={onRefresh} />
@@ -233,6 +234,7 @@ function CleanerShoppingView({ submissions, items, products, user, hostId, toast
 /* ─── Collapsible submission card (shared) ─── */
 function SubmissionCard({ submission, items, actions }: { submission: Submission; items: ShoppingItem[]; actions?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const { formatDate } = useI18n();
   const pendingCount = items.filter((i) => i.status !== "OK").length;
 
   return (
@@ -243,7 +245,7 @@ function SubmissionCard({ submission, items, actions }: { submission: Submission
             {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">
-                {format(new Date(submission.created_at), "dd MMM yyyy, HH:mm")}
+                {formatDate(submission.created_at, "dd MMM yyyy, HH:mm")}
               </p>
               <p className="text-xs text-muted-foreground">{items.length} item{items.length !== 1 ? "s" : ""}</p>
             </div>
@@ -541,6 +543,7 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
 /* ─── Admin submission card with inline editing ─── */
 function AdminSubmissionCard({ submission, items, editingId, editQty, editStatus, onStartEdit, onCancelEdit, onSaveEdit, onDeleteItem, onDeleteSubmission, setEditQty, setEditStatus }: any) {
   const [open, setOpen] = useState(false);
+  const { formatDate } = useI18n();
   const pendingCount = items.filter((i: ShoppingItem) => i.status !== "OK").length;
 
   return (
@@ -550,7 +553,7 @@ function AdminSubmissionCard({ submission, items, editingId, editQty, editStatus
           <CardContent className="p-3 flex items-center gap-3 cursor-pointer hover:bg-muted/30 transition-colors">
             {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">{format(new Date(submission.created_at), "dd MMM yyyy, HH:mm")}</p>
+              <p className="text-sm font-medium">{formatDate(submission.created_at, "dd MMM yyyy, HH:mm")}</p>
               <p className="text-xs text-muted-foreground">{items.length} item{items.length !== 1 ? "s" : ""}</p>
             </div>
             {pendingCount > 0 && <Badge variant="destructive" className="text-[10px]">{pendingCount} pending</Badge>}

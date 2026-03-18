@@ -1,73 +1,66 @@
-# Welcome to your Lovable project
+# Cleanner Manager Local Setup
 
-## Project info
+This clone can run independently from Lovable using the local Supabase project in [`supabase/`](/Users/angel/Documents/Playground/cleannermanager/supabase). The frontend uses `.env.local`, so it can point at the local backend even if the checked-in `.env` still contains old hosted values.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Stack
 
-## How can I edit this code?
+- Vite
+- React
+- TypeScript
+- Tailwind CSS
+- Supabase local stack
 
-There are several ways of editing your application.
+## Requirements
 
-**Use Lovable**
+- Node.js 20+
+- npm
+- Supabase CLI
+- A Docker runtime
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+If you use Colima on macOS, create or start it with `sshfs` mounts. Supabase local logging sidecars are excluded in the local scripts because they are not needed for app development and can fail under Colima socket mounting.
 
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## First-time local bootstrap
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+npm install
+npm run local:backend
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+What `npm run local:backend` does:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+- starts Docker if Colima is installed and Docker is not already running
+- starts the local Supabase stack from this repo
+- skips `vector` and `logflare` sidecars
+- writes `.env.local` with the local Supabase URL and publishable key
 
-**Use GitHub Codespaces**
+The app will then be available at [http://127.0.0.1:8080](http://127.0.0.1:8080).
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Daily local workflow
 
-## What technologies are used for this project?
+```sh
+npm run local:backend
+npm run dev
+```
 
-This project is built with:
+To stop the backend:
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+```sh
+npm run local:stop
+```
 
-## How can I deploy this project?
+## Local endpoints
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+- App: [http://127.0.0.1:8080](http://127.0.0.1:8080)
+- Supabase API: [http://127.0.0.1:54321](http://127.0.0.1:54321)
+- Supabase Studio: [http://127.0.0.1:54323](http://127.0.0.1:54323)
+- Mailpit: [http://127.0.0.1:54324](http://127.0.0.1:54324)
 
-## Can I connect a custom domain to my Lovable project?
+## Local data notes
 
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- Database schema and edge functions come from the files in [`supabase/`](/Users/angel/Documents/Playground/cleannermanager/supabase).
+- A fresh local database starts empty, which is expected.
+- Create your first account through the app locally, then complete onboarding there.
+- Optional features still need their own local secrets if you want them:
+  - `TICKETMASTER_API_KEY` for event fetching
+  - `LOVABLE_API_KEY` for checklist suggestions
