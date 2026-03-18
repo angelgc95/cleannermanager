@@ -91,9 +91,26 @@
 
   /* Cleaner role theme */
   .cleaner-theme {
+    --background: 8 50% 98%;
+    --foreground: 0 28% 16%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 28% 16%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 28% 16%;
     --primary: 0 72% 50%;
     --primary-foreground: 0 0% 100%;
+    --secondary: 8 42% 95%;
+    --secondary-foreground: 0 24% 22%;
+    --muted: 8 36% 95%;
+    --muted-foreground: 0 14% 42%;
+    --accent: 4 80% 58%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 8 24% 88%;
+    --input: 8 24% 88%;
     --ring: 0 72% 50%;
+    --status-todo: 0 72% 50%;
     --sidebar-background: 0 30% 14%;
     --sidebar-foreground: 0 14% 85%;
     --sidebar-primary: 0 72% 60%;
@@ -104,9 +121,26 @@
     --sidebar-ring: 0 72% 50%;
   }
 
-  .cleaner-theme.dark {
+  .dark .cleaner-theme {
+    --background: 0 24% 8%;
+    --foreground: 0 16% 92%;
+    --card: 0 22% 11%;
+    --card-foreground: 0 16% 92%;
+    --popover: 0 22% 11%;
+    --popover-foreground: 0 16% 92%;
     --primary: 0 72% 60%;
+    --secondary: 0 18% 16%;
+    --secondary-foreground: 0 12% 86%;
+    --muted: 0 18% 16%;
+    --muted-foreground: 0 10% 66%;
+    --accent: 4 72% 56%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 42%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 18% 18%;
+    --input: 0 18% 18%;
     --ring: 0 72% 60%;
+    --status-todo: 0 72% 60%;
     --sidebar-background: 0 30% 8%;
     --sidebar-foreground: 0 14% 80%;
     --sidebar-primary: 0 72% 60%;

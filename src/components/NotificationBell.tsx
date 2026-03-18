@@ -21,11 +21,12 @@ interface InAppNotification {
 }
 
 export function NotificationBell() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const navigate = useNavigate();
   const { formatDate, t } = useI18n();
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [open, setOpen] = useState(false);
+  const isCleaner = role === "cleaner";
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -93,11 +94,16 @@ export function NotificationBell() {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          className="relative rounded-lg p-2 transition-colors hover:bg-muted"
+          className={cn(
+            "relative rounded-lg p-2 transition-colors",
+            isCleaner
+              ? "text-sidebar-foreground hover:bg-sidebar-accent"
+              : "hover:bg-muted"
+          )}
           aria-label={t("Notifications")}
           title={t("Notifications")}
         >
-          <Bell className="h-5 w-5 text-muted-foreground" />
+          <Bell className={cn("h-5 w-5", isCleaner ? "text-sidebar-foreground" : "text-muted-foreground")} />
           {unreadCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center font-bold">
               {unreadCount > 9 ? "9+" : unreadCount}

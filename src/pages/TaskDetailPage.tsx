@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, AlertTriangle, CheckCircle2, Loader2, Save, Bell } from "lucide-react";
+import { ArrowLeft, ClipboardList, XCircle, Clock, ShoppingCart, Camera, StickyNote, AlertTriangle, CheckCircle2, Loader2, Save, Bell, User } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -149,6 +149,44 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
     },
   });
 
+  const { data: submissionCleaner = null } = useQuery({
+    queryKey: ["event-run-cleaner", checklistRun?.cleaner_user_id],
+    enabled: isAdmin && !!checklistRun?.cleaner_user_id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("name, email")
+        .eq("user_id", checklistRun!.cleaner_user_id)
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  const { data: loggedHours = null } = useQuery({
+    queryKey: ["event-run-log-hours", event?.checklist_run_id],
+    enabled: isAdmin && !!event?.checklist_run_id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("log_hours")
+        .select("date, start_at, end_at, duration_minutes, description")
+        .eq("checklist_run_id", event!.checklist_run_id!)
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  const { data: checklistResponsesCount = 0 } = useQuery({
+    queryKey: ["event-run-response-count", event?.checklist_run_id],
+    enabled: isAdmin && !!event?.checklist_run_id,
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("checklist_responses")
+        .select("id", { count: "exact", head: true })
+        .eq("run_id", event!.checklist_run_id!);
+      return count || 0;
+    },
+  });
+
   const { data: runPhotos = [] } = useQuery({
     queryKey: ["event-run-photos", event?.checklist_run_id],
     enabled: isAdmin && !!event?.checklist_run_id,
@@ -261,6 +299,8 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
     : "TODO";
 
   const statusMismatch = event.status === "IN_PROGRESS" && effectiveStatus === "COMPLETED";
+  const submissionDuration = checklistRun?.duration_minutes ?? loggedHours?.duration_minutes ?? null;
+  const submissionCleanerName = submissionCleaner?.name || submissionCleaner?.email || "Cleaner";
 
   return (
     <div ref={ref}>
@@ -421,35 +461,72 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
         </Card>
 
         {/* === CHECKLIST RUN SUMMARY (admin only, if completed) === */}
-        {isAdmin && checklistRun && (
+        {isAdmin && checklistRun?.finished_at && (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">{t("Checklist Summary")}</CardTitle>
+              <CardTitle className="text-base">{t("Submission Overview")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-muted-foreground">Listing</p>
-                  <p className="font-medium">{event.listings?.name || "N/A"}</p>
+                  <p className="text-muted-foreground">Submitted by</p>
+                  <p className="font-medium flex items-center gap-1.5">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    {submissionCleanerName}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Submitted at</p>
+                  <p className="font-medium text-xs">
+                    {checklistRun.finished_at
+                      ? formatDateTime(checklistRun.finished_at, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                          timeZone: listingTimezone,
+                        })
+                      : "N/A"}
+                  </p>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Clock className="h-4 w-4 text-muted-foreground" />
                   <div>
                     <p className="text-muted-foreground">Duration</p>
                     <p className="font-medium">
-                      {checklistRun.duration_minutes
-                        ? `${Math.floor(checklistRun.duration_minutes / 60)}h ${checklistRun.duration_minutes % 60}m`
+                      {submissionDuration
+                        ? `${Math.floor(submissionDuration / 60)}h ${submissionDuration % 60}m`
                         : "N/A"}
                     </p>
                   </div>
                 </div>
+                <div>
+                  <p className="text-muted-foreground">Checklist checks</p>
+                  <p className="font-medium">{checklistResponsesCount}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Photos uploaded</p>
+                  <p className="font-medium">{runPhotos.length}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Shopping items</p>
+                  <p className="font-medium">{runShoppingItems.length}</p>
+                </div>
               </div>
+
+              {loggedHours?.description && (
+                <div className="flex items-start gap-1.5">
+                  <Clock className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="text-muted-foreground">Work log notes</p>
+                    <p className="font-medium">{loggedHours.description}</p>
+                  </div>
+                </div>
+              )}
 
               {checklistRun.overall_notes && (
                 <div className="flex items-start gap-1.5">
                   <StickyNote className="h-4 w-4 text-muted-foreground mt-0.5" />
                   <div>
-                    <p className="text-muted-foreground">Notes</p>
+                    <p className="text-muted-foreground">Checklist notes</p>
                     <p className="font-medium">{checklistRun.overall_notes}</p>
                   </div>
                 </div>

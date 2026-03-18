@@ -71,6 +71,7 @@ export function AppSidebar() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
   const hideMobileBottomNav = /^\/events\/[^/]+\/checklist$/.test(pathname);
+  const isCleaner = role === "cleaner";
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
@@ -141,7 +142,12 @@ export function AppSidebar() {
     return (
       <>
         <div
-          className="fixed inset-x-0 top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden"
+          className={cn(
+            "fixed inset-x-0 top-0 z-40 border-b backdrop-blur md:hidden",
+            isCleaner
+              ? "border-sidebar-border bg-sidebar/95 text-sidebar-foreground supports-[backdrop-filter]:bg-sidebar/90"
+              : "border-border bg-background/95 supports-[backdrop-filter]:bg-background/80"
+          )}
           style={{ paddingTop: "env(safe-area-inset-top)" }}
         >
           <div className="flex h-14 items-center justify-between px-4">
@@ -155,10 +161,10 @@ export function AppSidebar() {
               <Menu className="h-5 w-5" />
             </Button>
             <div className="min-w-0 text-center">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              <p className={cn("text-[10px] uppercase tracking-[0.18em]", isCleaner ? "text-sidebar-foreground/65" : "text-muted-foreground")}>
                 {role ? t(role === "host" ? "Host" : "Cleaner") : ""}
               </p>
-              <p className="truncate text-sm font-semibold text-foreground">CleannerManager</p>
+              <p className={cn("truncate text-sm font-semibold", isCleaner ? "text-sidebar-primary-foreground" : "text-foreground")}>CleannerManager</p>
             </div>
             <NotificationBell />
           </div>
@@ -220,7 +226,12 @@ export function AppSidebar() {
 
         {!hideMobileBottomNav && (
           <div
-            className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden"
+            className={cn(
+              "fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur md:hidden",
+              isCleaner
+                ? "border-sidebar-border bg-sidebar/95 text-sidebar-foreground supports-[backdrop-filter]:bg-sidebar/90"
+                : "border-border bg-background/95 supports-[backdrop-filter]:bg-background/80"
+            )}
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           >
             <nav className="grid grid-cols-4 gap-1 px-2 py-2">
@@ -229,8 +240,13 @@ export function AppSidebar() {
                   key={item.url}
                   to={item.url}
                   end={item.url === "/"}
-                  className="flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted"
-                  activeClassName="bg-primary/10 font-semibold text-primary"
+                  className={cn(
+                    "flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] transition-colors",
+                    isCleaner
+                      ? "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      : "text-muted-foreground hover:bg-muted"
+                  )}
+                  activeClassName={isCleaner ? "bg-sidebar-accent font-semibold text-sidebar-primary" : "bg-primary/10 font-semibold text-primary"}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   <span className="truncate">{t(item.title)}</span>
