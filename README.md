@@ -63,4 +63,4 @@ npm run local:stop
 - Create your first account through the app locally, then complete onboarding there.
 - Optional features still need their own local secrets if you want them:
   - `TICKETMASTER_API_KEY` for event fetching
-  - `LOVABLE_API_KEY` for checklist suggestions
+  - `OPENAI_API_KEY` for checklist suggestions
