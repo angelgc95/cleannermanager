@@ -28,6 +28,8 @@ interface RawSection {
   items?: RawItem[];
 }
 
+type ResponseFormatSchema = Record<string, unknown>;
+
 const AIRBNB_RESOURCE_PRIORITIES = [
   "Prioritize high-touch surfaces and frequently used items.",
   "Air out rooms, refresh floors, and leave the home visibly guest-ready.",
@@ -465,6 +467,92 @@ Respond with ONLY valid JSON in this exact format:
 }`;
 }
 
+function buildResponseFormat(mode: SuggestionMode): ResponseFormatSchema {
+  const itemSchema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      label: { type: "string", minLength: 1 },
+      type: { type: "string", enum: ["YESNO", "PHOTO", "TEXT", "NUMBER"] },
+      required: { type: "boolean" },
+      help_text: { type: ["string", "null"] },
+      timer_minutes: { type: ["integer", "null"] },
+    },
+    required: ["label", "type", "required", "help_text", "timer_minutes"],
+  };
+
+  if (mode === "section") {
+    return {
+      type: "json_schema",
+      name: "checklist_section_suggestions",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          items: {
+            type: "array",
+            minItems: 1,
+            items: itemSchema,
+          },
+        },
+        required: ["items"],
+      },
+    };
+  }
+
+  return {
+    type: "json_schema",
+    name: "checklist_template_suggestions",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        sections: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              title: { type: "string", minLength: 1 },
+              items: {
+                type: "array",
+                minItems: 1,
+                items: itemSchema,
+              },
+            },
+            required: ["title", "items"],
+          },
+        },
+      },
+      required: ["sections"],
+    },
+  };
+}
+
+function extractResponseText(payload: Record<string, unknown>): string {
+  const output = Array.isArray(payload.output) ? payload.output : [];
+  const text = output
+    .filter((item) => item && typeof item === "object" && (item as Record<string, unknown>).type === "message")
+    .flatMap((item) => {
+      const content = (item as Record<string, unknown>).content;
+      return Array.isArray(content) ? content : [];
+    })
+    .filter((part) => part && typeof part === "object" && (part as Record<string, unknown>).type === "output_text")
+    .map((part) => (part as Record<string, unknown>).text)
+    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .join("\n")
+    .trim();
+
+  if (!text) {
+    throw new Error("OpenAI response did not include output_text");
+  }
+
+  return text;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -495,8 +583,8 @@ serve(async (req) => {
       });
     }
 
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!lovableApiKey) {
+    const openAiApiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openAiApiKey) {
       return new Response(JSON.stringify({ error: "AI not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -504,6 +592,7 @@ serve(async (req) => {
     }
 
     const systemPrompt = buildSystemPrompt(currentMode, experienceLevel, listingContext);
+    const responseFormat = buildResponseFormat(currentMode);
     const userContent = currentMode === "section"
       ? JSON.stringify({
         section_title: sectionTitle,
@@ -513,34 +602,30 @@ serve(async (req) => {
         property_description: propertyDescription,
       }, null, 2);
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
+        Authorization: `Bearer ${openAiApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userContent },
-        ],
-        temperature: 0.4,
-        max_tokens: 4000,
+        model: "gpt-5-mini",
+        instructions: systemPrompt,
+        input: userContent,
+        reasoning: { effort: "minimal" },
+        text: { format: responseFormat },
+        max_output_tokens: 4000,
+        store: false,
       }),
     });
 
     if (!response.ok) {
-      const errText = await response.text();
-      console.error("AI gateway error:", errText);
-      return new Response(JSON.stringify({ error: "AI generation failed" }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      const text = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} ${text}`);
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
+    const data = await response.json() as Record<string, unknown>;
+    const content = extractResponseText(data);
     const parsed = jsonContent(content) as { items?: RawItem[]; sections?: RawSection[] };
 
     if (currentMode === "section") {
