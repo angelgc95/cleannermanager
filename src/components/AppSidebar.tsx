@@ -72,6 +72,7 @@ export function AppSidebar() {
   const unreadCount = notifications.filter((n) => !n.read).length;
   const hideMobileBottomNav = /^\/events\/[^/]+\/checklist$/.test(pathname);
   const isCleaner = role === "cleaner";
+  const isHostDesktop = role === "host" && !isMobile;
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
@@ -262,20 +263,26 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        "sticky top-0 h-screen flex flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-200 shrink-0",
+        "sticky top-0 h-screen flex flex-col transition-all duration-200 shrink-0",
+        isHostDesktop
+          ? "border-r border-border/70 bg-white text-foreground shadow-sm"
+          : "bg-sidebar text-sidebar-foreground border-r border-sidebar-border",
         collapsed ? "w-16" : "w-60"
       )}
     >
-      <div className="flex items-center gap-3 px-4 h-14 border-b border-sidebar-border shrink-0">
+      <div className={cn("flex items-center gap-3 px-4 h-14 shrink-0", isHostDesktop ? "border-b border-border/70" : "border-b border-sidebar-border")}>
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="p-1.5 rounded-md hover:bg-sidebar-accent text-sidebar-foreground"
+          className={cn(
+            "p-1.5 rounded-md",
+            isHostDesktop ? "hover:bg-muted text-foreground" : "hover:bg-sidebar-accent text-sidebar-foreground"
+          )}
           title={t("Open navigation")}
         >
           <Menu className="h-5 w-5" />
         </button>
         {!collapsed && (
-          <span className="font-semibold text-sm text-sidebar-primary-foreground truncate">
+          <span className={cn("font-semibold text-sm truncate", isHostDesktop ? "text-foreground" : "text-sidebar-primary-foreground")}>
             CleannerManager
           </span>
         )}
@@ -288,10 +295,13 @@ export function AppSidebar() {
             to={item.url}
             end={item.url === "/"}
             className={cn(
-              "flex items-center gap-3 mx-2 px-3 py-2.5 rounded-lg text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              "flex items-center gap-3 mx-2 px-3 py-2.5 rounded-lg text-sm transition-colors",
+              isHostDesktop
+                ? "text-muted-foreground hover:bg-muted hover:text-foreground"
+                : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
               collapsed && "justify-center px-0"
             )}
-            activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+            activeClassName={isHostDesktop ? "bg-primary/10 text-primary font-semibold" : "bg-sidebar-accent text-sidebar-primary font-medium"}
           >
             <item.icon className="h-5 w-5 shrink-0" />
             {!collapsed && <span className="truncate">{t(item.title)}</span>}
@@ -299,15 +309,18 @@ export function AppSidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-sidebar-border shrink-0">
+      <div className={cn("shrink-0", isHostDesktop ? "border-t border-border/70" : "border-t border-sidebar-border")}>
         <div className="py-2">
           <NavLink
             to="/settings"
             className={cn(
-              "flex items-center gap-3 mx-2 px-3 py-2.5 rounded-lg text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              "flex items-center gap-3 mx-2 px-3 py-2.5 rounded-lg text-sm transition-colors",
+              isHostDesktop
+                ? "text-muted-foreground hover:bg-muted hover:text-foreground"
+                : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
               collapsed && "justify-center px-0"
             )}
-            activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+            activeClassName={isHostDesktop ? "bg-primary/10 text-primary font-semibold" : "bg-sidebar-accent text-sidebar-primary font-medium"}
           >
             <Settings className="h-5 w-5 shrink-0" />
             {!collapsed && <span className="truncate">{t("Settings")}</span>}
@@ -317,7 +330,10 @@ export function AppSidebar() {
             <PopoverTrigger asChild>
               <button
                 className={cn(
-                  "relative flex items-center gap-3 mx-2 px-3 py-2.5 rounded-lg text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground w-[calc(100%-1rem)]",
+                  "relative flex items-center gap-3 mx-2 px-3 py-2.5 rounded-lg text-sm transition-colors w-[calc(100%-1rem)]",
+                  isHostDesktop
+                    ? "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                   collapsed && "justify-center px-0"
                 )}
               >
@@ -370,10 +386,10 @@ export function AppSidebar() {
           </Popover>
         </div>
 
-        <div className="border-t border-sidebar-border px-2 py-3">
+        <div className={cn("px-2 py-3", isHostDesktop ? "border-t border-border/70" : "border-t border-sidebar-border")}>
           {!collapsed && (
             <div className="px-3 mb-2">
-              <p className="text-sm font-medium text-sidebar-foreground truncate">{displayName}</p>
+              <p className={cn("text-sm font-medium truncate", isHostDesktop ? "text-foreground" : "text-sidebar-foreground")}>{displayName}</p>
               {role && (
                 <span
                   className={cn(
@@ -405,7 +421,10 @@ export function AppSidebar() {
           <button
             onClick={handleLogout}
             className={cn(
-              "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm hover:bg-sidebar-accent transition-colors text-sidebar-foreground",
+              "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm transition-colors",
+              isHostDesktop
+                ? "text-muted-foreground hover:bg-muted hover:text-foreground"
+                : "hover:bg-sidebar-accent text-sidebar-foreground",
               collapsed && "justify-center px-0"
             )}
           >
