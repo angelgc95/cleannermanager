@@ -649,6 +649,7 @@ export type Database = {
         Row: {
           created_at: string
           default_hourly_rate: number
+          expense_grouping: string
           host_user_id: string
           id: string
           last_refreshed_at: string | null
@@ -656,6 +657,9 @@ export type Database = {
           min_uplift_pct: number
           nightly_price_suggestions_enabled: boolean
           payout_frequency: string
+          payout_run_time: string
+          payout_run_timezone: string
+          payout_shortcut_enabled: boolean
           payout_week_end_day: number
           suggestion_days_ahead: number
           suggestion_radius_km: number
@@ -665,6 +669,7 @@ export type Database = {
         Insert: {
           created_at?: string
           default_hourly_rate?: number
+          expense_grouping?: string
           host_user_id: string
           id?: string
           last_refreshed_at?: string | null
@@ -672,6 +677,9 @@ export type Database = {
           min_uplift_pct?: number
           nightly_price_suggestions_enabled?: boolean
           payout_frequency?: string
+          payout_run_time?: string
+          payout_run_timezone?: string
+          payout_shortcut_enabled?: boolean
           payout_week_end_day?: number
           suggestion_days_ahead?: number
           suggestion_radius_km?: number
@@ -681,6 +689,7 @@ export type Database = {
         Update: {
           created_at?: string
           default_hourly_rate?: number
+          expense_grouping?: string
           host_user_id?: string
           id?: string
           last_refreshed_at?: string | null
@@ -688,6 +697,9 @@ export type Database = {
           min_uplift_pct?: number
           nightly_price_suggestions_enabled?: boolean
           payout_frequency?: string
+          payout_run_time?: string
+          payout_run_timezone?: string
+          payout_shortcut_enabled?: boolean
           payout_week_end_day?: number
           suggestion_days_ahead?: number
           suggestion_radius_km?: number

@@ -25,6 +25,9 @@ verify_enabled = true
 [functions.generate-payouts]
 verify_jwt = false
 
+[functions.run-scheduled-payouts]
+verify_jwt = false
+
 [functions.sync-ics]
 verify_jwt = false
 

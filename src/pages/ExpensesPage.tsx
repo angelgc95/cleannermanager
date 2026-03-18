@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { format, parseISO } from "date-fns";
+import { addDays, format, parseISO, startOfWeek } from "date-fns";
 import { Plus, X, Pencil, Trash2, Loader2 } from "lucide-react";
 import {
   Dialog,
@@ -29,6 +29,7 @@ const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _r
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [orgSettings, setOrgSettings] = useState<any>(null);
 
   const isAdmin = role === "host";
 
@@ -38,6 +39,21 @@ const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _r
   };
 
   useEffect(() => { fetchEntries(); }, []);
+
+  useEffect(() => {
+    const fetchHostSettings = async () => {
+      const settingsOwnerId = hostId || user?.id;
+      if (!settingsOwnerId) return;
+      const { data } = await supabase
+        .from("host_settings")
+        .select("expense_grouping, payout_week_end_day")
+        .eq("host_user_id", settingsOwnerId)
+        .maybeSingle();
+      setOrgSettings(data || null);
+    };
+
+    fetchHostSettings();
+  }, [hostId, user]);
 
   const resetForm = () => {
     setForm({ date: format(new Date(), "yyyy-MM-dd"), name: "", amount: "", shop: "" });
@@ -104,15 +120,33 @@ const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _r
   };
 
   const grouped = useMemo(() => {
-    const groups: Record<string, { expenses: any[]; total: number }> = {};
+    const grouping = orgSettings?.expense_grouping ?? "MONTHLY";
+    const weekEndDay = Number(orgSettings?.payout_week_end_day ?? 0);
+    const weekStartsOn = ((weekEndDay + 1) % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+    const groups: Record<string, { expenses: any[]; total: number; label: string }> = {};
+
     for (const exp of entries) {
-      const key = format(parseISO(exp.date), "yyyy-MM");
-      if (!groups[key]) groups[key] = { expenses: [], total: 0 };
+      const expenseDate = parseISO(exp.date);
+      let key: string;
+      let label: string;
+
+      if (grouping === "PAYOUT_WEEK") {
+        const periodStart = startOfWeek(expenseDate, { weekStartsOn });
+        const periodEnd = addDays(periodStart, 6);
+        key = `${format(periodStart, "yyyy-MM-dd")}_${format(periodEnd, "yyyy-MM-dd")}`;
+        label = `${formatDate(periodStart, "MMM d")} – ${formatDate(periodEnd, "MMM d, yyyy")}`;
+      } else {
+        key = format(expenseDate, "yyyy-MM");
+        label = formatDate(parseISO(`${key}-01`), "MMMM yyyy");
+      }
+
+      if (!groups[key]) groups[key] = { expenses: [], total: 0, label };
       groups[key].expenses.push(exp);
       groups[key].total += Number(exp.amount);
     }
+
     return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a));
-  }, [entries]);
+  }, [entries, formatDate, orgSettings]);
 
   return (
     <div>
@@ -131,11 +165,11 @@ const ExpensesPage = forwardRef<HTMLDivElement>(function ExpensesPage(_props, _r
             </form>
           </CardContent></Card>
         )}
-        {grouped.map(([monthKey, { expenses, total }]) => (
-          <div key={monthKey}>
+        {grouped.map(([groupKey, { expenses, total, label }]) => (
+          <div key={groupKey}>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                {formatDate(parseISO(`${monthKey}-01`), "MMMM yyyy")}
+                {label}
               </h3>
               <span className="text-sm font-semibold">€{total.toFixed(2)}</span>
             </div>
