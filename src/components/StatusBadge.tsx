@@ -2,12 +2,13 @@ import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/LanguageProvider";
 
-type StatusVariant = "todo" | "in_progress" | "done" | "cancelled" | "open" | "missing" | "ordered" | "bought" | "ok" | "pending" | "paid";
+type StatusVariant = "todo" | "in_progress" | "done" | "completed" | "cancelled" | "open" | "missing" | "ordered" | "bought" | "ok" | "pending" | "paid";
 
 const variantStyles: Record<StatusVariant, string> = {
   todo: "status-todo",
   in_progress: "status-in-progress",
   done: "status-done",
+  completed: "status-done",
   cancelled: "status-cancelled",
   open: "status-todo",
   missing: "bg-destructive/10 text-destructive",

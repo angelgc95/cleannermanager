@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { useQuery } from "@tanstack/react-query";
 import type { CleaningEvent, PricingSuggestion } from "@/types/domain";
 import { useI18n } from "@/i18n/LanguageProvider";
+import { useEffectiveStatuses } from "@/hooks/useEffectiveStatus";
 
 const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _ref) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -86,6 +87,8 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
     });
     return map;
   }, [suggestions]);
+  const eventIds = useMemo(() => events.map((event) => event.id), [events]);
+  const { statuses: effectiveStatuses } = useEffectiveStatuses(eventIds);
 
   const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -143,8 +146,10 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
                 <div className="mt-1 space-y-1">
                   {dayEvents.slice(0, 3).map((ev) => {
                     const isCancelled = ev.status === "CANCELLED";
+                    const displayStatus = effectiveStatuses[ev.id] || ev.status;
+                    const isCompleted = displayStatus === "COMPLETED" || ev.status === "DONE";
                     return (
-                      <button key={ev.id} onClick={(e) => { e.stopPropagation(); navigate(`/events/${ev.id}`); }} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", isCancelled ? "bg-muted text-muted-foreground line-through opacity-60" : ev.status === "DONE" ? "bg-[hsl(var(--status-done)/0.15)] text-[hsl(var(--status-done))]" : ev.status === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
+                      <button key={ev.id} onClick={(e) => { e.stopPropagation(); navigate(`/events/${ev.id}`); }} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", isCancelled ? "bg-muted text-muted-foreground line-through opacity-60" : isCompleted ? "bg-muted text-muted-foreground opacity-75" : displayStatus === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
                         {ev.listings?.name || t("Cleaning")}{details(ev).nights != null ? ` · ${details(ev).nights}N` : ""}{details(ev).guests != null ? ` · ${details(ev).guests}G` : ""}
                       </button>
                     );

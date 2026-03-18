@@ -555,22 +555,33 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
       host_user_id: hostId,
     } as any, { onConflict: "checklist_run_id" });
 
-    for (const item of missingItems) {
-      const { data: existing } = await supabase
-        .from("shopping_list")
-        .select("id, quantity_needed, status")
-        .eq("product_id", item.productId)
-        .in("status", ["MISSING", "ORDERED"])
-        .limit(1);
+    let checklistSubmissionId: string | null = null;
+    if (missingItems.length > 0) {
+      const checklistSubmissionLabel = [
+        "Added from checklist",
+        event?.listings?.name || null,
+        event?.reference ? `Ref ${event.reference}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
 
-      if (existing && existing.length > 0) {
-        await supabase.from("shopping_list").update({
-          quantity_needed: (existing[0].quantity_needed || 1) + item.quantity,
-          status: "MISSING" as const,
-          note: item.note || existing[0].status,
-        }).eq("id", existing[0].id);
-      } else {
-        await supabase.from("shopping_list").insert({
+      const { data: checklistSubmission } = await supabase
+        .from("shopping_submissions")
+        .insert({
+          created_by_user_id: user.id,
+          host_user_id: event?.host_user_id || hostId,
+          status: "PENDING",
+          notes: checklistSubmissionLabel,
+        } as any)
+        .select("id")
+        .maybeSingle();
+
+      checklistSubmissionId = checklistSubmission?.id || null;
+    }
+
+    if (missingItems.length > 0) {
+      await supabase.from("shopping_list").insert(
+        missingItems.map((item) => ({
           product_id: item.productId,
           created_by_user_id: user.id,
           status: "MISSING" as const,
@@ -578,10 +589,11 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
           note: item.note || null,
           created_from: "CHECKLIST" as const,
           checklist_run_id: runId,
+          submission_id: checklistSubmissionId,
           listing_id: event?.listing_id || null,
-          host_user_id: hostId,
-        } as any);
-      }
+          host_user_id: event?.host_user_id || hostId,
+        })) as any
+      );
     }
 
     await supabase.from("cleaning_events").update({

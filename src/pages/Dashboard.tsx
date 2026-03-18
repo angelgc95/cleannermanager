@@ -1,4 +1,4 @@
-import { useState, forwardRef } from "react";
+import { useMemo, useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CleaningEvent, TaskItem } from "@/types/domain";
 import { useI18n } from "@/i18n/LanguageProvider";
+import { useEffectiveStatuses } from "@/hooks/useEffectiveStatus";
 
 interface StatCardProps {
   title: string;
@@ -172,6 +173,8 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
 
   const pendingTasks = tasks.filter((t) => t.status === "TODO");
   const completedTasks = tasks.filter((t) => t.status === "DONE");
+  const eventIds = useMemo(() => todayEvents.map((event) => event.id), [todayEvents]);
+  const { statuses: effectiveStatuses } = useEffectiveStatuses(eventIds);
 
   const details = (ev: CleaningEvent) => ev.event_details_json as Record<string, any> || {};
 
@@ -202,7 +205,12 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
                   <div
                     key={ev.id}
                     onClick={() => navigate(`/events/${ev.id}`)}
-                    className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 cursor-pointer transition-colors"
+                    className={cn(
+                      "flex items-center justify-between p-3 rounded-lg border border-border cursor-pointer transition-colors",
+                      effectiveStatuses[ev.id] === "COMPLETED" || ev.status === "DONE"
+                        ? "bg-muted/30 hover:bg-muted/40"
+                        : "hover:bg-muted/50"
+                    )}
                   >
                     <div>
                       <p className="font-medium text-sm text-foreground">
@@ -214,7 +222,13 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
                         {details(ev).guests != null ? ` · ${details(ev).guests} guests` : ""}
                       </p>
                     </div>
-                    <StatusBadge status={ev.status} />
+                    <StatusBadge
+                      status={
+                        effectiveStatuses[ev.id] === "COMPLETED"
+                          ? "COMPLETED"
+                          : effectiveStatuses[ev.id] || ev.status
+                      }
+                    />
                   </div>
                 ))}
               </div>

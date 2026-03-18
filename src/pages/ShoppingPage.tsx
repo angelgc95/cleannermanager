@@ -24,6 +24,9 @@ interface Product { id: string; name: string; category: string | null; }
 interface ShoppingItem {
   id: string; product_id: string; status: string; quantity_needed: number;
   note: string | null; created_at: string; created_by_user_id: string;
+  created_from: string | null;
+  checklist_run_id: string | null;
+  host_user_id: string | null;
   submission_id: string | null;
   products?: { name: string; category: string | null } | null;
 }
@@ -31,7 +34,57 @@ interface Submission {
   id: string; created_by_user_id: string; created_at: string; status: string; notes: string | null;
   host_user_id: string | null;
 }
+interface SubmissionView extends Submission {
+  isSynthetic?: boolean;
+}
 interface SelectedProduct { productId: string; quantity: number; note: string; }
+
+const getSyntheticSubmissionId = (item: ShoppingItem) =>
+  item.checklist_run_id ? `checklist:${item.checklist_run_id}` : `checklist-item:${item.id}`;
+
+const getItemsForSubmission = (submission: SubmissionView, items: ShoppingItem[]) =>
+  submission.isSynthetic
+    ? items.filter((item) => !item.submission_id && item.created_from === "CHECKLIST" && getSyntheticSubmissionId(item) === submission.id)
+    : items.filter((item) => item.submission_id === submission.id);
+
+const buildSubmissionViews = (submissions: Submission[], items: ShoppingItem[]): SubmissionView[] => {
+  const syntheticMap = new Map<string, SubmissionView>();
+
+  items
+    .filter((item) => !item.submission_id && item.created_from === "CHECKLIST")
+    .forEach((item) => {
+      const syntheticId = getSyntheticSubmissionId(item);
+      const existing = syntheticMap.get(syntheticId);
+      const nextStatus = item.status === "OK" ? "DONE" : "PENDING";
+
+      if (!existing) {
+        syntheticMap.set(syntheticId, {
+          id: syntheticId,
+          created_by_user_id: item.created_by_user_id,
+          created_at: item.created_at,
+          status: nextStatus,
+          notes: "Added from checklist",
+          host_user_id: item.host_user_id,
+          isSynthetic: true,
+        });
+        return;
+      }
+
+      existing.status = existing.status === "DONE" && nextStatus === "DONE" ? "DONE" : "PENDING";
+      if (new Date(item.created_at).getTime() < new Date(existing.created_at).getTime()) {
+        existing.created_at = item.created_at;
+      }
+    });
+
+  const actualSubmissions: SubmissionView[] = submissions.map((submission) => ({
+    ...submission,
+    isSynthetic: false,
+  }));
+
+  return [...actualSubmissions, ...Array.from(syntheticMap.values())].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+};
 
 /* ═══════════════════════════════════════════ */
 const ShoppingPage = forwardRef<HTMLDivElement>(function ShoppingPage(_props, _ref) {
@@ -79,8 +132,10 @@ function CleanerShoppingView({ submissions, items, products, user, hostId, toast
   const [search, setSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const submissionViews = buildSubmissionViews(submissions as Submission[], items as ShoppingItem[]);
+
   // My submissions (oldest first)
-  const mySubs = (submissions as Submission[])
+  const mySubs = submissionViews
     .filter((s) => s.created_by_user_id === user?.id)
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
@@ -221,7 +276,7 @@ function CleanerShoppingView({ submissions, items, products, user, hostId, toast
           ) : (
             <div className="space-y-2">
               {mySubs.map((sub) => (
-                <SubmissionCard key={sub.id} submission={sub} items={(items as ShoppingItem[]).filter((i) => i.submission_id === sub.id)} />
+                <SubmissionCard key={sub.id} submission={sub} items={getItemsForSubmission(sub, items as ShoppingItem[])} />
               ))}
             </div>
           )}
@@ -232,7 +287,7 @@ function CleanerShoppingView({ submissions, items, products, user, hostId, toast
 }
 
 /* ─── Collapsible submission card (shared) ─── */
-function SubmissionCard({ submission, items, actions }: { submission: Submission; items: ShoppingItem[]; actions?: React.ReactNode }) {
+function SubmissionCard({ submission, items, actions }: { submission: SubmissionView; items: ShoppingItem[]; actions?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const { formatDate } = useI18n();
   const pendingCount = items.filter((i) => i.status !== "OK").length;
@@ -247,6 +302,9 @@ function SubmissionCard({ submission, items, actions }: { submission: Submission
               <p className="text-sm font-medium">
                 {formatDate(submission.created_at, "dd MMM yyyy, HH:mm")}
               </p>
+              {submission.notes && (
+                <p className="text-xs text-muted-foreground truncate">{submission.notes}</p>
+              )}
               <p className="text-xs text-muted-foreground">{items.length} item{items.length !== 1 ? "s" : ""}</p>
             </div>
             {pendingCount > 0 && <Badge variant="destructive" className="text-[10px]">{pendingCount} pending</Badge>}
@@ -292,7 +350,7 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
   const [newProductName, setNewProductName] = useState("");
   const [newProductCategory, setNewProductCategory] = useState("");
 
-  const allSubs = (submissions as Submission[]).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  const allSubs = buildSubmissionViews(submissions as Submission[], items as ShoppingItem[]);
   const pendingSubs = allSubs.filter((s) => s.status === "PENDING");
   const openItems = (items as ShoppingItem[]).filter((i) => ["MISSING", "ORDERED", "BOUGHT"].includes(i.status));
 
@@ -441,7 +499,7 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
               <p className="text-center text-muted-foreground py-8">No shopping lists submitted yet.</p>
             ) : (
               allSubs.map((sub) => {
-                const subItems = (items as ShoppingItem[]).filter((i) => i.submission_id === sub.id);
+                const subItems = getItemsForSubmission(sub, items as ShoppingItem[]);
                 return (
                   <AdminSubmissionCard
                     key={sub.id}
@@ -457,6 +515,7 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
                     onDeleteSubmission={handleDeleteSubmission}
                     setEditQty={setEditQty}
                     setEditStatus={setEditStatus}
+                    canDeleteSubmission={!sub.isSynthetic}
                   />
                 );
               })
@@ -541,7 +600,7 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
 }
 
 /* ─── Admin submission card with inline editing ─── */
-function AdminSubmissionCard({ submission, items, editingId, editQty, editStatus, onStartEdit, onCancelEdit, onSaveEdit, onDeleteItem, onDeleteSubmission, setEditQty, setEditStatus }: any) {
+function AdminSubmissionCard({ submission, items, editingId, editQty, editStatus, onStartEdit, onCancelEdit, onSaveEdit, onDeleteItem, onDeleteSubmission, setEditQty, setEditStatus, canDeleteSubmission }: any) {
   const [open, setOpen] = useState(false);
   const { formatDate } = useI18n();
   const pendingCount = items.filter((i: ShoppingItem) => i.status !== "OK").length;
@@ -554,13 +613,16 @@ function AdminSubmissionCard({ submission, items, editingId, editQty, editStatus
             {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">{formatDate(submission.created_at, "dd MMM yyyy, HH:mm")}</p>
+              {submission.notes && <p className="text-xs text-muted-foreground truncate">{submission.notes}</p>}
               <p className="text-xs text-muted-foreground">{items.length} item{items.length !== 1 ? "s" : ""}</p>
             </div>
             {pendingCount > 0 && <Badge variant="destructive" className="text-[10px]">{pendingCount} pending</Badge>}
             <SubmissionStatusBadge status={submission.status} />
-            <Button size="sm" variant="ghost" className="text-destructive" onClick={(e) => { e.stopPropagation(); onDeleteSubmission(submission.id); }}>
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            {canDeleteSubmission && (
+              <Button size="sm" variant="ghost" className="text-destructive" onClick={(e) => { e.stopPropagation(); onDeleteSubmission(submission.id); }}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </CardContent>
         </CollapsibleTrigger>
         <CollapsibleContent>
