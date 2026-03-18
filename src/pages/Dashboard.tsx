@@ -124,13 +124,6 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
         due_date: taskDueDate ? format(taskDueDate, "yyyy-MM-dd") : null,
       });
       if (error) throw error;
-      await supabase.from("in_app_notifications").insert({
-        user_id: taskCleanerId,
-        host_user_id: user.id,
-        title: "New task assigned",
-        body: taskLabel.trim(),
-        link: "/",
-      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard-tasks"] });

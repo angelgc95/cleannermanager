@@ -139,7 +139,7 @@ Deno.serve(async (req) => {
           title = "⏰ Cleaning in 1 hour";
           body = `${listingName}\nStarts: ${startTime}\nNights: ${details.nights ?? "N/A"} · Guests: ${details.guests ?? "N/A"}`;
         } else {
-          title = "📋 Checklist mandatory — submit now";
+          title = "📋 Today's checklist is still pending";
           body = `${listingName}\nYour cleaning checklist has not been submitted yet. Please complete it now.`;
         }
 
@@ -164,8 +164,8 @@ Deno.serve(async (req) => {
           await supabase.from("in_app_notifications").insert({
             user_id: job.host_user_id,
             host_user_id: job.host_user_id,
-            title: `📋 Checklist overdue: ${cleanerProfile?.name || "Cleaner"}`,
-            body: `${listingName}\nChecklist not submitted by 2 PM.`,
+            title: "Missing today's checklist",
+            body: `${listingName}\n${cleanerProfile?.name || "Cleaner"} has not submitted today's checklist by 3:00 PM.`,
             link,
           });
         }

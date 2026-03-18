@@ -89,6 +89,68 @@
     --sidebar-ring: 220 70% 60%;
   }
 
+  /* Host role theme */
+  .host-theme {
+    --background: 212 60% 98%;
+    --foreground: 221 42% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 221 42% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 221 42% 15%;
+    --primary: 217 82% 52%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 48% 95%;
+    --secondary-foreground: 221 36% 22%;
+    --muted: 214 42% 95%;
+    --muted-foreground: 220 18% 42%;
+    --accent: 201 88% 48%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 34% 88%;
+    --input: 214 34% 88%;
+    --ring: 217 82% 52%;
+    --status-todo: 217 82% 52%;
+    --sidebar-background: 220 45% 16%;
+    --sidebar-foreground: 214 22% 86%;
+    --sidebar-primary: 211 100% 68%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 219 34% 24%;
+    --sidebar-accent-foreground: 214 28% 94%;
+    --sidebar-border: 219 28% 24%;
+    --sidebar-ring: 211 100% 68%;
+  }
+
+  .dark .host-theme {
+    --background: 220 34% 9%;
+    --foreground: 214 28% 92%;
+    --card: 220 30% 12%;
+    --card-foreground: 214 28% 92%;
+    --popover: 220 30% 12%;
+    --popover-foreground: 214 28% 92%;
+    --primary: 211 100% 68%;
+    --secondary: 220 24% 16%;
+    --secondary-foreground: 214 20% 86%;
+    --muted: 220 24% 16%;
+    --muted-foreground: 216 14% 66%;
+    --accent: 201 90% 54%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 42%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 22% 18%;
+    --input: 220 22% 18%;
+    --ring: 211 100% 68%;
+    --status-todo: 211 100% 68%;
+    --sidebar-background: 220 42% 10%;
+    --sidebar-foreground: 214 18% 82%;
+    --sidebar-primary: 211 100% 68%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 28% 16%;
+    --sidebar-accent-foreground: 214 20% 90%;
+    --sidebar-border: 220 22% 18%;
+    --sidebar-ring: 211 100% 68%;
+  }
+
   /* Cleaner role theme */
   .cleaner-theme {
     --background: 8 50% 98%;
