@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import type { CleanerExperienceLevel, ListingAiContext } from "@/lib/checklist-ai";
 
 export interface ChecklistItem {
   id: string;
@@ -41,10 +42,14 @@ export interface Section {
 interface ChecklistTemplateEditorProps {
   sections: Section[];
   templateId: string;
+  aiContext?: {
+    cleanerExperienceLevel: CleanerExperienceLevel;
+    listingContext: ListingAiContext;
+  };
   onSectionsUpdated: (sections: Section[]) => void;
 }
 
-export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdated }: ChecklistTemplateEditorProps) {
+export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSectionsUpdated }: ChecklistTemplateEditorProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [editingSection, setEditingSection] = useState<{ id: string; title: string } | null>(null);
@@ -60,6 +65,7 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
   const [newItemHelpText, setNewItemHelpText] = useState("");
   const [newItemTimerMinutes, setNewItemTimerMinutes] = useState<string>("");
   const [newItemDependsOn, setNewItemDependsOn] = useState<string>("");
+  const canGenerateSectionWithAi = newSectionDescription.trim().length >= 5 || !!aiContext;
 
   // Get items from the current section for dependency dropdown (exclude TIMER items)
   const getSectionItemsForDependency = (sectionId: string, excludeItemId?: string) => {
@@ -74,12 +80,18 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
     const maxSort = Math.max(0, ...sections.map((s) => s.sort_order));
     
     // If AI mode, generate items first
-    let aiItems: { label: string; type: string; required: boolean; sort_order: number; help_text: string | null }[] = [];
-    if (withAI && newSectionDescription.trim().length >= 5) {
+    let aiItems: { label: string; type: string; required: boolean; sort_order: number; help_text: string | null; timer_minutes?: number | null }[] = [];
+    if (withAI && canGenerateSectionWithAi) {
       setGeneratingItems(true);
       try {
         const { data: aiData, error: aiErr } = await supabase.functions.invoke("generate-checklist-suggestions", {
-          body: { description: newSectionDescription.trim(), mode: "section", section_title: newSectionTitle.trim() },
+          body: {
+            description: newSectionDescription.trim(),
+            mode: "section",
+            section_title: newSectionTitle.trim(),
+            cleaner_experience_level: aiContext?.cleanerExperienceLevel,
+            listing_context: aiContext?.listingContext,
+          },
         });
         if (aiErr || !aiData?.items) {
           toast({ title: "AI suggestions failed", description: "Section created without items.", variant: "destructive" });
@@ -110,6 +122,7 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
         required: item.required,
         sort_order: item.sort_order,
         help_text: item.help_text,
+        timer_minutes: item.timer_minutes ?? null,
         host_user_id: user?.id,
       }));
       const { data: itemsData, error: itemsErr } = await supabase
@@ -351,20 +364,22 @@ export function ChecklistTemplateEditor({ sections, templateId, onSectionsUpdate
                 className="resize-none"
               />
               <p className="text-[11px] text-muted-foreground">
-                {newSectionDescription.trim().length >= 5
-                  ? "✨ AI will suggest items tailored to your description."
+                {canGenerateSectionWithAi
+                  ? newSectionDescription.trim().length >= 5
+                    ? "AI will use your section notes plus the template context to suggest items."
+                    : "AI can use the saved cleaner experience and listing context for this template, even without extra notes."
                   : "Add a description to get AI-tailored suggestions, or leave empty to add items manually."}
               </p>
             </div>
           </div>
           <DialogFooter className="flex-col gap-2 sm:flex-col">
             <Button
-              onClick={() => addSection(newSectionDescription.trim().length >= 5)}
+              onClick={() => addSection(canGenerateSectionWithAi)}
               disabled={!newSectionTitle.trim() || generatingItems}
               className="w-full gap-1.5"
             >
-              {generatingItems ? <Loader2 className="h-4 w-4 animate-spin" /> : newSectionDescription.trim().length >= 5 ? <Sparkles className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-              {generatingItems ? "Generating..." : newSectionDescription.trim().length >= 5 ? "Add with Smart Suggestions" : "Add Empty Section"}
+              {generatingItems ? <Loader2 className="h-4 w-4 animate-spin" /> : canGenerateSectionWithAi ? <Sparkles className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              {generatingItems ? "Generating..." : canGenerateSectionWithAi ? "Add with Smart Suggestions" : "Add Empty Section"}
             </Button>
           </DialogFooter>
         </DialogContent>

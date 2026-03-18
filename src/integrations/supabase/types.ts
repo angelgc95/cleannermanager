@@ -322,6 +322,8 @@ export type Database = {
       checklist_templates: {
         Row: {
           active: boolean | null
+          ai_listing_context: Json
+          cleaner_experience_level: number
           created_at: string
           host_user_id: string
           id: string
@@ -330,6 +332,8 @@ export type Database = {
         }
         Insert: {
           active?: boolean | null
+          ai_listing_context?: Json
+          cleaner_experience_level?: number
           created_at?: string
           host_user_id: string
           id?: string
@@ -338,6 +342,8 @@ export type Database = {
         }
         Update: {
           active?: boolean | null
+          ai_listing_context?: Json
+          cleaner_experience_level?: number
           created_at?: string
           host_user_id?: string
           id?: string

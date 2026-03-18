@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import { ChecklistTemplateEditor } from "@/components/admin/ChecklistTemplateEditor";
 import type { Section } from "@/components/admin/ChecklistTemplateEditor";
 import {
@@ -27,9 +28,24 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useI18n } from "@/i18n/LanguageProvider";
+import {
+  buildListingDescription,
+  CLEANER_EXPERIENCE_CONTENT,
+  type CleanerExperienceLevel,
+  getListingTypeLabel,
+  LISTING_TYPE_OPTIONS,
+  normalizeCleanerExperienceLevel,
+  normalizeListingAiContext,
+  parseAmenitiesInput,
+  type ListingAiContext,
+} from "@/lib/checklist-ai";
 
 interface TemplateOption { id: string; name: string; }
 interface ListingOption { id: string; name: string; default_checklist_template_id: string | null; }
+interface TemplateAiMetadata {
+  cleanerExperienceLevel: CleanerExperienceLevel;
+  listingContext: ListingAiContext;
+}
 
 interface SectionSuggestion {
   title: string;
@@ -120,7 +136,10 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
   const [sections, setSections] = useState<Section[]>([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState("");
-  const [listingDescription, setListingDescription] = useState("");
+  const [cleanerExperienceLevel, setCleanerExperienceLevel] = useState<CleanerExperienceLevel>(2);
+  const [listingType, setListingType] = useState("apartment");
+  const [listingAmenitiesInput, setListingAmenitiesInput] = useState("");
+  const [listingActionableInfo, setListingActionableInfo] = useState("");
   const [creating, setCreating] = useState(false);
   const [listings, setListings] = useState<ListingOption[]>([]);
   const [assigningListing, setAssigningListing] = useState(false);
@@ -128,6 +147,18 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
   const [saved, setSaved] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
   const [templateDirty, setTemplateDirty] = useState(false);
+  const [selectedTemplateAiMetadata, setSelectedTemplateAiMetadata] = useState<TemplateAiMetadata | null>(null);
+
+  const listingAiContext = useMemo<ListingAiContext>(() => ({
+    listingType,
+    amenities: parseAmenitiesInput(listingAmenitiesInput),
+    actionableInfo: listingActionableInfo.trim(),
+  }), [listingType, listingAmenitiesInput, listingActionableInfo]);
+
+  const listingDescription = useMemo(
+    () => buildListingDescription(listingAiContext),
+    [listingAiContext]
+  );
 
   useEffect(() => {
     const fetch = async () => {
@@ -153,6 +184,14 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
     const { data } = await supabase.from("listings").select("id, name, default_checklist_template_id").eq("host_user_id", user.id).order("name");
     setListings((data || []) as ListingOption[]);
   }, [user]);
+
+  const resetCreateTemplateForm = useCallback(() => {
+    setNewTemplateName("");
+    setCleanerExperienceLevel(2);
+    setListingType("apartment");
+    setListingAmenitiesInput("");
+    setListingActionableInfo("");
+  }, []);
 
   const handleSaveAssignments = async () => {
     if (!selectedTemplateId) return;
@@ -205,12 +244,41 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
   }, [searchParams, setSearchParams, openEditor]);
 
   useEffect(() => {
-    if (!selectedTemplateId) { setSections([]); return; }
+    if (!selectedTemplateId) {
+      setSections([]);
+      setSelectedTemplateAiMetadata(null);
+      return;
+    }
     const fetchSections = async () => {
-      const { data } = await supabase.from("checklist_sections").select("id, title, sort_order").eq("template_id", selectedTemplateId).order("sort_order");
-      const secs = data || [];
-      if (secs.length === 0) { setSections([]); return; }
-      const { data: items } = await supabase.from("checklist_items").select("id, item_key, label, type, required, sort_order, help_text, section_id, timer_minutes, depends_on_item_id").in("section_id", secs.map((s) => s.id)).order("sort_order");
+      const [{ data: templateData }, { data: sectionsData }] = await Promise.all([
+        supabase
+          .from("checklist_templates")
+          .select("cleaner_experience_level, ai_listing_context")
+          .eq("id", selectedTemplateId)
+          .maybeSingle(),
+        supabase
+          .from("checklist_sections")
+          .select("id, title, sort_order")
+          .eq("template_id", selectedTemplateId)
+          .order("sort_order"),
+      ]);
+
+      setSelectedTemplateAiMetadata({
+        cleanerExperienceLevel: normalizeCleanerExperienceLevel(templateData?.cleaner_experience_level),
+        listingContext: normalizeListingAiContext(templateData?.ai_listing_context),
+      });
+
+      const secs = sectionsData || [];
+      if (secs.length === 0) {
+        setSections([]);
+        return;
+      }
+
+      const { data: items } = await supabase
+        .from("checklist_items")
+        .select("id, item_key, label, type, required, sort_order, help_text, section_id, timer_minutes, depends_on_item_id")
+        .in("section_id", secs.map((s) => s.id))
+        .order("sort_order");
       setSections(secs.map((s) => ({ ...s, items: (items || []).filter((i: any) => i.section_id === s.id).map(({ section_id, ...rest }: any) => rest) })));
     };
     fetchSections();
@@ -232,6 +300,7 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
         required: item.required,
         sort_order: item.sort_order,
         help_text: item.help_text,
+        timer_minutes: item.timer_minutes ?? null,
         host_user_id: user!.id,
       }));
       await supabase.from("checklist_items").insert(itemsToInsert);
@@ -245,7 +314,11 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
       let aiSections: SectionSuggestion[] | null = null;
       if (mode === "ai") {
         const { data: aiData, error: aiErr } = await supabase.functions.invoke("generate-checklist-suggestions", {
-          body: { description: listingDescription.trim() },
+          body: {
+            description: listingDescription.trim(),
+            cleaner_experience_level: cleanerExperienceLevel,
+            listing_context: listingAiContext,
+          },
         });
         if (aiErr || !aiData?.sections) {
           toast({ title: "AI suggestions failed", description: "Falling back to default suggestions.", variant: "destructive" });
@@ -256,7 +329,12 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
 
       const { data: tpl, error: tplErr } = await supabase
         .from("checklist_templates")
-        .insert({ name: newTemplateName.trim(), host_user_id: user.id })
+        .insert({
+          name: newTemplateName.trim(),
+          host_user_id: user.id,
+          cleaner_experience_level: cleanerExperienceLevel,
+          ai_listing_context: listingAiContext as any,
+        })
         .select("id, name")
         .single();
       if (tplErr || !tpl) throw tplErr;
@@ -266,14 +344,13 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
       }
 
       const desc = mode === "ai" && aiSections
-        ? "AI-generated suggestions based on your description — customize as needed."
+        ? "AI-generated suggestions based on cleaner experience and listing context — customize as needed."
         : mode === "default"
         ? "Pre-filled with default items — customize as needed."
         : "Empty template created.";
       toast({ title: "Template created", description: desc });
       setCreateDialogOpen(false);
-      setNewTemplateName("");
-      setListingDescription("");
+      resetCreateTemplateForm();
       setSelectedTemplateId(tpl.id);
       await fetchTemplates();
       if (!manageOpen) setManageOpen(true);
@@ -346,7 +423,7 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
       </div>
 
       {/* Create Template Dialog */}
-      <Dialog open={createDialogOpen} onOpenChange={(open) => { setCreateDialogOpen(open); if (!open) { setNewTemplateName(""); setListingDescription(""); } }}>
+      <Dialog open={createDialogOpen} onOpenChange={(open) => { setCreateDialogOpen(open); if (!open) resetCreateTemplateForm(); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>Create Checklist Template</DialogTitle></DialogHeader>
           <div className="space-y-4">
@@ -355,29 +432,79 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
               <Input value={newTemplateName} onChange={(e) => setNewTemplateName(e.target.value)} placeholder="e.g. Standard Cleaning, Deep Clean..." />
             </div>
             <div className="space-y-1.5">
-              <Label>Describe your listing <span className="text-muted-foreground font-normal">(for smart suggestions)</span></Label>
+              <div className="flex items-center justify-between">
+                <Label>Cleaner experience level</Label>
+                <span className="text-xs font-medium text-muted-foreground">
+                  {CLEANER_EXPERIENCE_CONTENT[cleanerExperienceLevel].label} - {CLEANER_EXPERIENCE_CONTENT[cleanerExperienceLevel].title}
+                </span>
+              </div>
+              <Slider
+                min={1}
+                max={3}
+                step={1}
+                value={[cleanerExperienceLevel]}
+                onValueChange={(value) => setCleanerExperienceLevel(normalizeCleanerExperienceLevel(value[0]))}
+              />
+              <p className="text-xs text-muted-foreground">
+                {CLEANER_EXPERIENCE_CONTENT[cleanerExperienceLevel].summary}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Listing type</Label>
+              <Select value={listingType} onValueChange={setListingType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select listing type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {LISTING_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Amenities</Label>
               <Textarea
-                value={listingDescription}
-                onChange={(e) => setListingDescription(e.target.value)}
-                placeholder="e.g. Double bedroom with shared bathroom, small kitchen, no garden, balcony with outdoor furniture..."
+                value={listingAmenitiesInput}
+                onChange={(e) => setListingAmenitiesInput(e.target.value)}
+                placeholder="Wi-Fi, AC, washer, dryer, balcony, coffee machine, smart TV..."
+                rows={2}
+                className="resize-none"
+              />
+              <p className="text-xs text-muted-foreground">
+                Add the amenities and standout features the cleaner should account for.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Actionable listing notes <span className="text-muted-foreground font-normal">(for smart suggestions)</span></Label>
+              <Textarea
+                value={listingActionableInfo}
+                onChange={(e) => setListingActionableInfo(e.target.value)}
+                placeholder="Lockbox at main gate, restock beach towels, check coffee pods, wipe balcony furniture, leave house manual visible..."
                 rows={3}
                 className="resize-none"
               />
               <p className="text-xs text-muted-foreground">
-                {listingDescription.trim().length >= 5
-                  ? "✨ AI will generate a tailored checklist based on your description."
-                  : "Add a description to get AI-tailored suggestions, or leave empty for generic defaults."}
+                AI will combine listing type, amenities, useful notes, and cleaner experience to generate a more accurate checklist.
+              </p>
+            </div>
+            <div className="rounded-md border border-dashed border-border bg-muted/20 p-3">
+              <p className="text-xs font-medium">Airbnb-ready focus</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                The generator will prioritize high-touch cleaning, fresh linens and towels, bathroom and kitchen essentials, device and manual readiness, and guest-ready final checks.
               </p>
             </div>
           </div>
           <DialogFooter className="flex-col gap-2 sm:flex-col">
             <Button
-              onClick={() => createTemplate(listingDescription.trim().length >= 5 ? "ai" : "default")}
+              onClick={() => createTemplate("ai")}
               disabled={!newTemplateName.trim() || creating}
               className="w-full gap-1.5"
             >
               {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {listingDescription.trim().length >= 5 ? "Generate Smart Suggestions" : "Use Default Suggestions"}
+              Generate Smart Suggestions
             </Button>
             <Button variant="outline" onClick={() => createTemplate("empty")} disabled={!newTemplateName.trim() || creating} className="w-full">
               {creating && <Loader2 className="h-4 w-4 animate-spin mr-1" />} Start Empty
@@ -433,6 +560,26 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
 
                 {selectedTemplateId && (
                   <div className="space-y-3">
+                    {selectedTemplateAiMetadata && (
+                      <div className="rounded-md border border-border bg-muted/20 p-3">
+                        <p className="text-xs font-medium">
+                          Cleaner experience: {CLEANER_EXPERIENCE_CONTENT[selectedTemplateAiMetadata.cleanerExperienceLevel].title}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Listing type: {getListingTypeLabel(selectedTemplateAiMetadata.listingContext.listingType)}
+                        </p>
+                        {selectedTemplateAiMetadata.listingContext.amenities.length > 0 && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Amenities: {selectedTemplateAiMetadata.listingContext.amenities.join(", ")}
+                          </p>
+                        )}
+                        {selectedTemplateAiMetadata.listingContext.actionableInfo && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Notes: {selectedTemplateAiMetadata.listingContext.actionableInfo}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {/* Assign to Listings */}
                     <div className="space-y-1.5">
                       <Label className="text-xs font-medium">Assigned Listings</Label>
@@ -440,7 +587,7 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
                         {listings.length === 0 ? (
                           <p className="text-xs text-muted-foreground py-2 text-center">No listings found.</p>
                         ) : listings.map((l) => {
-                          const currentTemplateId = pendingAssignments.hasOwnProperty(l.id)
+                          const currentTemplateId = Object.prototype.hasOwnProperty.call(pendingAssignments, l.id)
                             ? pendingAssignments[l.id]
                             : l.default_checklist_template_id;
                           const isAssigned = currentTemplateId === selectedTemplateId;
@@ -499,7 +646,12 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
                     })()}
 
                     {editingTemplate ? (
-                      <ChecklistTemplateEditor sections={sections} templateId={selectedTemplateId} onSectionsUpdated={(s) => { setSections(s); setTemplateDirty(true); }} />
+                      <ChecklistTemplateEditor
+                        sections={sections}
+                        templateId={selectedTemplateId}
+                        aiContext={selectedTemplateAiMetadata ?? undefined}
+                        onSectionsUpdated={(s) => { setSections(s); setTemplateDirty(true); }}
+                      />
                     ) : sections.length > 0 ? (
                       <div className="space-y-3">
                         {sections.map((section) => (
