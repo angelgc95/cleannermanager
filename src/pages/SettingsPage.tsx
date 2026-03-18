@@ -19,16 +19,14 @@ import { useNavigate } from "react-router-dom";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-function PayoutScheduleSettings({ settings, onUpdate }: { settings: any; onUpdate: () => void }) {
+function HostPayoutSettings({ settings, onUpdate }: { settings: any; onUpdate: () => void }) {
   const { toast } = useToast();
-  const [frequency, setFrequency] = useState<string>(settings.payout_frequency ?? "WEEKLY");
-  const [weekEndDay, setWeekEndDay] = useState<string>(String(settings.payout_week_end_day ?? 0));
   const [hourlyRate, setHourlyRate] = useState<string>(String(settings.default_hourly_rate ?? 15));
 
   const handleSave = async () => {
     const { error } = await supabase
       .from("host_settings")
-      .update({ payout_frequency: frequency, payout_week_end_day: parseInt(weekEndDay), default_hourly_rate: parseFloat(hourlyRate) })
+      .update({ default_hourly_rate: parseFloat(hourlyRate) })
       .eq("id", settings.id);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -40,32 +38,114 @@ function PayoutScheduleSettings({ settings, onUpdate }: { settings: any; onUpdat
 
   return (
     <Card>
-      <CardHeader><CardTitle className="text-base flex items-center gap-2"><DollarSign className="h-4 w-4" /> Payout Settings</CardTitle></CardHeader>
+      <CardHeader><CardTitle className="text-base flex items-center gap-2"><DollarSign className="h-4 w-4" /> Host Payout Settings</CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-1">
-          <Label>Frequency</Label>
-          <Select value={frequency} onValueChange={setFrequency}>
-            <SelectTrigger className="max-w-[200px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="WEEKLY">Weekly</SelectItem>
-              <SelectItem value="BIWEEKLY">Bi-weekly</SelectItem>
-              <SelectItem value="MONTHLY">Monthly</SelectItem>
-            </SelectContent>
-          </Select>
+          <Label>Hourly Rate (€)</Label>
+          <Input type="number" step="0.50" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} className="max-w-[200px]" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <Button size="sm" onClick={handleSave}>Save</Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OrganizationWorkflowSettings({ settings, onUpdate }: { settings: any; onUpdate: () => void }) {
+  const { toast } = useToast();
+  const [frequency, setFrequency] = useState<string>(settings.payout_frequency ?? "WEEKLY");
+  const [weekEndDay, setWeekEndDay] = useState<string>(String(settings.payout_week_end_day ?? 0));
+  const [runTime, setRunTime] = useState<string>((settings.payout_run_time || "17:00:00").slice(0, 5));
+  const [runTimezone, setRunTimezone] = useState<string>(settings.payout_run_timezone ?? "Europe/Madrid");
+  const [shortcutEnabled, setShortcutEnabled] = useState<boolean>(settings.payout_shortcut_enabled ?? true);
+  const [expenseGrouping, setExpenseGrouping] = useState<string>(settings.expense_grouping ?? "PAYOUT_WEEK");
+
+  const handleSave = async () => {
+    const { error } = await supabase
+      .from("host_settings")
+      .update({
+        payout_frequency: frequency,
+        payout_week_end_day: parseInt(weekEndDay),
+        payout_run_time: `${runTime}:00`,
+        payout_run_timezone: runTimezone,
+        payout_shortcut_enabled: shortcutEnabled,
+        expense_grouping: expenseGrouping,
+      })
+      .eq("id", settings.id);
+
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Organization workflow updated" });
+      onUpdate();
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <RefreshCw className="h-4 w-4" /> Organization Workflow
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between rounded-lg border border-border p-3">
           <div className="space-y-1">
-            <Label>Week ends on</Label>
-            <Select value={weekEndDay} onValueChange={setWeekEndDay}>
-              <SelectTrigger className="max-w-[200px]"><SelectValue /></SelectTrigger>
-              <SelectContent>{DAY_NAMES.map((name, i) => (<SelectItem key={i} value={String(i)}>{name}</SelectItem>))}</SelectContent>
+            <p className="text-sm font-medium">Auto-run weekly payout shortcut</p>
+            <p className="text-xs text-muted-foreground">
+              Runs for the whole organization using the schedule below.
+            </p>
+          </div>
+          <Switch checked={shortcutEnabled} onCheckedChange={setShortcutEnabled} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-1">
+            <Label>Frequency</Label>
+            <Select value={frequency} onValueChange={setFrequency}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="WEEKLY">Weekly</SelectItem>
+                <SelectItem value="BIWEEKLY">Bi-weekly</SelectItem>
+                <SelectItem value="MONTHLY">Monthly</SelectItem>
+              </SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>Hourly Rate (€)</Label>
-            <Input type="number" step="0.50" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} className="max-w-[200px]" />
+            <Label>Week ends on</Label>
+            <Select value={weekEndDay} onValueChange={setWeekEndDay}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {DAY_NAMES.map((name, i) => (
+                  <SelectItem key={i} value={String(i)}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label>Run time</Label>
+            <Input type="time" value={runTime} onChange={(e) => setRunTime(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>Timezone</Label>
+            <Input value={runTimezone} onChange={(e) => setRunTimezone(e.target.value)} placeholder="Europe/Madrid" />
           </div>
         </div>
+
+        <div className="space-y-1">
+          <Label>Expense grouping</Label>
+          <Select value={expenseGrouping} onValueChange={setExpenseGrouping}>
+            <SelectTrigger className="max-w-[240px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="PAYOUT_WEEK">Group by payout week</SelectItem>
+              <SelectItem value="MONTHLY">Group by month</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
+          Current shortcut: {DAY_NAMES[parseInt(weekEndDay, 10)]} at {runTime} ({runTimezone || "host timezone"})
+        </div>
+
         <Button size="sm" onClick={handleSave}>Save</Button>
       </CardContent>
     </Card>
@@ -303,7 +383,8 @@ const SettingsPage = forwardRef<HTMLDivElement>(function SettingsPage(_props, _r
 
         <NotificationSettings />
         <AdminCleanerManagement />
-        {settings && <PayoutScheduleSettings settings={settings} onUpdate={fetchSettings} />}
+        {settings && <OrganizationWorkflowSettings settings={settings} onUpdate={fetchSettings} />}
+        {settings && <HostPayoutSettings settings={settings} onUpdate={fetchSettings} />}
         {settings && <PricingSuggestionsSettings settings={settings} listings={listings} onUpdate={() => { fetchSettings(); }} />}
         <ManualEventEntry listings={listings} />
       </div>
