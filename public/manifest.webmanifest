@@ -5,7 +5,7 @@
   "display": "standalone",
   "background_color": "#f8fafc",
   "theme_color": "#172033",
-  "description": "Operations dashboard for hosts and cleaners.",
+  "description": "Operations dashboard for hosts and cleaners with mobile-first workflows and full desktop management.",
   "icons": [
     {
       "src": "/app-icon.svg",
