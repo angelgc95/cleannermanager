@@ -131,6 +131,12 @@ const SPANISH_TRANSLATIONS: Record<string, string> = {
   "Create Task": "Crear tarea",
   "No tasks yet.": "Todavia no hay tareas.",
   Pending: "Pendiente",
+  Processed: "Procesado",
+  "Pending Hours": "Horas pendientes",
+  "Processed Hours": "Horas procesadas",
+  "No pending hours.": "No hay horas pendientes.",
+  "No processed hours yet.": "Todavia no hay horas procesadas.",
+  "Payout status": "Estado del pago",
   Completed: "Completado",
   Done: "Hecho",
   "Task created": "Tarea creada",
@@ -374,6 +380,7 @@ const SPANISH_STATUS_LABELS: Record<string, string> = {
   ok: "OK",
   pending: "Pendiente",
   paid: "Pagado",
+  processed: "Procesado",
 };
 
 const INTL_LOCALES: Record<Language, string> = {
