@@ -26,7 +26,7 @@ export function NotificationBell() {
   const { formatDate, t } = useI18n();
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [open, setOpen] = useState(false);
-  const isCleaner = role === "cleaner";
+  const useSharedAppShell = role === "cleaner" || role === "host";
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -96,14 +96,14 @@ export function NotificationBell() {
         <button
           className={cn(
             "relative rounded-lg p-2 transition-colors",
-            isCleaner
+            useSharedAppShell
               ? "text-sidebar-foreground hover:bg-sidebar-accent"
               : "hover:bg-muted"
           )}
           aria-label={t("Notifications")}
           title={t("Notifications")}
         >
-          <Bell className={cn("h-5 w-5", isCleaner ? "text-sidebar-foreground" : "text-muted-foreground")} />
+          <Bell className={cn("h-5 w-5", useSharedAppShell ? "text-sidebar-foreground" : "text-muted-foreground")} />
           {unreadCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center font-bold">
               {unreadCount > 9 ? "9+" : unreadCount}
