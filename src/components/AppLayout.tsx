@@ -10,10 +10,10 @@ export function AppLayout() {
   const isMobile = useIsMobile();
   const { pathname } = useLocation();
   const hideMobileBottomNav = /^\/events\/[^/]+\/checklist$/.test(pathname);
-  const useSharedAppShell = role === "cleaner" || role === "host";
+  const themeClass = role === "cleaner" ? "cleaner-theme" : role === "host" ? "host-theme" : undefined;
 
   return (
-    <div className={cn("flex min-h-[100svh] w-full bg-background", useSharedAppShell && "cleaner-theme")}>
+    <div className={cn("flex min-h-[100svh] w-full bg-background", themeClass)}>
       <AppSidebar />
       <div
         className={cn(
