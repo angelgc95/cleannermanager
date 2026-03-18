@@ -72,12 +72,6 @@ const CompleteCleanerProfilePage = forwardRef<HTMLDivElement>(function CompleteC
         .eq("user_id", user.id);
       if (profileError) throw profileError;
 
-      const { error: hostCleanerError } = await supabase
-        .from("host_cleaners")
-        .update({ status: "ACTIVE" })
-        .eq("cleaner_user_id", user.id);
-      if (hostCleanerError) throw hostCleanerError;
-
       await refreshProfile();
       toast({ title: t("Profile ready"), description: t("Your cleaner account is ready.") });
       navigate("/");

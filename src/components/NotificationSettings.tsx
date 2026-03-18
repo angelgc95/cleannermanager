@@ -39,7 +39,7 @@ export function NotificationSettings() {
       .from("notification_preferences")
       .select("*")
       .eq("user_id", user.id)
-      .single()
+      .maybeSingle()
       .then(({ data }) => {
         if (data) {
           setPrefs({

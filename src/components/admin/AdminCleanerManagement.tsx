@@ -68,12 +68,14 @@ export function AdminCleanerManagement() {
 
     const cleanerList: CleanerWithAssignments[] = connections.map((connection) => {
       const profile = profileMap.get(connection.cleaner_user_id);
+      const setupCompleted = profile?.setup_completed ?? connection.status === "ACTIVE";
+      const effectiveStatus: CleanerWithAssignments["status"] = setupCompleted ? "ACTIVE" : connection.status;
       return {
         user_id: connection.cleaner_user_id,
         name: profile?.name?.trim() || "",
         email: profile?.email || connection.invited_email || "",
-        setup_completed: profile?.setup_completed ?? connection.status === "ACTIVE",
-        status: connection.status,
+        setup_completed: setupCompleted,
+        status: effectiveStatus,
         assignments: (assignments || [])
           .filter((assignment: any) => assignment.cleaner_user_id === connection.cleaner_user_id)
           .map((assignment: any) => ({
