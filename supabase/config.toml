@@ -1,8 +1,26 @@
-project_id = "rejerjibsoadxwfqofda"
+project_id = "qevpbbaxelsckmlcnvrb"
 
 [auth]
-site_url = "http://127.0.0.1:8080"
-additional_redirect_urls = ["http://127.0.0.1:8080/**", "http://localhost:8080/**"]
+site_url = "https://www.cleannermanager.com"
+additional_redirect_urls = [
+  "https://www.cleannermanager.com",
+  "https://www.cleannermanager.com/complete-profile",
+  "https://cleannermanager.com",
+  "https://cleannermanager.com/complete-profile",
+  "http://127.0.0.1:8080/**",
+  "http://localhost:8080/**",
+]
+
+[auth.email]
+max_frequency = "1m0s"
+otp_length = 8
+
+[auth.mfa]
+max_enrolled_factors = 10
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
 
 [functions.generate-payouts]
 verify_jwt = false
