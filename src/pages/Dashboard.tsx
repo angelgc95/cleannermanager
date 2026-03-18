@@ -11,7 +11,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { CalendarDays, Clock, Wrench, ShoppingCart, Plus, Check, X, Loader2, ListTodo } from "lucide-react";
+import { CalendarDays, Clock, Wrench, ShoppingCart, Plus, Check, X, Loader2, ListTodo, StickyNote, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -27,6 +27,25 @@ interface StatCardProps {
   value: string | number;
   icon: React.ElementType;
   color?: string;
+}
+
+interface CompletedShoppingItem {
+  id: string;
+  name: string;
+  quantity: number;
+  note: string | null;
+}
+
+interface CompletedEventSummary {
+  eventId: string;
+  cleanerName: string;
+  completedAt: string | null;
+  durationMinutes: number | null;
+  checksCount: number;
+  photosCount: number;
+  shoppingItems: CompletedShoppingItem[];
+  workLogNotes: string | null;
+  checklistNotes: string | null;
 }
 
 function StatCard({ title, value, icon: Icon, color }: StatCardProps) {
@@ -173,6 +192,114 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
 
   const getCleanerName = (id: string) => cleaners.find((c) => c.id === id)?.name || "Cleaner";
 
+  const completedTodayEvents = useMemo(
+    () =>
+      todayEvents.filter(
+        (ev) => effectiveStatuses[ev.id] === "COMPLETED" || ev.status === "DONE"
+      ),
+    [todayEvents, effectiveStatuses]
+  );
+
+  const activeTodayEvents = useMemo(
+    () =>
+      todayEvents.filter(
+        (ev) => effectiveStatuses[ev.id] !== "COMPLETED" && ev.status !== "DONE"
+      ),
+    [todayEvents, effectiveStatuses]
+  );
+
+  const completedEventIds = useMemo(
+    () => completedTodayEvents.map((event) => event.id),
+    [completedTodayEvents]
+  );
+
+  const { data: completedEventSummaries = {} } = useQuery<Record<string, CompletedEventSummary>>({
+    queryKey: ["dashboard-completed-event-summaries", completedEventIds.join(","), role],
+    enabled: completedEventIds.length > 0,
+    queryFn: async () => {
+      const { data: runs } = await supabase
+        .from("checklist_runs")
+        .select("id, cleaning_event_id, cleaner_user_id, finished_at, duration_minutes, overall_notes, started_at")
+        .in("cleaning_event_id", completedEventIds)
+        .not("finished_at", "is", null)
+        .order("started_at", { ascending: false });
+
+      const latestRunByEvent = new Map<string, any>();
+      for (const run of runs || []) {
+        if (!latestRunByEvent.has(run.cleaning_event_id)) {
+          latestRunByEvent.set(run.cleaning_event_id, run);
+        }
+      }
+
+      const latestRuns = Array.from(latestRunByEvent.values());
+      const runIds = latestRuns.map((run) => run.id);
+      const cleanerIds = [...new Set(latestRuns.map((run) => run.cleaner_user_id).filter(Boolean))];
+
+      const [profilesResult, logHoursResult, responsesResult, photosResult, shoppingResult] = await Promise.all([
+        cleanerIds.length > 0
+          ? supabase.from("profiles").select("user_id, name").in("user_id", cleanerIds)
+          : Promise.resolve({ data: [] as any[] }),
+        runIds.length > 0
+          ? supabase.from("log_hours").select("checklist_run_id, duration_minutes, description").in("checklist_run_id", runIds)
+          : Promise.resolve({ data: [] as any[] }),
+        runIds.length > 0
+          ? supabase.from("checklist_responses").select("run_id").in("run_id", runIds)
+          : Promise.resolve({ data: [] as any[] }),
+        runIds.length > 0
+          ? supabase.from("checklist_photos").select("run_id").in("run_id", runIds)
+          : Promise.resolve({ data: [] as any[] }),
+        runIds.length > 0
+          ? supabase.from("shopping_list").select("id, checklist_run_id, quantity_needed, note, products(name)").in("checklist_run_id", runIds)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+
+      const cleanerNameById = Object.fromEntries(
+        ((profilesResult.data as any[]) || []).map((profile) => [profile.user_id, profile.name || "Cleaner"])
+      );
+      const logHoursByRunId = Object.fromEntries(
+        ((logHoursResult.data as any[]) || []).map((entry) => [entry.checklist_run_id, entry])
+      );
+
+      const responseCountByRunId: Record<string, number> = {};
+      for (const response of (responsesResult.data as any[]) || []) {
+        responseCountByRunId[response.run_id] = (responseCountByRunId[response.run_id] || 0) + 1;
+      }
+
+      const photoCountByRunId: Record<string, number> = {};
+      for (const photo of (photosResult.data as any[]) || []) {
+        photoCountByRunId[photo.run_id] = (photoCountByRunId[photo.run_id] || 0) + 1;
+      }
+
+      const shoppingByRunId: Record<string, CompletedShoppingItem[]> = {};
+      for (const item of (shoppingResult.data as any[]) || []) {
+        if (!shoppingByRunId[item.checklist_run_id]) shoppingByRunId[item.checklist_run_id] = [];
+        shoppingByRunId[item.checklist_run_id].push({
+          id: item.id,
+          name: item.products?.name || "Unknown",
+          quantity: item.quantity_needed || 0,
+          note: item.note || null,
+        });
+      }
+
+      return completedTodayEvents.reduce<Record<string, CompletedEventSummary>>((acc, event) => {
+        const run = latestRunByEvent.get(event.id);
+        const logHours = run ? logHoursByRunId[run.id] : null;
+        acc[event.id] = {
+          eventId: event.id,
+          cleanerName: run?.cleaner_user_id ? cleanerNameById[run.cleaner_user_id] || getCleanerName(run.cleaner_user_id) : t("Cleaner"),
+          completedAt: run?.finished_at || null,
+          durationMinutes: logHours?.duration_minutes ?? run?.duration_minutes ?? null,
+          checksCount: run ? responseCountByRunId[run.id] || 0 : 0,
+          photosCount: run ? photoCountByRunId[run.id] || 0 : 0,
+          shoppingItems: run ? shoppingByRunId[run.id] || [] : [],
+          workLogNotes: logHours?.description || null,
+          checklistNotes: run?.overall_notes || null,
+        };
+        return acc;
+      }, {});
+    },
+  });
+
   return (
     <div>
       <PageHeader title={t("Dashboard")} description={t("Overview of today's activity")} />
@@ -190,11 +317,15 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
             <CardTitle className="text-lg">{t("Today's Cleaning Events")}</CardTitle>
           </CardHeader>
           <CardContent>
-            {todayEvents.length === 0 ? (
-              <p className="text-muted-foreground text-sm py-4 text-center">{t("No cleaning events scheduled for today.")}</p>
+            {activeTodayEvents.length === 0 ? (
+              <p className="text-muted-foreground text-sm py-4 text-center">
+                {completedTodayEvents.length > 0
+                  ? t("All today's cleaning events are completed.")
+                  : t("No cleaning events scheduled for today.")}
+              </p>
             ) : (
               <div className="space-y-3">
-                {todayEvents.map((ev) => (
+                {activeTodayEvents.map((ev) => (
                   <div
                     key={ev.id}
                     onClick={() => navigate(`/events/${ev.id}`)}
@@ -224,6 +355,166 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
                     />
                   </div>
                 ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">{t("Completed Today")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {completedTodayEvents.length === 0 ? (
+              <p className="text-muted-foreground text-sm py-4 text-center">{t("No completed cleaning events yet.")}</p>
+            ) : isHost ? (
+              <div className="space-y-4">
+                {completedTodayEvents.map((event) => {
+                  const summary = completedEventSummaries[event.id];
+                  const shoppingItems = summary?.shoppingItems || [];
+                  const duration = summary?.durationMinutes;
+                  return (
+                    <Card key={event.id} className="border-border/70">
+                      <CardContent className="p-4 space-y-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-sm text-foreground">
+                              {event.listings?.name || t("Listing")}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {event.start_at ? format(new Date(event.start_at), "HH:mm") : "—"} – {event.end_at ? format(new Date(event.end_at), "HH:mm") : "—"}
+                              {details(event).nights != null && ` · ${details(event).nights} nights`}
+                              {details(event).guests != null ? ` · ${details(event).guests} guests` : ""}
+                            </p>
+                          </div>
+                          <StatusBadge status="COMPLETED" />
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
+                          <div>
+                            <p className="text-muted-foreground">{t("Submitted by")}</p>
+                            <p className="font-medium flex items-center gap-1.5">
+                              <User className="h-4 w-4 text-muted-foreground" />
+                              {summary?.cleanerName || t("Cleaner")}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">{t("Submitted at")}</p>
+                            <p className="font-medium text-xs">
+                              {summary?.completedAt ? formatDate(summary.completedAt, "MMM d, HH:mm") : t("N/A")}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">{t("Duration")}</p>
+                            <p className="font-medium">
+                              {duration != null ? `${Math.floor(duration / 60)}h ${duration % 60}m` : t("N/A")}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">{t("Checklist checks")}</p>
+                            <p className="font-medium">{summary?.checksCount || 0}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">{t("Photos uploaded")}</p>
+                            <p className="font-medium">{summary?.photosCount || 0}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">{t("Shopping items")}</p>
+                            <p className="font-medium">{shoppingItems.length}</p>
+                          </div>
+                        </div>
+
+                        {summary?.workLogNotes && (
+                          <div className="flex items-start gap-1.5 text-sm">
+                            <Clock className="h-4 w-4 text-muted-foreground mt-0.5" />
+                            <div>
+                              <p className="text-muted-foreground">{t("Work log notes")}</p>
+                              <p className="font-medium">{summary.workLogNotes}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {summary?.checklistNotes && (
+                          <div className="flex items-start gap-1.5 text-sm">
+                            <StickyNote className="h-4 w-4 text-muted-foreground mt-0.5" />
+                            <div>
+                              <p className="text-muted-foreground">{t("Checklist notes")}</p>
+                              <p className="font-medium">{summary.checklistNotes}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {shoppingItems.length > 0 && (
+                          <div className="text-sm">
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+                              <p className="text-muted-foreground font-medium">{t("Shopping List")} ({shoppingItems.length})</p>
+                            </div>
+                            <div className="space-y-1 pl-6">
+                              {shoppingItems.slice(0, 4).map((item) => (
+                                <div key={item.id} className="flex items-center gap-2 text-sm">
+                                  <span className="font-medium">{item.name}</span>
+                                  <span className="text-muted-foreground">×{item.quantity}</span>
+                                  {item.note && <span className="text-xs text-muted-foreground">— {item.note}</span>}
+                                </div>
+                              ))}
+                              {shoppingItems.length > 4 && (
+                                <p className="text-xs text-muted-foreground">+{shoppingItems.length - 4} more</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex justify-end">
+                          <Button variant="outline" size="sm" onClick={() => navigate(`/events/${event.id}`)}>
+                            {t("Open details")}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-muted-foreground">
+                      <th className="py-2 pr-4 font-medium">{t("Listing")}</th>
+                      <th className="py-2 pr-4 font-medium">{t("Window")}</th>
+                      <th className="py-2 pr-4 font-medium">{t("Completed at")}</th>
+                      <th className="py-2 pr-4 font-medium">{t("Duration")}</th>
+                      <th className="py-2 pr-0 font-medium">{t("Status")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {completedTodayEvents.map((event) => {
+                      const summary = completedEventSummaries[event.id];
+                      const duration = summary?.durationMinutes;
+                      return (
+                        <tr
+                          key={event.id}
+                          onClick={() => navigate(`/events/${event.id}`)}
+                          className="border-b border-border/60 cursor-pointer hover:bg-muted/40"
+                        >
+                          <td className="py-3 pr-4 font-medium">{event.listings?.name || t("Listing")}</td>
+                          <td className="py-3 pr-4 text-muted-foreground">
+                            {event.start_at ? format(new Date(event.start_at), "HH:mm") : "—"} – {event.end_at ? format(new Date(event.end_at), "HH:mm") : "—"}
+                          </td>
+                          <td className="py-3 pr-4 text-muted-foreground">
+                            {summary?.completedAt ? formatDate(summary.completedAt, "HH:mm") : t("N/A")}
+                          </td>
+                          <td className="py-3 pr-4 text-muted-foreground">
+                            {duration != null ? `${Math.floor(duration / 60)}h ${duration % 60}m` : t("N/A")}
+                          </td>
+                          <td className="py-3 pr-0">
+                            <StatusBadge status="COMPLETED" />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </CardContent>
