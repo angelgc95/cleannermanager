@@ -690,6 +690,33 @@ export type Database = {
         }
         Relationships: []
       }
+      host_cleaners: {
+        Row: {
+          cleaner_user_id: string
+          created_at: string
+          host_user_id: string
+          id: string
+          invited_email: string | null
+          status: Database["public"]["Enums"]["host_cleaner_status"]
+        }
+        Insert: {
+          cleaner_user_id: string
+          created_at?: string
+          host_user_id: string
+          id?: string
+          invited_email?: string | null
+          status?: Database["public"]["Enums"]["host_cleaner_status"]
+        }
+        Update: {
+          cleaner_user_id?: string
+          created_at?: string
+          host_user_id?: string
+          id?: string
+          invited_email?: string | null
+          status?: Database["public"]["Enums"]["host_cleaner_status"]
+        }
+        Relationships: []
+      }
       in_app_notifications: {
         Row: {
           body: string | null
@@ -1234,6 +1261,7 @@ export type Database = {
           email: string | null
           id: string
           name: string
+          setup_completed: boolean
           unique_code: string | null
           updated_at: string
           user_id: string
@@ -1243,6 +1271,7 @@ export type Database = {
           email?: string | null
           id?: string
           name?: string
+          setup_completed?: boolean
           unique_code?: string | null
           updated_at?: string
           user_id: string
@@ -1252,6 +1281,7 @@ export type Database = {
           email?: string | null
           id?: string
           name?: string
+          setup_completed?: boolean
           unique_code?: string | null
           updated_at?: string
           user_id?: string
@@ -1485,6 +1515,7 @@ export type Database = {
       checklist_item_type: "YESNO" | "PHOTO" | "TEXT" | "NUMBER" | "TIMER"
       cleaning_source: "AUTO" | "MANUAL"
       cleaning_status: "TODO" | "IN_PROGRESS" | "DONE" | "CANCELLED"
+      host_cleaner_status: "INVITED" | "ACTIVE"
       log_hours_source: "MANUAL" | "CHECKLIST"
       maintenance_priority: "LOW" | "MEDIUM" | "HIGH"
       maintenance_status: "OPEN" | "IN_PROGRESS" | "DONE"
@@ -1630,6 +1661,7 @@ export const Constants = {
       checklist_item_type: ["YESNO", "PHOTO", "TEXT", "NUMBER", "TIMER"],
       cleaning_source: ["AUTO", "MANUAL"],
       cleaning_status: ["TODO", "IN_PROGRESS", "DONE", "CANCELLED"],
+      host_cleaner_status: ["INVITED", "ACTIVE"],
       log_hours_source: ["MANUAL", "CHECKLIST"],
       maintenance_priority: ["LOW", "MEDIUM", "HIGH"],
       maintenance_status: ["OPEN", "IN_PROGRESS", "DONE"],

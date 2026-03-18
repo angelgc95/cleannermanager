@@ -9,7 +9,8 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   role: AppRole | null;
-  hostId: string | null; // For hosts: own user_id. For cleaners: host_user_id from assignments.
+  hostId: string | null; // For hosts: own user_id. For cleaners: connected host_user_id.
+  profileComplete: boolean;
   refreshProfile: () => Promise<void>;
 }
 
@@ -19,6 +20,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   role: null,
   hostId: null,
+  profileComplete: true,
   refreshProfile: async () => {},
 });
 
@@ -27,28 +29,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<AppRole | null>(null);
   const [hostId, setHostId] = useState<string | null>(null);
+  const [profileComplete, setProfileComplete] = useState(true);
 
   const fetchRoleAndHost = async (userId: string) => {
-    const { data: roleData } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .limit(1)
-      .single();
+    const [{ data: roleData }, { data: profileData }] = await Promise.all([
+      supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .limit(1)
+        .single(),
+      supabase
+        .from("profiles")
+        .select("setup_completed")
+        .eq("user_id", userId)
+        .single(),
+    ]);
 
     const userRole = (roleData?.role as AppRole) || null;
     setRole(userRole);
+    setProfileComplete(profileData?.setup_completed ?? true);
 
     if (userRole === "host") {
       setHostId(userId);
     } else if (userRole === "cleaner") {
-      // Get host_user_id from first assignment
+      const { data: connection } = await supabase
+        .from("host_cleaners")
+        .select("host_user_id")
+        .eq("cleaner_user_id", userId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (connection?.host_user_id) {
+        setHostId(connection.host_user_id);
+        return;
+      }
+
+      // Fallback for legacy data that only has assignments.
       const { data: assignment } = await supabase
         .from("cleaner_assignments")
         .select("host_user_id")
         .eq("cleaner_user_id", userId)
         .limit(1)
-        .single();
+        .maybeSingle();
+
       setHostId(assignment?.host_user_id || null);
     } else {
       setHostId(null);
@@ -69,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setRole(null);
         setHostId(null);
+        setProfileComplete(true);
       }
       setLoading(false);
     });
@@ -85,11 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, role, hostId, refreshProfile }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, role, hostId, profileComplete, refreshProfile }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

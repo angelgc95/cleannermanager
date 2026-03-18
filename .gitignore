@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 *.local
+supabase/.branches/
+supabase/.temp/
+.playwright-cli/
 
 # Editor directories and files
 .vscode/*

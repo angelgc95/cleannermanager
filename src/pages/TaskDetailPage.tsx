@@ -22,12 +22,14 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { useI18n } from "@/i18n/LanguageProvider";
 
 const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props, ref) {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, role, hostId } = useAuth();
   const { toast } = useToast();
+  const { formatDateTime, t } = useI18n();
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -247,7 +249,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
     }
   };
 
-  if (!event) return <div className="p-6 text-muted-foreground">Loading...</div>;
+  if (!event) return <div className="p-6 text-muted-foreground">{t("Loading...")}</div>;
 
   const hasTemplate = !!event.checklist_template_id || templateName !== null;
 
@@ -266,7 +268,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
         title={event.listings?.name || "Listing"}
         actions={
           <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
-            <ArrowLeft className="h-4 w-4 mr-1" /> Back
+            <ArrowLeft className="h-4 w-4 mr-1" /> {t("Back")}
           </Button>
         }
       />
@@ -275,7 +277,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
         <Card>
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Cleaning Event</CardTitle>
+              <CardTitle className="text-lg">{t("Cleaning Event")}</CardTitle>
               <StatusBadge status={effectiveStatus} />
             </div>
           </CardHeader>
@@ -300,11 +302,11 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
                   <p className="text-muted-foreground">Cleaning Window</p>
                   <p className="font-medium text-xs">
                     {event.start_at
-                      ? new Date(event.start_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: listingTimezone })
+                      ? formatDateTime(event.start_at, { dateStyle: "medium", timeStyle: "short", timeZone: listingTimezone })
                       : "—"}
                     {" → "}
                     {event.end_at
-                      ? new Date(event.end_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: listingTimezone })
+                      ? formatDateTime(event.end_at, { dateStyle: "medium", timeStyle: "short", timeZone: listingTimezone })
                       : "—"}
                   </p>
                 </div>
@@ -422,7 +424,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
         {isAdmin && checklistRun && (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Checklist Summary</CardTitle>
+              <CardTitle className="text-base">{t("Checklist Summary")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
               <div className="grid grid-cols-2 gap-3">
@@ -512,7 +514,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
               className="gap-2"
               size="lg"
             >
-              <ClipboardList className="h-4 w-4" /> Start Cleaning Checklist
+              <ClipboardList className="h-4 w-4" /> {t("Start Cleaning Checklist")}
             </Button>
           )}
           {!isAdmin && hasTemplate && effectiveStatus === "IN_PROGRESS" && (

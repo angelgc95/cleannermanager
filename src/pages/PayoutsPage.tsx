@@ -13,12 +13,14 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { CalendarIcon, ChevronDown, ChevronRight, DollarSign, RefreshCw, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/LanguageProvider";
 
 interface PeriodGroup { period: any; payouts: any[]; }
 
 const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref) {
   const { role, user } = useAuth();
   const { toast } = useToast();
+  const { formatDate, t } = useI18n();
   const isHost = role === "host";
   const [periodGroups, setPeriodGroups] = useState<PeriodGroup[]>([]);
   const [expandedPeriods, setExpandedPeriods] = useState<Set<string>>(new Set());
@@ -122,7 +124,7 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
 
   return (
     <div>
-      <PageHeader title="Payouts" description={isHost ? "Generate and manage payout periods" : "Your payout history"} />
+      <PageHeader title={t("Payouts")} description={isHost ? t("Generate and manage payout periods") : t("Your payout history")} />
       <div className="p-6 space-y-4 max-w-3xl">
         {isHost && (
           <Card>
@@ -135,7 +137,7 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
                     <PopoverTrigger asChild>
                       <Button variant="outline" className={cn("w-[150px] justify-start text-left font-normal", !startDate && "text-muted-foreground")}>
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {startDate ? format(startDate, "MMM d, yyyy") : "Pick date"}
+                        {startDate ? formatDate(startDate, "MMM d, yyyy") : t("Pick date")}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
@@ -149,7 +151,7 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
                     <PopoverTrigger asChild>
                       <Button variant="outline" className={cn("w-[150px] justify-start text-left font-normal", !endDate && "text-muted-foreground")}>
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {endDate ? format(endDate, "MMM d, yyyy") : "Pick date"}
+                        {endDate ? formatDate(endDate, "MMM d, yyyy") : t("Pick date")}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
@@ -159,17 +161,17 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
                 </div>
                 <Button size="sm" onClick={handleGeneratePayouts} disabled={generating || !startDate || !endDate}>
                   <RefreshCw className={`h-4 w-4 mr-1 ${generating ? "animate-spin" : ""}`} />
-                  {generating ? "Generating..." : "Generate Payouts"}
+                  {generating ? t("Generating...") : t("Generate Payouts")}
                 </Button>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {loading && <p className="text-center text-muted-foreground py-8">Loading...</p>}
+        {loading && <p className="text-center text-muted-foreground py-8">{t("Loading...")}</p>}
         {!loading && periodGroups.length === 0 && (
-          <div className="text-center py-12 space-y-3"><DollarSign className="h-10 w-10 mx-auto text-muted-foreground/50" /><p className="text-muted-foreground">No payout periods yet.</p>
-            {isHost && <p className="text-sm text-muted-foreground">Select a date range above and click "Generate Payouts".</p>}
+            <div className="text-center py-12 space-y-3"><DollarSign className="h-10 w-10 mx-auto text-muted-foreground/50" /><p className="text-muted-foreground">{t("No payout periods yet.")}</p>
+            {isHost && <p className="text-sm text-muted-foreground">{t("Select a date range above and click \"Generate Payouts\".")}</p>}
           </div>
         )}
         {periodGroups.map(({ period, payouts }) => {
@@ -183,14 +185,14 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-3">
                     {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                    <div><p className="font-semibold text-sm">{format(new Date(period.start_date), "MMM d")} – {format(new Date(period.end_date), "MMM d, yyyy")}</p><p className="text-xs text-muted-foreground">{payouts.length} cleaner{payouts.length !== 1 ? "s" : ""} · {Math.floor(mins / 60)}h {mins % 60}m</p></div>
+                    <div><p className="font-semibold text-sm">{formatDate(period.start_date, "MMM d")} – {formatDate(period.end_date, "MMM d, yyyy")}</p><p className="text-xs text-muted-foreground">{payouts.length} cleaner{payouts.length !== 1 ? "s" : ""} · {Math.floor(mins / 60)}h {mins % 60}m</p></div>
                   </div>
                   <div className="flex items-center gap-3"><div className="text-right"><p className="font-bold text-sm">€{total.toFixed(2)}</p><StatusBadge status={isPaid && payouts.length > 0 ? "PAID" : period.status} /></div></div>
                 </CardContent>
               </button>
               {isExpanded && (
                 <div className="border-t border-border">
-                  {payouts.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No payouts in this period.</p>}
+                  {payouts.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">{t("No payouts in this period.")}</p>}
                   {payouts.map((p: any) => (
                     <div key={p.id} className="flex items-center justify-between px-6 py-3 border-b border-border last:border-b-0">
                       <div><p className="text-sm font-medium">{p.cleaner_name}</p><p className="text-xs text-muted-foreground">{p.total_minutes} min @ €{Number(p.hourly_rate_used).toFixed(2)}/hr</p></div>

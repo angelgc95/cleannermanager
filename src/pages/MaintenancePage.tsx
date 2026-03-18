@@ -15,10 +15,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Plus, X, Camera, Loader2, Trash2 } from "lucide-react";
+import { useI18n } from "@/i18n/LanguageProvider";
 
 const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_props, _ref) {
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
+  const { formatDate, t } = useI18n();
   const isHost = role === "host";
   const [tickets, setTickets] = useState<any[]>([]);
   const [signedUrls, setSignedUrls] = useState<Record<string, { pic1?: string; pic2?: string }>>({});
@@ -132,7 +134,7 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
 
   return (
     <div>
-      <PageHeader title="Maintenance" description="Report and track maintenance issues" actions={<Button size="sm" onClick={() => setShowForm(!showForm)}>{showForm ? <><X className="h-4 w-4 mr-1" /> Cancel</> : <><Plus className="h-4 w-4 mr-1" /> Report Issue</>}</Button>} />
+      <PageHeader title={t("Maintenance")} description={t("Report and track maintenance issues")} actions={<Button size="sm" onClick={() => setShowForm(!showForm)}>{showForm ? <><X className="h-4 w-4 mr-1" /> {t("Cancel")}</> : <><Plus className="h-4 w-4 mr-1" /> {t("Report Issue")}</>}</Button>} />
       <div className="p-6 space-y-4 max-w-2xl">
         {showForm && (
           <Card><CardContent className="pt-6">
@@ -164,7 +166,7 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-sm truncate">{t.issue}</p>
-                <p className="text-xs text-muted-foreground">{format(new Date(t.created_at), "MMM d, yyyy")}</p>
+                <p className="text-xs text-muted-foreground">{formatDate(t.created_at, "MMM d, yyyy")}</p>
               </div>
               {isHost ? (
                 <div className="flex items-center gap-2 shrink-0">

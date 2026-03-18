@@ -8,8 +8,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { format } from "date-fns";
 import { useNavigate } from "react-router-dom";
+import { useI18n } from "@/i18n/LanguageProvider";
 
 interface InAppNotification {
   id: string;
@@ -23,6 +23,7 @@ interface InAppNotification {
 export function NotificationBell() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { formatDate, t } = useI18n();
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [open, setOpen] = useState(false);
 
@@ -91,7 +92,11 @@ export function NotificationBell() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="relative p-2 rounded-lg hover:bg-muted transition-colors">
+        <button
+          className="relative rounded-lg p-2 transition-colors hover:bg-muted"
+          aria-label={t("Notifications")}
+          title={t("Notifications")}
+        >
           <Bell className="h-5 w-5 text-muted-foreground" />
           {unreadCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center font-bold">
@@ -102,20 +107,20 @@ export function NotificationBell() {
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0 max-h-96 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h3 className="font-semibold text-sm">Notifications</h3>
+          <h3 className="font-semibold text-sm">{t("Notifications")}</h3>
           {unreadCount > 0 && (
             <button
               onClick={markAllRead}
               className="text-xs text-primary hover:underline"
             >
-              Mark all read
+              {t("Mark all read")}
             </button>
           )}
         </div>
         <div className="overflow-y-auto max-h-72">
           {notifications.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">
-              No notifications
+              {t("No notifications")}
             </p>
           ) : (
             notifications.map((n) => (
@@ -139,7 +144,7 @@ export function NotificationBell() {
                       </p>
                     )}
                     <p className="text-xs text-muted-foreground mt-1">
-                      {format(new Date(n.created_at), "MMM d, HH:mm")}
+                      {formatDate(n.created_at, "MMM d, HH:mm")}
                     </p>
                   </div>
                 </div>

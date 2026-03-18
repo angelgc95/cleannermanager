@@ -52,6 +52,32 @@ DROP TYPE IF EXISTS public.cleaning_mode CASCADE;
 -- 4. Create new enum
 CREATE TYPE public.app_role AS ENUM ('host', 'cleaner');
 
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type
+    WHERE typnamespace = 'public'::regnamespace
+      AND typname = 'log_hours_source'
+  ) THEN
+    CREATE TYPE public.log_hours_source AS ENUM ('MANUAL', 'CHECKLIST');
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type
+    WHERE typnamespace = 'public'::regnamespace
+      AND typname = 'shopping_created_from'
+  ) THEN
+    CREATE TYPE public.shopping_created_from AS ENUM ('MANUAL', 'CHECKLIST');
+  END IF;
+END
+$$;
+
 -- 5. Create tables (no cross-FKs yet)
 
 CREATE TABLE public.profiles (

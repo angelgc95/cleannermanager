@@ -1,0 +1,17 @@
+{
+  "name": "CleannerManager",
+  "short_name": "CleanerMgr",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#172033",
+  "description": "Operations dashboard for hosts and cleaners.",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
