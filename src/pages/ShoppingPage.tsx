@@ -39,6 +39,16 @@ interface SubmissionView extends Submission {
 }
 interface SelectedProduct { productId: string; quantity: number; note: string; }
 
+const SHOPPING_STATUS_OPTIONS = [
+  { value: "MISSING", label: "Missing" },
+  { value: "ORDERED", label: "Ordered" },
+  { value: "BOUGHT", label: "Bought" },
+  { value: "OK", label: "OK" },
+] as const;
+
+const getSubmissionStatusFromItems = (items: Pick<ShoppingItem, "status">[]) =>
+  items.length === 0 || items.every((item) => item.status === "OK") ? "DONE" : "PENDING";
+
 const getSyntheticSubmissionId = (item: ShoppingItem) =>
   item.checklist_run_id ? `checklist:${item.checklist_run_id}` : `checklist-item:${item.id}`;
 
@@ -338,7 +348,6 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
   const [clearing, setClearing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState(1);
-  const [editStatus, setEditStatus] = useState<string>("MISSING");
   const [adminSelected, setAdminSelected] = useState<SelectedProduct[]>([]);
   const [adminSearch, setAdminSearch] = useState("");
 
@@ -353,6 +362,18 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
   const allSubs = buildSubmissionViews(submissions as Submission[], items as ShoppingItem[]);
   const pendingSubs = allSubs.filter((s) => s.status === "PENDING");
   const openItems = (items as ShoppingItem[]).filter((i) => ["MISSING", "ORDERED", "BOUGHT"].includes(i.status));
+
+  const syncSubmissionStatus = async (submissionId: string | null) => {
+    if (!submissionId) return;
+
+    const { data: submissionItems } = await supabase
+      .from("shopping_list")
+      .select("status")
+      .eq("submission_id", submissionId);
+
+    const nextStatus = getSubmissionStatusFromItems((submissionItems as Pick<ShoppingItem, "status">[]) || []);
+    await supabase.from("shopping_submissions").update({ status: nextStatus }).eq("id", submissionId);
+  };
 
   const handleClearList = async () => {
     if (!user) return;
@@ -373,13 +394,36 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
   };
 
   const handleDeleteItem = async (id: string) => {
+    const item = (items as ShoppingItem[]).find((entry) => entry.id === id);
     await supabase.from("shopping_list").delete().eq("id", id);
+    if (item?.submission_id) {
+      await syncSubmissionStatus(item.submission_id);
+    }
     onRefresh();
   };
 
   const handleSaveEdit = async (id: string) => {
-    await supabase.from("shopping_list").update({ quantity_needed: editQty, status: editStatus as "MISSING" | "ORDERED" | "BOUGHT" | "OK" }).eq("id", id);
+    await supabase.from("shopping_list").update({ quantity_needed: editQty }).eq("id", id);
     setEditingId(null);
+    onRefresh();
+  };
+
+  const handleBulkStatusUpdate = async (submission: SubmissionView, itemIds: string[], nextStatus: string) => {
+    if (itemIds.length === 0) return;
+
+    await supabase
+      .from("shopping_list")
+      .update({ status: nextStatus as "MISSING" | "ORDERED" | "BOUGHT" | "OK" })
+      .in("id", itemIds);
+
+    if (!submission.isSynthetic) {
+      await syncSubmissionStatus(submission.id);
+    }
+
+    toast({
+      title: "Items updated",
+      description: `${itemIds.length} item${itemIds.length !== 1 ? "s" : ""} set to ${nextStatus.toLowerCase()}.`,
+    });
     onRefresh();
   };
 
@@ -507,14 +551,13 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
                     items={subItems}
                     editingId={editingId}
                     editQty={editQty}
-                    editStatus={editStatus}
-                    onStartEdit={(item: ShoppingItem) => { setEditingId(item.id); setEditQty(item.quantity_needed); setEditStatus(item.status); }}
+                    onStartEdit={(item: ShoppingItem) => { setEditingId(item.id); setEditQty(item.quantity_needed); }}
                     onCancelEdit={() => setEditingId(null)}
                     onSaveEdit={handleSaveEdit}
                     onDeleteItem={handleDeleteItem}
+                    onBulkStatusUpdate={handleBulkStatusUpdate}
                     onDeleteSubmission={handleDeleteSubmission}
                     setEditQty={setEditQty}
-                    setEditStatus={setEditStatus}
                     canDeleteSubmission={!sub.isSynthetic}
                   />
                 );
@@ -600,10 +643,38 @@ function AdminShoppingView({ submissions, items, products, user, hostId, toast, 
 }
 
 /* ─── Admin submission card with inline editing ─── */
-function AdminSubmissionCard({ submission, items, editingId, editQty, editStatus, onStartEdit, onCancelEdit, onSaveEdit, onDeleteItem, onDeleteSubmission, setEditQty, setEditStatus, canDeleteSubmission }: any) {
+function AdminSubmissionCard({ submission, items, editingId, editQty, onStartEdit, onCancelEdit, onSaveEdit, onDeleteItem, onBulkStatusUpdate, onDeleteSubmission, setEditQty, canDeleteSubmission }: any) {
   const [open, setOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState<string>("MISSING");
+  const [bulkUpdating, setBulkUpdating] = useState(false);
   const { formatDate } = useI18n();
   const pendingCount = items.filter((i: ShoppingItem) => i.status !== "OK").length;
+  const allSelected = items.length > 0 && selectedIds.length === items.length;
+
+  useEffect(() => {
+    setSelectedIds((current) => current.filter((id) => items.some((item: ShoppingItem) => item.id === id)));
+  }, [items]);
+
+  const toggleItemSelection = (itemId: string) => {
+    setSelectedIds((current) =>
+      current.includes(itemId)
+        ? current.filter((id) => id !== itemId)
+        : [...current, itemId]
+    );
+  };
+
+  const toggleAllSelection = (checked: boolean) => {
+    setSelectedIds(checked ? items.map((item: ShoppingItem) => item.id) : []);
+  };
+
+  const applyBulkStatus = async () => {
+    if (selectedIds.length === 0) return;
+    setBulkUpdating(true);
+    await onBulkStatusUpdate(submission, selectedIds, bulkStatus);
+    setSelectedIds([]);
+    setBulkUpdating(false);
+  };
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -627,21 +698,51 @@ function AdminSubmissionCard({ submission, items, editingId, editQty, editStatus
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="border-t px-3 pb-3 pt-2 space-y-1.5">
+            <div className="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/20 p-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={allSelected}
+                  onCheckedChange={(checked) => toggleAllSelection(checked === true)}
+                />
+                <span className="text-xs text-muted-foreground">
+                  {selectedIds.length > 0
+                    ? `${selectedIds.length} selected`
+                    : "Select items to update status"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={bulkStatus} onValueChange={setBulkStatus}>
+                  <SelectTrigger className="w-[120px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SHOPPING_STATUS_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={selectedIds.length === 0 || bulkUpdating}
+                  onClick={applyBulkStatus}
+                >
+                  Set Status
+                </Button>
+              </div>
+            </div>
             {items.map((item: ShoppingItem) => (
               <div key={item.id} className="flex items-center gap-2 py-1">
+                <Checkbox
+                  checked={selectedIds.includes(item.id)}
+                  onCheckedChange={() => toggleItemSelection(item.id)}
+                />
                 {editingId === item.id ? (
                   <>
                     <span className="text-sm font-medium flex-1">{item.products?.name}</span>
                     <Input type="number" min={1} value={editQty} onChange={(e) => setEditQty(Number(e.target.value) || 1)} className="w-16 h-7 text-xs" />
-                    <Select value={editStatus} onValueChange={setEditStatus}>
-                      <SelectTrigger className="w-24 h-7 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="MISSING">Missing</SelectItem>
-                        <SelectItem value="ORDERED">Ordered</SelectItem>
-                        <SelectItem value="BOUGHT">Bought</SelectItem>
-                        <SelectItem value="OK">OK</SelectItem>
-                      </SelectContent>
-                    </Select>
                     <Button size="sm" variant="ghost" onClick={() => onSaveEdit(item.id)}><Check className="h-3.5 w-3.5" /></Button>
                     <Button size="sm" variant="ghost" onClick={onCancelEdit}><X className="h-3.5 w-3.5" /></Button>
                   </>
@@ -652,20 +753,7 @@ function AdminSubmissionCard({ submission, items, editingId, editQty, editStatus
                       <span className="text-muted-foreground ml-2 text-xs">× {item.quantity_needed}</span>
                       {item.note && <span className="text-muted-foreground text-xs ml-2">({item.note})</span>}
                     </div>
-                    <Select value={item.status} onValueChange={async (val) => {
-                      await supabase.from("shopping_list").update({ status: val as any }).eq("id", item.id);
-                      onSaveEdit(null); // triggers no-op but we just need refresh pattern
-                      // optimistically update inline
-                      item.status = val;
-                    }}>
-                      <SelectTrigger className="w-[100px] h-7 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="MISSING">Missing</SelectItem>
-                        <SelectItem value="ORDERED">Ordered</SelectItem>
-                        <SelectItem value="BOUGHT">Bought</SelectItem>
-                        <SelectItem value="OK">OK</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <StatusBadge status={item.status} />
                     <Button size="sm" variant="ghost" onClick={() => onStartEdit(item)}><Edit2 className="h-3 w-3" /></Button>
                     <Button size="sm" variant="ghost" className="text-destructive" onClick={() => onDeleteItem(item.id)}><Trash2 className="h-3 w-3" /></Button>
                   </>

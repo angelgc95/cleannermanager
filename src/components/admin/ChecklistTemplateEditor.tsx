@@ -19,6 +19,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import type { CleanerExperienceLevel, ListingAiContext } from "@/lib/checklist-ai";
+import { useI18n } from "@/i18n/LanguageProvider";
 
 export interface ChecklistItem {
   id: string;
@@ -52,6 +53,7 @@ interface ChecklistTemplateEditorProps {
 export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSectionsUpdated }: ChecklistTemplateEditorProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { t } = useI18n();
   const [editingSection, setEditingSection] = useState<{ id: string; title: string } | null>(null);
   const [editingItem, setEditingItem] = useState<ChecklistItem & { sectionId: string } | null>(null);
   const [newSectionTitle, setNewSectionTitle] = useState("");
@@ -94,12 +96,12 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
           },
         });
         if (aiErr || !aiData?.items) {
-          toast({ title: "AI suggestions failed", description: "Section created without items.", variant: "destructive" });
+          toast({ title: t("AI suggestions failed"), description: t("Section created without items."), variant: "destructive" });
         } else {
           aiItems = aiData.items;
         }
       } catch {
-        toast({ title: "AI suggestions failed", description: "Section created without items.", variant: "destructive" });
+        toast({ title: t("AI suggestions failed"), description: t("Section created without items."), variant: "destructive" });
       } finally {
         setGeneratingItems(false);
       }
@@ -110,7 +112,7 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
       .insert({ template_id: templateId, title: newSectionTitle.trim(), sort_order: maxSort + 1, host_user_id: user?.id })
       .select("id, title, sort_order")
       .single();
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    if (error) { toast({ title: t("Error"), description: error.message, variant: "destructive" }); return; }
 
     // Insert AI-generated items if any
     let insertedItems: ChecklistItem[] = [];
@@ -139,30 +141,30 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
     setNewSectionDescription("");
     setAddingSectionOpen(false);
     const desc = aiItems.length > 0
-      ? `Section added with ${aiItems.length} AI-suggested items.`
-      : "Section added";
+      ? t("Section added with {{count}} AI-suggested items.", { count: aiItems.length })
+      : t("Section added");
     toast({ title: desc });
   };
 
   const updateSectionTitle = async () => {
     if (!editingSection) return;
     const { error } = await supabase.from("checklist_sections").update({ title: editingSection.title }).eq("id", editingSection.id);
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    if (error) { toast({ title: t("Error"), description: error.message, variant: "destructive" }); return; }
     onSectionsUpdated(sections.map((s) => s.id === editingSection.id ? { ...s, title: editingSection.title } : s));
     setEditingSection(null);
-    toast({ title: "Section renamed" });
+    toast({ title: t("Section renamed") });
   };
 
   const deleteSection = async (sectionId: string) => {
     const section = sections.find((s) => s.id === sectionId);
     if (section && section.items.length > 0) {
-      toast({ title: "Cannot delete", description: "Remove all items first.", variant: "destructive" });
+      toast({ title: t("Cannot delete"), description: t("Remove all items first."), variant: "destructive" });
       return;
     }
     const { error } = await supabase.from("checklist_sections").delete().eq("id", sectionId);
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    if (error) { toast({ title: t("Error"), description: error.message, variant: "destructive" }); return; }
     onSectionsUpdated(sections.filter((s) => s.id !== sectionId));
-    toast({ title: "Section deleted" });
+    toast({ title: t("Section deleted") });
   };
 
   // --- Item CRUD ---
@@ -186,12 +188,12 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
       })
       .select("id, item_key, label, type, required, sort_order, help_text, timer_minutes, depends_on_item_id")
       .single();
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    if (error) { toast({ title: t("Error"), description: error.message, variant: "destructive" }); return; }
     onSectionsUpdated(
       sections.map((s) => s.id === addingItemToSection ? { ...s, items: [...s.items, data as ChecklistItem] } : s)
     );
     resetItemForm();
-    toast({ title: "Item added" });
+    toast({ title: t("Item added") });
   };
 
   const updateItem = async () => {
@@ -206,7 +208,7 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
       timer_minutes: isTimer ? item.timer_minutes : null,
       depends_on_item_id: isTimer ? item.depends_on_item_id : null,
     }).eq("id", item.id);
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    if (error) { toast({ title: t("Error"), description: error.message, variant: "destructive" }); return; }
     onSectionsUpdated(
       sections.map((s) => s.id === sectionId
         ? { ...s, items: s.items.map((i) => i.id === item.id ? { ...i, ...item } : i) }
@@ -214,16 +216,16 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
       )
     );
     setEditingItem(null);
-    toast({ title: "Item updated" });
+    toast({ title: t("Item updated") });
   };
 
   const deleteItem = async (sectionId: string, itemId: string) => {
     const { error } = await supabase.from("checklist_items").delete().eq("id", itemId);
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    if (error) { toast({ title: t("Error"), description: error.message, variant: "destructive" }); return; }
     onSectionsUpdated(
       sections.map((s) => s.id === sectionId ? { ...s, items: s.items.filter((i) => i.id !== itemId) } : s)
     );
-    toast({ title: "Item removed" });
+    toast({ title: t("Item removed") });
   };
 
   const resetItemForm = () => {
@@ -247,7 +249,7 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
     const [sortA, sortB] = [a.sort_order, b.sort_order];
     const { error: e1 } = await supabase.from("checklist_items").update({ sort_order: sortB }).eq("id", a.id);
     const { error: e2 } = await supabase.from("checklist_items").update({ sort_order: sortA }).eq("id", b.id);
-    if (e1 || e2) { toast({ title: "Error moving item", variant: "destructive" }); return; }
+    if (e1 || e2) { toast({ title: t("Error moving item"), variant: "destructive" }); return; }
     onSectionsUpdated(sections.map(s => s.id === sectionId ? {
       ...s, items: s.items.map(i => i.id === a.id ? { ...i, sort_order: sortB } : i.id === b.id ? { ...i, sort_order: sortA } : i)
     } : s));
@@ -262,9 +264,9 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold text-foreground">Template Editor</p>
+        <p className="text-sm font-semibold text-foreground">{t("Template Editor")}</p>
         <Button variant="outline" size="sm" onClick={() => setAddingSectionOpen(true)} className="gap-1">
-          <Plus className="h-3.5 w-3.5" /> Section
+          <Plus className="h-3.5 w-3.5" /> {t("Section")}
         </Button>
       </div>
 
@@ -288,7 +290,7 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium">{section.title}</p>
+                  <p className="text-sm font-medium">{t(section.title)}</p>
                   <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingSection({ id: section.id, title: section.title })}>
                     <Pencil className="h-3 w-3" />
                   </Button>
@@ -313,7 +315,7 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
                   </div>
                   <span className="flex-1 truncate">
                     {item.type === "TIMER" && <AlarmClock className="h-3 w-3 inline mr-1 text-primary" />}
-                    {item.label}
+                    {t(item.label)}
                     <span className="text-xs text-muted-foreground ml-1">({item.type})</span>
                     {item.required && <span className="text-destructive ml-0.5">*</span>}
                     {item.type === "TIMER" && item.timer_minutes && (
@@ -339,7 +341,7 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
               className="gap-1 text-xs w-full justify-start text-muted-foreground"
               onClick={() => { resetItemForm(); setAddingItemToSection(section.id); }}
             >
-              <Plus className="h-3 w-3" /> Add item
+              <Plus className="h-3 w-3" /> {t("Add item")}
             </Button>
           </CardContent>
         </Card>
@@ -348,27 +350,27 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
       {/* Add Section Dialog */}
       <Dialog open={addingSectionOpen} onOpenChange={(open) => { setAddingSectionOpen(open); if (!open) { setNewSectionTitle(""); setNewSectionDescription(""); } }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Section</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t("Add Section")}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label className="text-xs">Section Title</Label>
-              <Input value={newSectionTitle} onChange={(e) => setNewSectionTitle(e.target.value)} placeholder="e.g. Kitchen, Bathroom, Outdoor..." />
+              <Label className="text-xs">{t("Section Title")}</Label>
+              <Input value={newSectionTitle} onChange={(e) => setNewSectionTitle(e.target.value)} placeholder={t("e.g. Kitchen, Bathroom, Outdoor...")} />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Describe this section <span className="text-muted-foreground font-normal">(for smart suggestions)</span></Label>
+              <Label className="text-xs">{t("Describe this section")} <span className="text-muted-foreground font-normal">{t("(for smart suggestions)")}</span></Label>
               <Textarea
                 value={newSectionDescription}
                 onChange={(e) => setNewSectionDescription(e.target.value)}
-                placeholder="e.g. Large kitchen with dishwasher, gas oven, coffee machine, and breakfast bar..."
+                placeholder={t("e.g. Large kitchen with dishwasher, gas oven, coffee machine, and breakfast bar...")}
                 rows={3}
                 className="resize-none"
               />
               <p className="text-[11px] text-muted-foreground">
                 {canGenerateSectionWithAi
                   ? newSectionDescription.trim().length >= 5
-                    ? "AI will use your section notes plus the template context to suggest items."
-                    : "AI can use the saved cleaner experience and listing context for this template, even without extra notes."
-                  : "Add a description to get AI-tailored suggestions, or leave empty to add items manually."}
+                    ? t("AI will use your section notes plus the template context to suggest items.")
+                    : t("AI can use the saved cleaner experience and listing context for this template, even without extra notes.")
+                  : t("Add a description to get AI-tailored suggestions, or leave empty to add items manually.")}
               </p>
             </div>
           </div>
@@ -379,7 +381,7 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
               className="w-full gap-1.5"
             >
               {generatingItems ? <Loader2 className="h-4 w-4 animate-spin" /> : canGenerateSectionWithAi ? <Sparkles className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-              {generatingItems ? "Generating..." : canGenerateSectionWithAi ? "Add with Smart Suggestions" : "Add Empty Section"}
+              {generatingItems ? t("Generating...") : canGenerateSectionWithAi ? t("Add with Smart Suggestions") : t("Add Empty Section")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -388,10 +390,10 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
       {/* Add/Edit Item Dialog */}
       <Dialog open={!!addingItemToSection || !!editingItem} onOpenChange={(open) => { if (!open) { resetItemForm(); setEditingItem(null); } }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{editingItem ? "Edit Item" : "Add Item"}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingItem ? t("Edit Item") : t("Add Item")}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label className="text-xs">Type</Label>
+              <Label className="text-xs">{t("Type")}</Label>
               <Select
                 value={currentType}
                 onValueChange={(v) => {
@@ -405,27 +407,27 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
               >
                 <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="YESNO">Yes/No</SelectItem>
-                  <SelectItem value="PHOTO">Photo</SelectItem>
-                  <SelectItem value="TEXT">Text</SelectItem>
-                  <SelectItem value="NUMBER">Number</SelectItem>
-                  <SelectItem value="TIMER">⏰ Timer</SelectItem>
+                  <SelectItem value="YESNO">{t("Yes/No")}</SelectItem>
+                  <SelectItem value="PHOTO">{t("Photo")}</SelectItem>
+                  <SelectItem value="TEXT">{t("Text")}</SelectItem>
+                  <SelectItem value="NUMBER">{t("Number")}</SelectItem>
+                  <SelectItem value="TIMER">⏰ {t("Timer")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Label</Label>
+              <Label className="text-xs">{t("Label")}</Label>
               <Input
                 value={editingItem ? editingItem.label : newItemLabel}
                 onChange={(e) => editingItem ? setEditingItem({ ...editingItem, label: e.target.value }) : setNewItemLabel(e.target.value)}
-                placeholder={isTimerType ? "e.g. Washing machine cycle" : "Item label..."}
+                placeholder={isTimerType ? t("e.g. Washing machine cycle") : t("Item label...")}
               />
             </div>
 
             {isTimerType && (
               <>
                 <div className="space-y-1">
-                  <Label className="text-xs">Duration (minutes)</Label>
+                  <Label className="text-xs">{t("Duration (minutes)")}</Label>
                   <Input
                     type="number"
                     min="1"
@@ -438,11 +440,11 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
                         setNewItemTimerMinutes(val);
                       }
                     }}
-                    placeholder="e.g. 60"
+                    placeholder={t("e.g. 60")}
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Starts when this item is done</Label>
+                  <Label className="text-xs">{t("Starts when this item is done")}</Label>
                   <Select
                     value={editingItem ? (editingItem.depends_on_item_id || "") : newItemDependsOn}
                     onValueChange={(v) => {
@@ -453,14 +455,14 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
                       }
                     }}
                   >
-                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select trigger item..." /></SelectTrigger>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder={t("Select trigger item...")} /></SelectTrigger>
                     <SelectContent>
                       {dependencyItems.map(dep => (
                         <SelectItem key={dep.id} value={dep.id}>{dep.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-[10px] text-muted-foreground">Timer auto-starts when the selected item is marked done. At 0 a persistent alarm shows.</p>
+                  <p className="text-[10px] text-muted-foreground">{t("Timer auto-starts when the selected item is marked done. At 0 a persistent alarm shows.")}</p>
                 </div>
               </>
             )}
@@ -472,21 +474,21 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
                     checked={editingItem ? editingItem.required : newItemRequired}
                     onCheckedChange={(v) => editingItem ? setEditingItem({ ...editingItem, required: v }) : setNewItemRequired(v)}
                   />
-                  <Label className="text-xs">Required</Label>
+                  <Label className="text-xs">{t("Required")}</Label>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Help text (optional)</Label>
+                  <Label className="text-xs">{t("Help text (optional)")}</Label>
                   <Input
                     value={editingItem ? (editingItem.help_text || "") : newItemHelpText}
                     onChange={(e) => editingItem ? setEditingItem({ ...editingItem, help_text: e.target.value || null }) : setNewItemHelpText(e.target.value)}
-                    placeholder="Help text..."
+                    placeholder={t("Help text...")}
                   />
                 </div>
               </>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { resetItemForm(); setEditingItem(null); }}>Cancel</Button>
+            <Button variant="outline" onClick={() => { resetItemForm(); setEditingItem(null); }}>{t("Cancel")}</Button>
             <Button
               onClick={editingItem ? updateItem : addItem}
               disabled={
@@ -495,7 +497,7 @@ export function ChecklistTemplateEditor({ sections, templateId, aiContext, onSec
                   : !newItemLabel.trim() || (newItemType === "TIMER" && (!newItemTimerMinutes || !newItemDependsOn))
               }
             >
-              {editingItem ? "Save" : "Add"}
+              {editingItem ? t("Save") : t("Add")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -414,28 +414,28 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
       ) : undefined} />
       <div className="p-6 space-y-4">
         <Tabs defaultValue="upcoming">
-          <TabsList className="w-full"><TabsTrigger value="upcoming" className="flex-1">Upcoming</TabsTrigger><TabsTrigger value="completed" className="flex-1">Completed</TabsTrigger></TabsList>
+          <TabsList className="w-full"><TabsTrigger value="upcoming" className="flex-1">{t("Upcoming")}</TabsTrigger><TabsTrigger value="completed" className="flex-1">{t("Completed")}</TabsTrigger></TabsList>
           <TabsContent value="upcoming" className="space-y-2">
-            {upcomingEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">No upcoming checklists.</p> : upcomingEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}
+            {upcomingEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">{t("No upcoming checklists.")}</p> : upcomingEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}
           </TabsContent>
-          <TabsContent value="completed" className="space-y-2">{completedEvents.length === 0 && cancelledEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">No completed checklists yet.</p> : (<>{cancelledEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}{completedEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}</>)}</TabsContent>
+          <TabsContent value="completed" className="space-y-2">{completedEvents.length === 0 && cancelledEvents.length === 0 ? <p className="text-center text-muted-foreground py-8">{t("No completed checklists yet.")}</p> : (<>{cancelledEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}{completedEvents.map((ev) => <EventCard key={ev.id} event={ev} />)}</>)}</TabsContent>
         </Tabs>
       </div>
 
       {/* Create Template Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={(open) => { setCreateDialogOpen(open); if (!open) resetCreateTemplateForm(); }}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Create Checklist Template</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t("Create Checklist Template")}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Template Name</Label>
-              <Input value={newTemplateName} onChange={(e) => setNewTemplateName(e.target.value)} placeholder="e.g. Standard Cleaning, Deep Clean..." />
+              <Label>{t("Template Name")}</Label>
+              <Input value={newTemplateName} onChange={(e) => setNewTemplateName(e.target.value)} placeholder={t("e.g. Standard Cleaning, Deep Clean...")} />
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <Label>Cleaner experience level</Label>
+                <Label>{t("Cleaner experience level")}</Label>
                 <span className="text-xs font-medium text-muted-foreground">
-                  {CLEANER_EXPERIENCE_CONTENT[cleanerExperienceLevel].label} - {CLEANER_EXPERIENCE_CONTENT[cleanerExperienceLevel].title}
+                  {CLEANER_EXPERIENCE_CONTENT[cleanerExperienceLevel].label} - {t(CLEANER_EXPERIENCE_CONTENT[cleanerExperienceLevel].title)}
                 </span>
               </div>
               <Slider
@@ -446,54 +446,54 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
                 onValueChange={(value) => setCleanerExperienceLevel(normalizeCleanerExperienceLevel(value[0]))}
               />
               <p className="text-xs text-muted-foreground">
-                {CLEANER_EXPERIENCE_CONTENT[cleanerExperienceLevel].summary}
+                {t(CLEANER_EXPERIENCE_CONTENT[cleanerExperienceLevel].summary)}
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label>Listing type</Label>
+              <Label>{t("Listing type")}</Label>
               <Select value={listingType} onValueChange={setListingType}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select listing type" />
+                  <SelectValue placeholder={t("Select listing type")} />
                 </SelectTrigger>
                 <SelectContent>
                   {LISTING_TYPE_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                      {t(option.label)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Amenities</Label>
+              <Label>{t("Amenities")}</Label>
               <Textarea
                 value={listingAmenitiesInput}
                 onChange={(e) => setListingAmenitiesInput(e.target.value)}
-                placeholder="Wi-Fi, AC, washer, dryer, balcony, coffee machine, smart TV..."
+                placeholder={t("Wi-Fi, AC, washer, dryer, balcony, coffee machine, smart TV...")}
                 rows={2}
                 className="resize-none"
               />
               <p className="text-xs text-muted-foreground">
-                Add the amenities and standout features the cleaner should account for.
+                {t("Add the amenities and standout features the cleaner should account for.")}
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label>Actionable listing notes <span className="text-muted-foreground font-normal">(for smart suggestions)</span></Label>
+              <Label>{t("Actionable listing notes")} <span className="text-muted-foreground font-normal">{t("(for smart suggestions)")}</span></Label>
               <Textarea
                 value={listingActionableInfo}
                 onChange={(e) => setListingActionableInfo(e.target.value)}
-                placeholder="Lockbox at main gate, restock beach towels, check coffee pods, wipe balcony furniture, leave house manual visible..."
+                placeholder={t("Lockbox at main gate, restock beach towels, check coffee pods, wipe balcony furniture, leave house manual visible...")}
                 rows={3}
                 className="resize-none"
               />
               <p className="text-xs text-muted-foreground">
-                AI will combine listing type, amenities, useful notes, and cleaner experience to generate a more accurate checklist.
+                {t("AI will combine listing type, amenities, useful notes, and cleaner experience to generate a more accurate checklist.")}
               </p>
             </div>
             <div className="rounded-md border border-dashed border-border bg-muted/20 p-3">
-              <p className="text-xs font-medium">Airbnb-ready focus</p>
+              <p className="text-xs font-medium">{t("Airbnb-ready focus")}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                The generator will prioritize high-touch cleaning, fresh linens and towels, bathroom and kitchen essentials, device and manual readiness, and guest-ready final checks.
+                {t("The generator will prioritize high-touch cleaning, fresh linens and towels, bathroom and kitchen essentials, device and manual readiness, and guest-ready final checks.")}
               </p>
             </div>
           </div>
@@ -504,10 +504,10 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
               className="w-full gap-1.5"
             >
               {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Generate Smart Suggestions
+              {t("Generate Smart Suggestions")}
             </Button>
             <Button variant="outline" onClick={() => createTemplate("empty")} disabled={!newTemplateName.trim() || creating} className="w-full">
-              {creating && <Loader2 className="h-4 w-4 animate-spin mr-1" />} Start Empty
+              {creating && <Loader2 className="h-4 w-4 animate-spin mr-1" />} {t("Start Empty")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -516,17 +516,17 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
       {/* Manage Templates Sheet */}
       <Sheet open={manageOpen} onOpenChange={(open) => { setManageOpen(open); if (!open) { setEditingTemplate(false); setTemplateDirty(false); } }}>
         <SheetContent className="sm:max-w-lg overflow-y-auto">
-          <SheetHeader><SheetTitle>Manage Templates</SheetTitle></SheetHeader>
+          <SheetHeader><SheetTitle>{t("Manage Templates")}</SheetTitle></SheetHeader>
           <div className="mt-4 space-y-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-sm text-muted-foreground">{templates.length} template{templates.length !== 1 ? "s" : ""}</p>
+              <p className="text-sm text-muted-foreground">{templates.length} {t(templates.length !== 1 ? "templates" : "template")}</p>
               <div className="flex items-center gap-2">
                 {selectedTemplateId && !editingTemplate && (
                   <>
                     <Button size="sm" variant="ghost" className="gap-1.5 text-destructive hover:text-destructive" onClick={async () => {
-                      if (!confirm("Delete this template? This cannot be undone.")) return;
+                      if (!confirm(t("Delete this template? This cannot be undone."))) return;
                       await supabase.from("checklist_templates").update({ active: false }).eq("id", selectedTemplateId);
-                      toast({ title: "Template deleted" });
+                      toast({ title: t("Template deleted") });
                       setSelectedTemplateId(null);
                       await fetchTemplates();
                     }}>
@@ -534,25 +534,25 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
                     </Button>
                     {sections.length > 0 && (
                       <Button size="sm" variant="outline" onClick={() => { setEditingTemplate(true); setTemplateDirty(false); }} className="gap-1.5">
-                        <Pencil className="h-4 w-4" /> Edit
+                        <Pencil className="h-4 w-4" /> {t("Edit")}
                       </Button>
                     )}
                   </>
                 )}
                 {editingTemplate && (
-                  <Button size="sm" variant={templateDirty ? "default" : "outline"} disabled={!templateDirty} onClick={() => { setEditingTemplate(false); setTemplateDirty(false); toast({ title: "Template saved" }); }} className="gap-1.5">
-                    <Save className="h-4 w-4" /> Save
+                  <Button size="sm" variant={templateDirty ? "default" : "outline"} disabled={!templateDirty} onClick={() => { setEditingTemplate(false); setTemplateDirty(false); toast({ title: t("Template saved") }); }} className="gap-1.5">
+                    <Save className="h-4 w-4" /> {t("Save")}
                   </Button>
                 )}
                 <Button size="sm" onClick={() => { setCreateDialogOpen(true); }} className="gap-1.5">
-                  <Plus className="h-4 w-4" /> Create Template
+                  <Plus className="h-4 w-4" /> {t("Create Template")}
                 </Button>
               </div>
             </div>
              {templates.length > 0 ? (
               <>
                 <Select value={selectedTemplateId || ""} onValueChange={(v) => { setSelectedTemplateId(v); setPendingAssignments({}); setSaved(false); setEditingTemplate(false); setTemplateDirty(false); }}>
-                  <SelectTrigger><SelectValue placeholder="Select template to edit" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("Select template to edit")} /></SelectTrigger>
                   <SelectContent>{templates.map((t) => (
                     <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                   ))}</SelectContent>
@@ -563,29 +563,29 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
                     {selectedTemplateAiMetadata && (
                       <div className="rounded-md border border-border bg-muted/20 p-3">
                         <p className="text-xs font-medium">
-                          Cleaner experience: {CLEANER_EXPERIENCE_CONTENT[selectedTemplateAiMetadata.cleanerExperienceLevel].title}
+                          {t("Cleaner experience:")} {t(CLEANER_EXPERIENCE_CONTENT[selectedTemplateAiMetadata.cleanerExperienceLevel].title)}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Listing type: {getListingTypeLabel(selectedTemplateAiMetadata.listingContext.listingType)}
+                          {t("Listing type:")} {t(getListingTypeLabel(selectedTemplateAiMetadata.listingContext.listingType))}
                         </p>
                         {selectedTemplateAiMetadata.listingContext.amenities.length > 0 && (
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Amenities: {selectedTemplateAiMetadata.listingContext.amenities.join(", ")}
+                            {t("Amenities:")} {selectedTemplateAiMetadata.listingContext.amenities.map((item) => t(item)).join(", ")}
                           </p>
                         )}
                         {selectedTemplateAiMetadata.listingContext.actionableInfo && (
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Notes: {selectedTemplateAiMetadata.listingContext.actionableInfo}
+                            {t("Notes:")} {t(selectedTemplateAiMetadata.listingContext.actionableInfo)}
                           </p>
                         )}
                       </div>
                     )}
                     {/* Assign to Listings */}
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-medium">Assigned Listings</Label>
+                      <Label className="text-xs font-medium">{t("Assigned Listings")}</Label>
                       <div className="space-y-1.5 rounded-md border border-border p-2">
                         {listings.length === 0 ? (
-                          <p className="text-xs text-muted-foreground py-2 text-center">No listings found.</p>
+                          <p className="text-xs text-muted-foreground py-2 text-center">{t("No listings found.")}</p>
                         ) : listings.map((l) => {
                           const currentTemplateId = Object.prototype.hasOwnProperty.call(pendingAssignments, l.id)
                             ? pendingAssignments[l.id]
@@ -610,7 +610,7 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
                               />
                               <span className="flex-1">{l.name}</span>
                               {otherTpl && (
-                                <span className="text-xs text-muted-foreground">using: {otherTpl.name}</span>
+                                <span className="text-xs text-muted-foreground">{t("using:")} {otherTpl.name}</span>
                               )}
                             </label>
                           );
@@ -620,13 +620,13 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
                       {Object.keys(pendingAssignments).length > 0 && !saved && (
                         <Button size="sm" onClick={handleSaveAssignments} disabled={assigningListing} className="w-full gap-1.5">
                           {assigningListing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                          Save Assignments
+                          {t("Save Assignments")}
                         </Button>
                       )}
 
                       {saved && (
                         <p className="text-xs text-[hsl(var(--status-done))] flex items-center gap-1">
-                          <Check className="h-3.5 w-3.5" /> Assignments saved successfully.
+                          <Check className="h-3.5 w-3.5" /> {t("Assignments saved successfully.")}
                         </p>
                       )}
                     </div>
@@ -637,7 +637,7 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
                       if (unassigned.length === 0) return null;
                       return (
                         <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3">
-                          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">⚠ Listings without any template:</p>
+                          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">⚠ {t("Listings without any template:")}</p>
                           <ul className="text-xs text-amber-600 dark:text-amber-500 mt-1 space-y-0.5">
                             {unassigned.map(l => <li key={l.id}>• {l.name}</li>)}
                           </ul>
@@ -657,13 +657,13 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
                         {sections.map((section) => (
                           <div key={section.id} className="rounded-md border border-border">
                             <div className="bg-muted/30 px-3 py-2 border-b border-border">
-                              <p className="text-sm font-medium">{section.title}</p>
+                              <p className="text-sm font-medium">{t(section.title)}</p>
                             </div>
                             <ul className="divide-y divide-border">
                               {section.items.map((item) => (
                                 <li key={item.id} className="flex items-center gap-2 px-3 py-2 text-sm">
                                   <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{item.type}</span>
-                                  <span className="flex-1">{item.label}</span>
+                                  <span className="flex-1">{t(item.label)}</span>
                                   {item.timer_minutes && item.timer_minutes > 0 && (
                                     <span className="text-xs text-muted-foreground">⏰ {item.timer_minutes}m</span>
                                   )}
@@ -671,21 +671,21 @@ const TasksPage = forwardRef<HTMLDivElement>(function TasksPage(_props, _ref) {
                                 </li>
                               ))}
                               {section.items.length === 0 && (
-                                <li className="px-3 py-2 text-xs text-muted-foreground italic">No items in this section</li>
+                                <li className="px-3 py-2 text-xs text-muted-foreground italic">{t("No items in this section")}</li>
                               )}
                             </ul>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground text-center py-4">This template has no sections yet. Click Edit to add some.</p>
+                      <p className="text-sm text-muted-foreground text-center py-4">{t("This template has no sections yet. Click Edit to add some.")}</p>
                     )}
                   </div>
                 )}
               </>
             ) : (
               <div className="text-center py-8">
-                <p className="text-sm text-muted-foreground">No templates yet. Create one to get started.</p>
+                <p className="text-sm text-muted-foreground">{t("No templates yet. Create one to get started.")}</p>
               </div>
             )}
           </div>

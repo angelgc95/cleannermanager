@@ -35,6 +35,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
   const [cancelReason, setCancelReason] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
 
   const [assigningCleaner, setAssigningCleaner] = useState<string>("");
 
@@ -301,6 +302,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
   const statusMismatch = event.status === "IN_PROGRESS" && effectiveStatus === "COMPLETED";
   const submissionDuration = checklistRun?.duration_minutes ?? loggedHours?.duration_minutes ?? null;
   const submissionCleanerName = submissionCleaner?.name || submissionCleaner?.email || "Cleaner";
+  const selectedPhoto = selectedPhotoIndex !== null ? runPhotos[selectedPhotoIndex] : null;
 
   return (
     <div ref={ref}>
@@ -556,16 +558,32 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
                     <Camera className="h-4 w-4 text-muted-foreground" />
                     <p className="text-muted-foreground font-medium">Photos ({runPhotos.length})</p>
                   </div>
-                  <div className="flex gap-2 flex-wrap">
-                    {runPhotos.map((photo: any, idx: number) => (
-                      <a key={idx} href={photo.signed_url || photo.photo_url} target="_blank" rel="noopener noreferrer">
-                        <img
-                          src={photo.signed_url || photo.photo_url}
-                          alt=""
-                          className="h-20 w-20 rounded-lg object-cover border border-border hover:opacity-80 transition-opacity"
-                        />
-                      </a>
-                    ))}
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 auto-rows-[110px]">
+                    {runPhotos.map((photo: any, idx: number) => {
+                      const isHero = idx === 0 && runPhotos.length > 2;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setSelectedPhotoIndex(idx)}
+                          className={[
+                            "group relative overflow-hidden rounded-xl border border-border bg-muted/20",
+                            "transition-transform hover:scale-[1.01] hover:shadow-sm",
+                            isHero ? "col-span-2 row-span-2 sm:col-span-2" : "",
+                          ].join(" ")}
+                        >
+                          <img
+                            src={photo.signed_url || photo.photo_url}
+                            alt={`Checklist photo ${idx + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+                          <div className="absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
+                            Open
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -675,6 +693,39 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
               Reset & Remove Checklist
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={selectedPhotoIndex !== null} onOpenChange={(open) => !open && setSelectedPhotoIndex(null)}>
+        <DialogContent className="max-w-4xl border-none bg-black/95 p-2 text-white sm:p-4">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Checklist photo preview</DialogTitle>
+            <DialogDescription>Expanded checklist submission photo.</DialogDescription>
+          </DialogHeader>
+          {selectedPhoto && (
+            <div className="space-y-3">
+              <div className="overflow-hidden rounded-lg">
+                <img
+                  src={selectedPhoto.signed_url || selectedPhoto.photo_url}
+                  alt={`Checklist photo ${selectedPhotoIndex! + 1}`}
+                  className="max-h-[78vh] w-full object-contain"
+                />
+              </div>
+              <div className="flex items-center justify-between px-1 text-xs text-white/80">
+                <span>
+                  Photo {selectedPhotoIndex! + 1} of {runPhotos.length}
+                </span>
+                <a
+                  href={selectedPhoto.signed_url || selectedPhoto.photo_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-4"
+                >
+                  Open original
+                </a>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

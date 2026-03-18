@@ -1,4 +1,4 @@
-import { useEffect, useState, forwardRef } from "react";
+import { useEffect, useMemo, useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,7 +29,7 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
 
   const fetchEntries = async () => {
     if (!user) return;
-    let query = supabase.from("log_hours").select("*, payout_id").order("date", { ascending: false }).limit(50);
+    let query = supabase.from("log_hours").select("*, payout_id").order("date", { ascending: false }).limit(200);
     if (!isHost) query = query.eq("user_id", user.id);
     const { data } = await query;
 
@@ -37,9 +37,30 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
       // Fetch payout statuses for entries that have a payout_id
       const payoutIds = [...new Set(data.filter((e: any) => e.payout_id).map((e: any) => e.payout_id))];
       let payoutStatusMap: Record<string, string> = {};
+      let payoutPeriodMap: Record<string, string | null> = {};
+      let periodMap: Record<string, { start_date: string; end_date: string; status: string | null }> = {};
       if (payoutIds.length > 0) {
-        const { data: payouts } = await supabase.from("payouts").select("id, status").in("id", payoutIds);
+        const { data: payouts } = await supabase.from("payouts").select("id, status, period_id").in("id", payoutIds);
         payoutStatusMap = Object.fromEntries((payouts || []).map((p: any) => [p.id, p.status]));
+        payoutPeriodMap = Object.fromEntries((payouts || []).map((p: any) => [p.id, p.period_id || null]));
+
+        const periodIds = [...new Set((payouts || []).map((p: any) => p.period_id).filter(Boolean))];
+        if (periodIds.length > 0) {
+          const { data: periods } = await supabase
+            .from("payout_periods")
+            .select("id, start_date, end_date, status")
+            .in("id", periodIds);
+          periodMap = Object.fromEntries(
+            (periods || []).map((period: any) => [
+              period.id,
+              {
+                start_date: period.start_date,
+                end_date: period.end_date,
+                status: period.status,
+              },
+            ])
+          );
+        }
       }
 
       if (isHost) {
@@ -52,6 +73,10 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
             _user_name: nameMap[e.user_id] || "Unknown",
             _payout_status: e.payout_id ? (payoutStatusMap[e.payout_id] || "PENDING") : null,
             _processing_status: e.payout_id ? "PROCESSED" : "PENDING",
+            _payout_period_id: e.payout_id ? payoutPeriodMap[e.payout_id] || null : null,
+            _payout_period_start: e.payout_id && payoutPeriodMap[e.payout_id] ? periodMap[payoutPeriodMap[e.payout_id]]?.start_date || null : null,
+            _payout_period_end: e.payout_id && payoutPeriodMap[e.payout_id] ? periodMap[payoutPeriodMap[e.payout_id]]?.end_date || null : null,
+            _payout_period_status: e.payout_id && payoutPeriodMap[e.payout_id] ? periodMap[payoutPeriodMap[e.payout_id]]?.status || null : null,
           }))
         );
       } else {
@@ -60,6 +85,10 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
             ...e,
             _payout_status: e.payout_id ? (payoutStatusMap[e.payout_id] || "PENDING") : null,
             _processing_status: e.payout_id ? "PROCESSED" : "PENDING",
+            _payout_period_id: e.payout_id ? payoutPeriodMap[e.payout_id] || null : null,
+            _payout_period_start: e.payout_id && payoutPeriodMap[e.payout_id] ? periodMap[payoutPeriodMap[e.payout_id]]?.start_date || null : null,
+            _payout_period_end: e.payout_id && payoutPeriodMap[e.payout_id] ? periodMap[payoutPeriodMap[e.payout_id]]?.end_date || null : null,
+            _payout_period_status: e.payout_id && payoutPeriodMap[e.payout_id] ? periodMap[payoutPeriodMap[e.payout_id]]?.status || null : null,
           }))
         );
       }
@@ -149,6 +178,37 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
   const summaryList = Object.entries(summaryByUser).map(([uid, data]) => ({ userId: uid, ...(data as any) }));
   const pendingEntries = entries.filter((entry: any) => entry._processing_status !== "PROCESSED");
   const processedEntries = entries.filter((entry: any) => entry._processing_status === "PROCESSED");
+
+  const processedGroups = useMemo(() => {
+    const groups = processedEntries.reduce((acc: Record<string, any>, entry: any) => {
+      const key = entry._payout_period_id || entry.payout_id || `processed-${entry.id}`;
+      if (!acc[key]) {
+        acc[key] = {
+          id: key,
+          start: entry._payout_period_start,
+          end: entry._payout_period_end,
+          entries: [],
+          totalMinutes: 0,
+          cleanerIds: new Set<string>(),
+          allPaid: true,
+        };
+      }
+
+      acc[key].entries.push(entry);
+      acc[key].totalMinutes += entry.duration_minutes || 0;
+      acc[key].cleanerIds.add(entry.user_id);
+      if (entry._payout_status !== "PAID") {
+        acc[key].allPaid = false;
+      }
+      return acc;
+    }, {});
+
+    return Object.values(groups).sort((a: any, b: any) => {
+      const aDate = a.end || a.start || a.entries[0]?.date || "";
+      const bDate = b.end || b.start || b.entries[0]?.date || "";
+      return bDate.localeCompare(aDate);
+    });
+  }, [processedEntries]);
 
   const renderEntry = (entry: any, processed = false) => (
     <Card key={entry.id}>
@@ -272,7 +332,31 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
                   {processedEntries.length > 0 && <StatusBadge status="PROCESSED" />}
                 </div>
                 {processedEntries.length > 0 ? (
-                  processedEntries.map((entry: any) => renderEntry(entry, true))
+                  processedGroups.map((group: any) => (
+                    <Card key={group.id}>
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">
+                              {group.start && group.end
+                                ? `${formatDate(group.start, "MMM d")} – ${formatDate(group.end, "MMM d, yyyy")}`
+                                : t("Processed Hours")}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {group.entries.length} {group.entries.length === 1 ? "entry" : "entries"}
+                              {" · "}
+                              {Math.floor(group.totalMinutes / 60)}h {group.totalMinutes % 60}m
+                              {isHost ? ` · ${group.cleanerIds.size} ${group.cleanerIds.size === 1 ? "cleaner" : "cleaners"}` : ""}
+                            </p>
+                          </div>
+                          <StatusBadge status={group.allPaid ? "PAID" : "PENDING"} />
+                        </div>
+                        <div className="space-y-3">
+                          {group.entries.map((entry: any) => renderEntry(entry, true))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
                 ) : (
                   <p className="text-center text-muted-foreground py-4">{t("No processed hours yet.")}</p>
                 )}
