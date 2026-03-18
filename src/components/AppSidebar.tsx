@@ -260,29 +260,81 @@ export function AppSidebar() {
     );
   }
 
+  if (isHostDesktop) {
+    return (
+      <aside className="sticky top-4 flex h-[calc(100svh-2rem)] w-72 shrink-0 flex-col rounded-[28px] border border-border/70 bg-card/88 p-3 shadow-[0_24px_80px_-40px_hsl(var(--foreground)/0.35)] backdrop-blur">
+        <div className="rounded-[24px] bg-[linear-gradient(160deg,hsl(var(--primary)),hsl(var(--primary)/0.72))] px-5 py-5 text-primary-foreground">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-primary-foreground/70">CleannerManager</p>
+          <p className="mt-3 text-2xl font-semibold">{t("Host")}</p>
+          <p className="mt-2 text-sm text-primary-foreground/80">
+            {t("Overview of today's activity")}
+          </p>
+        </div>
+
+        <nav className="flex-1 space-y-1.5 overflow-y-auto px-1 py-4">
+          {navItems.map((item) => (
+            <NavLink
+              key={item.url}
+              to={item.url}
+              end={item.url === "/"}
+              className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+              activeClassName="bg-primary text-primary-foreground shadow-sm"
+            >
+              <item.icon className="h-5 w-5 shrink-0" />
+              <span className="truncate">{t(item.title)}</span>
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="space-y-3 border-t border-border/70 pt-3">
+          <NavLink
+            to="/settings"
+            className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+            activeClassName="bg-primary text-primary-foreground shadow-sm"
+          >
+            <Settings className="h-5 w-5 shrink-0" />
+            <span className="truncate">{t("Settings")}</span>
+          </NavLink>
+
+          <div className="rounded-2xl bg-muted/70 px-4 py-3">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">{t("Host")}</p>
+            <p className="mt-1 truncate text-sm font-semibold text-foreground">{displayName}</p>
+            <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+          </div>
+
+          <button
+            onClick={handleLogout}
+            className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <LogOut className="h-5 w-5 shrink-0" />
+            <span>{t("Sign Out")}</span>
+          </button>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside
       className={cn(
         "sticky top-0 h-screen flex flex-col transition-all duration-200 shrink-0",
-        isHostDesktop
-          ? "border-r border-border/70 bg-white text-foreground shadow-sm"
-          : "bg-sidebar text-sidebar-foreground border-r border-sidebar-border",
+        "bg-sidebar text-sidebar-foreground border-r border-sidebar-border",
         collapsed ? "w-16" : "w-60"
       )}
     >
-      <div className={cn("flex items-center gap-3 px-4 h-14 shrink-0", isHostDesktop ? "border-b border-border/70" : "border-b border-sidebar-border")}>
+      <div className="flex items-center gap-3 px-4 h-14 border-b border-sidebar-border shrink-0">
         <button
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
             "p-1.5 rounded-md",
-            isHostDesktop ? "hover:bg-muted text-foreground" : "hover:bg-sidebar-accent text-sidebar-foreground"
+            "hover:bg-sidebar-accent text-sidebar-foreground"
           )}
           title={t("Open navigation")}
         >
           <Menu className="h-5 w-5" />
         </button>
         {!collapsed && (
-          <span className={cn("font-semibold text-sm truncate", isHostDesktop ? "text-foreground" : "text-sidebar-primary-foreground")}>
+          <span className="font-semibold text-sm text-sidebar-primary-foreground truncate">
             CleannerManager
           </span>
         )}
@@ -296,12 +348,10 @@ export function AppSidebar() {
             end={item.url === "/"}
             className={cn(
               "flex items-center gap-3 mx-2 px-3 py-2.5 rounded-lg text-sm transition-colors",
-              isHostDesktop
-                ? "text-muted-foreground hover:bg-muted hover:text-foreground"
-                : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
               collapsed && "justify-center px-0"
             )}
-            activeClassName={isHostDesktop ? "bg-primary/10 text-primary font-semibold" : "bg-sidebar-accent text-sidebar-primary font-medium"}
+            activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
           >
             <item.icon className="h-5 w-5 shrink-0" />
             {!collapsed && <span className="truncate">{t(item.title)}</span>}
@@ -309,18 +359,16 @@ export function AppSidebar() {
         ))}
       </nav>
 
-      <div className={cn("shrink-0", isHostDesktop ? "border-t border-border/70" : "border-t border-sidebar-border")}>
+      <div className="border-t border-sidebar-border shrink-0">
         <div className="py-2">
           <NavLink
             to="/settings"
             className={cn(
               "flex items-center gap-3 mx-2 px-3 py-2.5 rounded-lg text-sm transition-colors",
-              isHostDesktop
-                ? "text-muted-foreground hover:bg-muted hover:text-foreground"
-                : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
               collapsed && "justify-center px-0"
             )}
-            activeClassName={isHostDesktop ? "bg-primary/10 text-primary font-semibold" : "bg-sidebar-accent text-sidebar-primary font-medium"}
+            activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
           >
             <Settings className="h-5 w-5 shrink-0" />
             {!collapsed && <span className="truncate">{t("Settings")}</span>}
@@ -331,9 +379,7 @@ export function AppSidebar() {
               <button
                 className={cn(
                   "relative flex items-center gap-3 mx-2 px-3 py-2.5 rounded-lg text-sm transition-colors w-[calc(100%-1rem)]",
-                  isHostDesktop
-                    ? "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                   collapsed && "justify-center px-0"
                 )}
               >
@@ -386,10 +432,10 @@ export function AppSidebar() {
           </Popover>
         </div>
 
-        <div className={cn("px-2 py-3", isHostDesktop ? "border-t border-border/70" : "border-t border-sidebar-border")}>
+        <div className="border-t border-sidebar-border px-2 py-3">
           {!collapsed && (
             <div className="px-3 mb-2">
-              <p className={cn("text-sm font-medium truncate", isHostDesktop ? "text-foreground" : "text-sidebar-foreground")}>{displayName}</p>
+              <p className="text-sm font-medium text-sidebar-foreground truncate">{displayName}</p>
               {role && (
                 <span
                   className={cn(
