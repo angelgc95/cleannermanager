@@ -13,6 +13,7 @@ import { format } from "date-fns";
 import { Plus, X, Clock, User, Pencil, Trash2 } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useI18n } from "@/i18n/LanguageProvider";
+import { cn } from "@/lib/utils";
 
 const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _ref) {
   const { user, hostId, role } = useAuth();
@@ -45,9 +46,22 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
         const userIds = [...new Set(data.map((e: any) => e.user_id))];
         const { data: profiles } = await supabase.from("profiles").select("user_id, name").in("user_id", userIds);
         const nameMap = Object.fromEntries((profiles || []).map((p: any) => [p.user_id, p.name]));
-        setEntries(data.map((e: any) => ({ ...e, _user_name: nameMap[e.user_id] || "Unknown", _payout_status: e.payout_id ? (payoutStatusMap[e.payout_id] || "PENDING") : "PENDING" })));
+        setEntries(
+          data.map((e: any) => ({
+            ...e,
+            _user_name: nameMap[e.user_id] || "Unknown",
+            _payout_status: e.payout_id ? (payoutStatusMap[e.payout_id] || "PENDING") : null,
+            _processing_status: e.payout_id ? "PROCESSED" : "PENDING",
+          }))
+        );
       } else {
-        setEntries(data.map((e: any) => ({ ...e, _payout_status: e.payout_id ? (payoutStatusMap[e.payout_id] || "PENDING") : "PENDING" })));
+        setEntries(
+          data.map((e: any) => ({
+            ...e,
+            _payout_status: e.payout_id ? (payoutStatusMap[e.payout_id] || "PENDING") : null,
+            _processing_status: e.payout_id ? "PROCESSED" : "PENDING",
+          }))
+        );
       }
     } else {
       setEntries(data || []);
@@ -133,6 +147,58 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
       }, {})
     : {};
   const summaryList = Object.entries(summaryByUser).map(([uid, data]) => ({ userId: uid, ...(data as any) }));
+  const pendingEntries = entries.filter((entry: any) => entry._processing_status !== "PROCESSED");
+  const processedEntries = entries.filter((entry: any) => entry._processing_status === "PROCESSED");
+
+  const renderEntry = (entry: any, processed = false) => (
+    <Card key={entry.id}>
+      <CardContent className={cn("flex items-center justify-between p-4", processed && "bg-muted/20")}>
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-medium text-sm">{formatDate(entry.date, "MMM d, yyyy")}</p>
+              {isHost && entry._user_name && (
+                <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">
+                  {entry._user_name}
+                </span>
+              )}
+              <StatusBadge status={entry._processing_status || "PENDING"} />
+              {processed && entry._payout_status && (
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <span>{t("Payout status")}:</span>
+                  <StatusBadge status={entry._payout_status} className="align-middle" />
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {entry.start_at?.slice(0, 5)} – {entry.end_at?.slice(0, 5)} · {entry.duration_minutes} min
+            </p>
+            {entry.description && <p className="text-xs text-muted-foreground mt-1">{entry.description}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {!isHost && entry.user_id === user?.id && (
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(entry)}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {isHost && (
+            <>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(entry)}>
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDelete(entry.id)}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <div>
@@ -183,35 +249,36 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
             </div>
           </div>
         )}
-        <div className="space-y-3">
-          {entries.map((entry: any) => (
-            <Card key={entry.id}><CardContent className="flex items-center justify-between p-4">
-              <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center"><Clock className="h-4 w-4 text-muted-foreground" /></div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium text-sm">{formatDate(entry.date, "MMM d, yyyy")}</p>
-                    {isHost && entry._user_name && <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">{entry._user_name}</span>}
-                  </div>
-                   <p className="text-xs text-muted-foreground">{entry.start_at?.slice(0, 5)} – {entry.end_at?.slice(0, 5)} · {entry.duration_minutes} min</p>
-                  {entry.description && <p className="text-xs text-muted-foreground mt-1">{entry.description}</p>}
+        <div className="space-y-6">
+          {entries.length === 0 && !showForm ? (
+            <p className="text-center text-muted-foreground py-8">{t("No logged hours yet.")}</p>
+          ) : (
+            <>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-muted-foreground">{t("Pending Hours")}</h3>
+                  {pendingEntries.length > 0 && <StatusBadge status="PENDING" />}
                 </div>
-                <StatusBadge status={entry._payout_status || "PENDING"} />
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {!isHost && entry.user_id === user?.id && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(entry)}><Pencil className="h-3.5 w-3.5" /></Button>
-                )}
-                {isHost && (
-                  <>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(entry)}><Pencil className="h-3.5 w-3.5" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDelete(entry.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                  </>
+                {pendingEntries.length > 0 ? (
+                  pendingEntries.map((entry: any) => renderEntry(entry))
+                ) : (
+                  <p className="text-center text-muted-foreground py-4">{t("No pending hours.")}</p>
                 )}
               </div>
-            </CardContent></Card>
-          ))}
-          {entries.length === 0 && !showForm && <p className="text-center text-muted-foreground py-8">No logged hours yet.</p>}
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-muted-foreground">{t("Processed Hours")}</h3>
+                  {processedEntries.length > 0 && <StatusBadge status="PROCESSED" />}
+                </div>
+                {processedEntries.length > 0 ? (
+                  processedEntries.map((entry: any) => renderEntry(entry, true))
+                ) : (
+                  <p className="text-center text-muted-foreground py-4">{t("No processed hours yet.")}</p>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
