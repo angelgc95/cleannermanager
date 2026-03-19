@@ -32,49 +32,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profileComplete, setProfileComplete] = useState(true);
 
   const fetchRoleAndHost = async (userId: string) => {
-    const [{ data: roleData }, { data: profileData }] = await Promise.all([
+    const [{ data: roleRows }, { data: profileData }, { data: connection }, { data: assignment }] = await Promise.all([
       supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", userId)
-        .limit(1)
-        .maybeSingle(),
+        .returns<{ role: AppRole }[]>(),
       supabase
         .from("profiles")
         .select("setup_completed")
         .eq("user_id", userId)
         .maybeSingle(),
+      supabase
+        .from("host_cleaners")
+        .select("host_user_id")
+        .eq("cleaner_user_id", userId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("cleaner_assignments")
+        .select("host_user_id")
+        .eq("cleaner_user_id", userId)
+        .limit(1)
+        .maybeSingle(),
     ]);
 
-    const userRole = (roleData?.role as AppRole) || null;
+    const connectedHostId = connection?.host_user_id || assignment?.host_user_id || null;
+    const roleSet = new Set((roleRows || []).map((row) => row.role as AppRole));
+
+    let userRole: AppRole | null = null;
+    if (connectedHostId) {
+      userRole = "cleaner";
+    } else if (roleSet.has("host")) {
+      userRole = "host";
+    } else if (roleSet.has("cleaner")) {
+      userRole = "cleaner";
+    }
+
     setRole(userRole);
     setProfileComplete(profileData?.setup_completed ?? true);
 
     if (userRole === "host") {
       setHostId(userId);
     } else if (userRole === "cleaner") {
-      const { data: connection } = await supabase
-        .from("host_cleaners")
-        .select("host_user_id")
-        .eq("cleaner_user_id", userId)
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (connection?.host_user_id) {
-        setHostId(connection.host_user_id);
-        return;
-      }
-
-      // Fallback for legacy data that only has assignments.
-      const { data: assignment } = await supabase
-        .from("cleaner_assignments")
-        .select("host_user_id")
-        .eq("cleaner_user_id", userId)
-        .limit(1)
-        .maybeSingle();
-
-      setHostId(assignment?.host_user_id || null);
+      setHostId(connectedHostId);
     } else {
       setHostId(null);
     }
@@ -87,28 +89,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session?.user) {
-        setTimeout(() => fetchRoleAndHost(session.user.id), 0);
-      } else {
+    let isActive = true;
+
+    const syncSession = async (nextSession: Session | null) => {
+      if (!isActive) return;
+
+      setSession(nextSession);
+      if (!nextSession?.user) {
         setRole(null);
         setHostId(null);
         setProfileComplete(true);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      setLoading(true);
+      try {
+        await fetchRoleAndHost(nextSession.user.id);
+      } catch (error) {
+        console.error("Failed to resolve auth role", error);
+        if (!isActive) return;
+        setRole(null);
+        setHostId(null);
+        setProfileComplete(true);
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      void syncSession(nextSession);
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) {
-        fetchRoleAndHost(session.user.id).then(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
+      void syncSession(session);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isActive = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   return <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, role, hostId, profileComplete, refreshProfile }}>{children}</AuthContext.Provider>;
