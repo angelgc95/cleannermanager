@@ -35,6 +35,7 @@ Deno.serve(async (req) => {
     }
 
     type AppRole = "host" | "cleaner";
+    const normalizeEmail = (value?: string | null) => (value || "").trim().toLowerCase();
 
     const listRoles = async (userId: string) => {
       const { data, error } = await supabase
@@ -100,6 +101,26 @@ Deno.serve(async (req) => {
       if (error) throw error;
     };
 
+    const isPlatformAdmin = async (userId: string) => {
+      const { data, error } = await supabase.rpc("is_platform_admin", { _user_id: userId });
+      if (error) throw error;
+      return Boolean(data);
+    };
+
+    const getPendingHostInvite = async (email: string) => {
+      if (!email) return null;
+
+      const { data, error } = await supabase
+        .from("host_signup_invites")
+        .select("id, status")
+        .eq("email", email)
+        .eq("status", "PENDING")
+        .maybeSingle();
+
+      if (error) throw error;
+      return data;
+    };
+
     const body = await req.json();
     const { type, cleaner_unique_code, cleaner_user_id, cleaner_email, redirect_to } = body;
 
@@ -116,6 +137,8 @@ Deno.serve(async (req) => {
         listRoles(user.id),
         hasCleanerLink(user.id),
       ]);
+      const normalizedEmail = normalizeEmail(user.email);
+      const alreadyHost = roles.some((roleRow) => roleRow.role === "host");
 
       if (roles.some((roleRow) => roleRow.role === "cleaner") || cleanerLinked) {
         return new Response(JSON.stringify({
@@ -125,13 +148,43 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Assign host role
+      if (!alreadyHost) {
+        const [adminAccess, pendingInvite] = await Promise.all([
+          isPlatformAdmin(user.id),
+          getPendingHostInvite(normalizedEmail),
+        ]);
+
+        if (!adminAccess && !pendingInvite?.id) {
+          return new Response(JSON.stringify({
+            error: "Host accounts are invitation-only. Ask the owner to approve your email before signing up.",
+          }), {
+            status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
       await setExclusiveRole(user.id, "host");
 
-      // Create default host_settings
-      await supabase
+      const { error: hostSettingsError } = await supabase
         .from("host_settings")
         .upsert({ host_user_id: user.id }, { onConflict: "host_user_id" });
+      if (hostSettingsError) throw hostSettingsError;
+
+      if (!alreadyHost && normalizedEmail) {
+        const { error: acceptInviteError } = await supabase
+          .from("host_signup_invites")
+          .update({
+            status: "ACCEPTED",
+            accepted_by_user_id: user.id,
+            accepted_at: new Date().toISOString(),
+          })
+          .eq("email", normalizedEmail)
+          .eq("status", "PENDING");
+
+        if (acceptInviteError) {
+          console.error("Failed to accept host signup invite", acceptInviteError);
+        }
+      }
 
       return new Response(
         JSON.stringify({ success: true, role: "host" }),

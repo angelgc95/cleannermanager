@@ -13,6 +13,7 @@ import { Plus, Loader2, RefreshCw, DollarSign, Pencil, Trash2, ClipboardCheck, C
 import { NotificationSettings } from "@/components/NotificationSettings";
 import { PricingSuggestionsSettings } from "@/components/PricingSuggestionsSettings";
 import { AdminCleanerManagement } from "@/components/admin/AdminCleanerManagement";
+import { HostAccessManagement } from "@/components/admin/HostAccessManagement";
 import { ManualEventEntry } from "@/components/ManualEventEntry";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useNavigate } from "react-router-dom";
@@ -382,6 +383,7 @@ const SettingsPage = forwardRef<HTMLDivElement>(function SettingsPage(_props, _r
         </Card>
 
         <NotificationSettings />
+        <HostAccessManagement />
         <AdminCleanerManagement />
         {settings && <OrganizationWorkflowSettings settings={settings} onUpdate={fetchSettings} />}
         {settings && <HostPayoutSettings settings={settings} onUpdate={fetchSettings} />}
