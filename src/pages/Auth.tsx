@@ -37,6 +37,31 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
     e.preventDefault();
     setLoading(true);
 
+    try {
+      const { data, error } = await supabase.functions.invoke("manage-host-access", {
+        body: { action: "check_email", email },
+      });
+
+      if (error) throw error;
+      if (!data?.authorized) {
+        toast({
+          title: t("Host sign up requires approval"),
+          description: t("Host accounts are invitation-only. Ask the owner to approve this email before signing up."),
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+    } catch (err: any) {
+      toast({
+        title: t("Error"),
+        description: err.message || t("Unable to validate host access right now."),
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
+
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
@@ -122,6 +147,9 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
             </form>
           ) : mode === "host-signup" ? (
             <form onSubmit={handleSignup} className="space-y-4">
+              <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                {t("Host accounts are invitation-only. Use an approved email address to sign up.")}
+              </div>
               <div className="space-y-2">
                 <Label>{t("Your Name")}</Label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Your name")} required />
