@@ -46,6 +46,9 @@ verify_jwt = false
 [functions.onboard-user]
 verify_jwt = false
 
+[functions.manage-host-access]
+verify_jwt = false
+
 [functions.reset-cleaning-event]
 verify_jwt = false
 
