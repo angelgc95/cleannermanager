@@ -62,8 +62,13 @@ function OrganizationWorkflowSettings({ settings, onUpdate }: { settings: any; o
   const [cleaningEventStartMode, setCleaningEventStartMode] = useState<string>(
     settings.cleaning_event_start_mode ?? "UPCOMING_BOOKING_CHECKIN"
   );
+  const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
+    setSaving(true);
+    const cleaningEventModeChanged =
+      (settings.cleaning_event_start_mode ?? "UPCOMING_BOOKING_CHECKIN") !== cleaningEventStartMode;
+
     const { error } = await supabase
       .from("host_settings")
       .update({
@@ -79,9 +84,33 @@ function OrganizationWorkflowSettings({ settings, onUpdate }: { settings: any; o
 
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+      setSaving(false);
     } else {
-      toast({ title: "Organization workflow updated" });
-      onUpdate();
+      try {
+        if (cleaningEventModeChanged) {
+          const { data, error: syncError } = await supabase.functions.invoke("sync-ics", {
+            body: { reset_existing_events: true },
+          });
+
+          if (syncError) throw syncError;
+
+          toast({
+            title: "Organization workflow updated",
+            description: `Calendar re-synced. ${data?.events_reset ?? 0} previous auto event(s) were cleared and ${data?.events_created ?? 0} event(s) were created again.`,
+          });
+        } else {
+          toast({ title: "Organization workflow updated" });
+        }
+      } catch (syncErr: any) {
+        toast({
+          title: "Settings saved with sync warning",
+          description: syncErr.message || "The setting was saved, but automatic calendar re-sync failed.",
+          variant: "destructive",
+        });
+      } finally {
+        onUpdate();
+        setSaving(false);
+      }
     }
   };
 
@@ -165,7 +194,7 @@ function OrganizationWorkflowSettings({ settings, onUpdate }: { settings: any; o
           Current shortcut: {DAY_NAMES[parseInt(weekEndDay, 10)]} at {runTime} ({runTimezone || "host timezone"})
         </div>
 
-        <Button size="sm" onClick={handleSave}>Save</Button>
+        <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
       </CardContent>
     </Card>
   );
