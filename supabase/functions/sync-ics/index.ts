@@ -224,6 +224,22 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
   return { bookings: totalBookings, events: totalEvents };
 }
 
+async function resetPendingAutoEventsForListing(supabase: any, listingId: string, hostUserId: string) {
+  const { data, error } = await supabase
+    .from("cleaning_events")
+    .delete()
+    .eq("listing_id", listingId)
+    .eq("host_user_id", hostUserId)
+    .eq("source", "AUTO")
+    .eq("status", "TODO")
+    .eq("locked", false)
+    .is("checklist_run_id", null)
+    .select("id");
+
+  if (error) throw error;
+  return (data || []).length;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -264,6 +280,7 @@ Deno.serve(async (req) => {
     try { body = await req.json(); } catch { /* batch mode */ }
 
     const listing_id = body.listing_id;
+    const reset_existing_events = body.reset_existing_events === true;
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (listing_id && !uuidRegex.test(listing_id)) {
       return new Response(JSON.stringify({ error: "Invalid listing_id format" }), {
@@ -275,23 +292,30 @@ Deno.serve(async (req) => {
       const { data: listing, error: listErr } = await supabase
         .from("listings").select("*").eq("id", listing_id).eq("host_user_id", user.id).single();
       if (listErr || !listing) throw new Error("Listing not found");
+      let eventsReset = 0;
+      if (reset_existing_events) {
+        eventsReset = await resetPendingAutoEventsForListing(supabase, listing.id, user.id);
+      }
       const result = await syncListing(supabase, listing);
       return new Response(
-        JSON.stringify({ success: true, bookings_synced: result.bookings, events_created: result.events }),
+        JSON.stringify({ success: true, bookings_synced: result.bookings, events_created: result.events, events_reset: eventsReset }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     } else {
       const { data: listings } = await supabase
         .from("listings").select("*").eq("host_user_id", user.id).eq("sync_enabled", true).limit(50);
-      let totalBookings = 0, totalEvents = 0, listingsSynced = 0;
+      let totalBookings = 0, totalEvents = 0, totalEventsReset = 0, listingsSynced = 0;
       for (const listing of (listings || [])) {
+        if (reset_existing_events) {
+          totalEventsReset += await resetPendingAutoEventsForListing(supabase, listing.id, user.id);
+        }
         const result = await syncListing(supabase, listing);
         totalBookings += result.bookings;
         totalEvents += result.events;
         listingsSynced++;
       }
       return new Response(
-        JSON.stringify({ success: true, listings_synced: listingsSynced, bookings_synced: totalBookings, events_created: totalEvents }),
+        JSON.stringify({ success: true, listings_synced: listingsSynced, bookings_synced: totalBookings, events_created: totalEvents, events_reset: totalEventsReset }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
