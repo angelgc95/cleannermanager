@@ -34,6 +34,72 @@ Deno.serve(async (req) => {
       });
     }
 
+    type AppRole = "host" | "cleaner";
+
+    const listRoles = async (userId: string) => {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("id, role")
+        .eq("user_id", userId);
+
+      if (error) throw error;
+      return (data || []) as { id: string; role: AppRole }[];
+    };
+
+    const hasCleanerLink = async (userId: string) => {
+      const [{ data: connection }, { data: assignment }] = await Promise.all([
+        supabase
+          .from("host_cleaners")
+          .select("host_user_id")
+          .eq("cleaner_user_id", userId)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("cleaner_assignments")
+          .select("id")
+          .eq("cleaner_user_id", userId)
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+      return Boolean(connection?.host_user_id || assignment?.id);
+    };
+
+    const setExclusiveRole = async (userId: string, nextRole: AppRole) => {
+      const roleRows = await listRoles(userId);
+      const keeper = roleRows.find((roleRow) => roleRow.role === nextRole) || roleRows[0] || null;
+
+      if (keeper) {
+        if (keeper.role !== nextRole) {
+          const { error } = await supabase
+            .from("user_roles")
+            .update({ role: nextRole })
+            .eq("id", keeper.id);
+          if (error) throw error;
+        }
+
+        const extraIds = roleRows
+          .filter((roleRow) => roleRow.id !== keeper.id)
+          .map((roleRow) => roleRow.id);
+
+        if (extraIds.length > 0) {
+          const { error } = await supabase
+            .from("user_roles")
+            .delete()
+            .in("id", extraIds);
+          if (error) throw error;
+        }
+
+        return;
+      }
+
+      const { error } = await supabase
+        .from("user_roles")
+        .insert({ user_id: userId, role: nextRole });
+
+      if (error) throw error;
+    };
+
     const body = await req.json();
     const { type, cleaner_unique_code, cleaner_user_id, cleaner_email, redirect_to } = body;
 
@@ -46,10 +112,21 @@ Deno.serve(async (req) => {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
     if (type === "host") {
+      const [roles, cleanerLinked] = await Promise.all([
+        listRoles(user.id),
+        hasCleanerLink(user.id),
+      ]);
+
+      if (roles.some((roleRow) => roleRow.role === "cleaner") || cleanerLinked) {
+        return new Response(JSON.stringify({
+          error: "This account is already connected as a cleaner. Ask your host to remove the cleaner connection before creating a host account.",
+        }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // Assign host role
-      await supabase
-        .from("user_roles")
-        .upsert({ user_id: user.id, role: "host" }, { onConflict: "user_id,role" });
+      await setExclusiveRole(user.id, "host");
 
       // Create default host_settings
       await supabase
@@ -63,9 +140,7 @@ Deno.serve(async (req) => {
 
     } else if (type === "cleaner") {
       // Assign cleaner role
-      await supabase
-        .from("user_roles")
-        .upsert({ user_id: user.id, role: "cleaner" }, { onConflict: "user_id,role" });
+      await setExclusiveRole(user.id, "cleaner");
 
       await supabase
         .from("profiles")
@@ -177,6 +252,8 @@ Deno.serve(async (req) => {
         }
 
         const cleanerStatus = existingProfile.setup_completed ? "ACTIVE" : "INVITED";
+        await setExclusiveRole(existingProfile.user_id, "cleaner");
+
         await supabase
           .from("host_cleaners")
           .upsert(
@@ -232,9 +309,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      await supabase
-        .from("user_roles")
-        .upsert({ user_id: invitedUserId, role: "cleaner" }, { onConflict: "user_id,role" });
+      await setExclusiveRole(invitedUserId, "cleaner");
 
       await supabase
         .from("profiles")
