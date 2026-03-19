@@ -59,6 +59,9 @@ function OrganizationWorkflowSettings({ settings, onUpdate }: { settings: any; o
   const [runTimezone, setRunTimezone] = useState<string>(settings.payout_run_timezone ?? "Europe/Madrid");
   const [shortcutEnabled, setShortcutEnabled] = useState<boolean>(settings.payout_shortcut_enabled ?? true);
   const [expenseGrouping, setExpenseGrouping] = useState<string>(settings.expense_grouping ?? "PAYOUT_WEEK");
+  const [cleaningEventStartMode, setCleaningEventStartMode] = useState<string>(
+    settings.cleaning_event_start_mode ?? "UPCOMING_BOOKING_CHECKIN"
+  );
 
   const handleSave = async () => {
     const { error } = await supabase
@@ -70,6 +73,7 @@ function OrganizationWorkflowSettings({ settings, onUpdate }: { settings: any; o
         payout_run_timezone: runTimezone,
         payout_shortcut_enabled: shortcutEnabled,
         expense_grouping: expenseGrouping,
+        cleaning_event_start_mode: cleaningEventStartMode,
       })
       .eq("id", settings.id);
 
@@ -141,6 +145,20 @@ function OrganizationWorkflowSettings({ settings, onUpdate }: { settings: any; o
               <SelectItem value="MONTHLY">Group by month</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="space-y-1">
+          <Label>Cleaning event start by</Label>
+          <Select value={cleaningEventStartMode} onValueChange={setCleaningEventStartMode}>
+            <SelectTrigger className="max-w-[320px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="CURRENT_BOOKING_CHECKOUT">Current booking check-out (DTEND)</SelectItem>
+              <SelectItem value="UPCOMING_BOOKING_CHECKIN">Upcoming booking check-in (DTSTART)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            iCal sync will keep the same time window flow, but anchor the cleaning event to the selected booking date.
+          </p>
         </div>
 
         <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">

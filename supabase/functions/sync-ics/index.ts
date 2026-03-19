@@ -14,6 +14,8 @@ interface ICSEvent {
   description: string;
 }
 
+type CleaningEventStartMode = "CURRENT_BOOKING_CHECKOUT" | "UPCOMING_BOOKING_CHECKIN";
+
 function parseICS(icsText: string): ICSEvent[] {
   const events: ICSEvent[] = [];
   const blocks = icsText.split("BEGIN:VEVENT");
@@ -90,6 +92,17 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
   // Get checklist template for this listing
   const templateId = listing.default_checklist_template_id || null;
 
+  const { data: hostSettings } = await supabase
+    .from("host_settings")
+    .select("cleaning_event_start_mode")
+    .eq("host_user_id", listing.host_user_id)
+    .maybeSingle();
+
+  const cleaningEventStartMode: CleaningEventStartMode =
+    hostSettings?.cleaning_event_start_mode === "CURRENT_BOOKING_CHECKOUT"
+      ? "CURRENT_BOOKING_CHECKOUT"
+      : "UPCOMING_BOOKING_CHECKIN";
+
   for (const { url, platform } of icsUrls) {
     try {
       const response = await fetch(url);
@@ -146,15 +159,17 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
         if (bookingError) continue;
         totalBookings++;
 
-        // Create cleaning_event on CHECK-IN day
-        const eventStartAt = `${startDate}T${listing.default_checkout_time || "11:00:00"}`;
-        const eventEndAt = `${startDate}T${listing.default_checkin_time || "15:00:00"}`;
+        const eventAnchorDate = cleaningEventStartMode === "CURRENT_BOOKING_CHECKOUT" ? endDate : startDate;
+        const eventStartAt = `${eventAnchorDate}T${listing.default_checkout_time || "11:00:00"}`;
+        const eventEndAt = `${eventAnchorDate}T${listing.default_checkin_time || "15:00:00"}`;
         const reference = confirmationCode || icsEvent.uid || externalUid;
 
         const eventDetailsJson = {
           nights,
           guests: null,
           reference,
+          schedule_anchor: cleaningEventStartMode,
+          source_date: eventAnchorDate,
         };
 
         // Check for existing event (by listing_id + booking_id unique)
@@ -166,7 +181,6 @@ async function syncListing(supabase: any, listing: any): Promise<{ bookings: num
           .maybeSingle();
 
         if (!existingEvent) {
-          // Insert new cleaning event
           const { error: eventError } = await supabase
             .from("cleaning_events")
             .insert({

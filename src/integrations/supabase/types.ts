@@ -647,6 +647,7 @@ export type Database = {
       }
       host_settings: {
         Row: {
+          cleaning_event_start_mode: string
           created_at: string
           default_hourly_rate: number
           expense_grouping: string
@@ -667,6 +668,7 @@ export type Database = {
           weights_json: Json
         }
         Insert: {
+          cleaning_event_start_mode?: string
           created_at?: string
           default_hourly_rate?: number
           expense_grouping?: string
@@ -687,6 +689,7 @@ export type Database = {
           weights_json?: Json
         }
         Update: {
+          cleaning_event_start_mode?: string
           created_at?: string
           default_hourly_rate?: number
           expense_grouping?: string
