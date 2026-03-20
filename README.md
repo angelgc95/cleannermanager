@@ -49,6 +49,45 @@ To stop the backend:
 npm run local:stop
 ```
 
+## Android app
+
+This repo can now build a real Android app shell with Capacitor around the existing mobile-first React app.
+
+Requirements:
+
+- Node.js 20+
+- Java 21
+- Android SDK
+
+First-time Android setup:
+
+```sh
+npm install
+npm run android:add
+```
+
+Build a debug APK:
+
+```sh
+npm run android:build:debug
+```
+
+Open the native project in Android Studio:
+
+```sh
+npm run android:open
+```
+
+The debug APK is generated at:
+
+- [`android/app/build/outputs/apk/debug/app-debug.apk`](/Users/angel/Documents/Playground/cleannermanager/android/app/build/outputs/apk/debug/app-debug.apk)
+
+Important auth note:
+
+- Native Android builds use the public web domain for email redirects and cleaner invite completion links.
+- Current native auth works for normal email/password sign-in.
+- If you want invite links to open directly back into the Android app instead of the web domain, the next step is adding Android deep links plus matching Supabase redirect URLs.
+
 ## Local endpoints
 
 - App: [http://127.0.0.1:8080](http://127.0.0.1:8080)
