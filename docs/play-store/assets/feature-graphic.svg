@@ -1,0 +1,32 @@
+<svg width="1024" height="500" viewBox="0 0 1024 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="500" fill="#0F1728"/>
+  <rect x="0" y="0" width="1024" height="500" fill="url(#bg)"/>
+  <circle cx="900" cy="70" r="140" fill="#21437A" fill-opacity="0.32"/>
+  <circle cx="940" cy="430" r="190" fill="#173259" fill-opacity="0.55"/>
+  <rect x="70" y="78" width="312" height="344" rx="44" fill="#1F355F"/>
+  <rect x="106" y="114" width="240" height="272" rx="32" fill="#2E4C82"/>
+  <rect x="148" y="158" width="156" height="22" rx="11" fill="#F3F6FB"/>
+  <rect x="148" y="205" width="84" height="18" rx="9" fill="#F3F6FB"/>
+  <rect x="148" y="249" width="126" height="18" rx="9" fill="#F3F6FB"/>
+  <rect x="148" y="293" width="98" height="18" rx="9" fill="#F3F6FB"/>
+  <circle cx="290" cy="213" r="16" fill="#28D39D"/>
+  <circle cx="318" cy="257" r="16" fill="#28D39D"/>
+  <circle cx="274" cy="301" r="16" fill="#28D39D"/>
+  <text x="436" y="198" fill="#F8FAFC" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="700">CleannerManager</text>
+  <text x="436" y="248" fill="#B4C3DC" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="600">Cleaner</text>
+  <text x="436" y="304" fill="#D9E4F3" font-family="Arial, Helvetica, sans-serif" font-size="24">Checklists, supplies, hours, and payouts</text>
+  <g>
+    <rect x="436" y="348" width="118" height="42" rx="21" fill="#234D8F"/>
+    <text x="495" y="375" text-anchor="middle" fill="#F8FAFC" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Calendar</text>
+    <rect x="568" y="348" width="118" height="42" rx="21" fill="#234D8F"/>
+    <text x="627" y="375" text-anchor="middle" fill="#F8FAFC" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Checklists</text>
+    <rect x="700" y="348" width="118" height="42" rx="21" fill="#234D8F"/>
+    <text x="759" y="375" text-anchor="middle" fill="#F8FAFC" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Shopping</text>
+  </g>
+  <defs>
+    <linearGradient id="bg" x1="85" y1="40" x2="915" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#14233E"/>
+      <stop offset="1" stop-color="#0B1322"/>
+    </linearGradient>
+  </defs>
+</svg>
