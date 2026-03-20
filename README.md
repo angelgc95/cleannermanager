@@ -82,6 +82,21 @@ The debug APK is generated at:
 
 - [`android/app/build/outputs/apk/debug/app-debug.apk`](/Users/angel/Documents/Playground/cleannermanager/android/app/build/outputs/apk/debug/app-debug.apk)
 
+Release build setup:
+
+- create `android/key.properties` from [`android/key.properties.example`](/Users/angel/Documents/Playground/cleannermanager/android/key.properties.example)
+- place your upload keystore at `android/keystore/upload-keystore.jks`
+- then run:
+
+```sh
+npm run android:build:release
+```
+
+Release outputs:
+
+- [`android/app/build/outputs/bundle/release/app-release.aab`](/Users/angel/Documents/Playground/cleannermanager/android/app/build/outputs/bundle/release/app-release.aab)
+- [`android/app/build/outputs/apk/release/app-release.apk`](/Users/angel/Documents/Playground/cleannermanager/android/app/build/outputs/apk/release/app-release.apk)
+
 Important auth note:
 
 - Native Android builds use the public web domain for email redirects and cleaner invite completion links.
