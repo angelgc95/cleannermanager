@@ -9,10 +9,10 @@ if (hasReleaseKeystore) {
 }
 
 android {
-    namespace "com.cleannermanager.app"
+    namespace "com.cleannermanager.cleaner"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.cleannermanager.app"
+        applicationId "com.cleannermanager.cleaner"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

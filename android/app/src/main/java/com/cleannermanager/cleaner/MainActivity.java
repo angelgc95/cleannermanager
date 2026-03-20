@@ -1,4 +1,4 @@
-package com.cleannermanager.app;
+package com.cleannermanager.cleaner;
 
 import com.getcapacitor.BridgeActivity;
 

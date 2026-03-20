@@ -5,7 +5,7 @@ This folder contains the Android Play Store submission pack for the cleaner-only
 ## Current App Identity
 
 - App name: `CleannerManager Cleaner`
-- Package name: `com.cleannermanager.app`
+- Package name: `com.cleannermanager.cleaner`
 - Version code: `1`
 - Version name: `1.0`
 - Production web domain: `https://www.cleannermanager.com`
@@ -30,6 +30,6 @@ This folder contains the Android Play Store submission pack for the cleaner-only
 
 ## Important Before First Upload
 
-- If you want a cleaner-specific package ID, change it before the first Play Console upload. Package names are permanent after the first release.
-- The current package ID is still `com.cleannermanager.app`.
+- The package ID is already set for the cleaner-only Android app before first upload.
+- Package names are permanent after the first release, so keep using `com.cleannermanager.cleaner` for Play.
 - You still need at least one invited cleaner reviewer account with live data before submitting for review.
