@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { ClipboardCheck } from "lucide-react";
 import { useI18n } from "@/i18n/LanguageProvider";
+import { isNativeCleanerApp } from "@/lib/appVariant";
 
 const OnboardingPage = forwardRef<HTMLDivElement>(function OnboardingPage(_props, _ref) {
   const { refreshProfile } = useAuth();
@@ -16,8 +17,15 @@ const OnboardingPage = forwardRef<HTMLDivElement>(function OnboardingPage(_props
   const navigate = useNavigate();
   const { toast } = useToast();
   const { t } = useI18n();
+  const cleanerOnlyApp = isNativeCleanerApp();
 
   useEffect(() => {
+    if (cleanerOnlyApp) {
+      setAccessLoading(false);
+      setCanCreateHost(false);
+      return;
+    }
+
     let mounted = true;
 
     const loadHostAccess = async () => {
@@ -56,7 +64,7 @@ const OnboardingPage = forwardRef<HTMLDivElement>(function OnboardingPage(_props
     return () => {
       mounted = false;
     };
-  }, [toast, t]);
+  }, [toast, t, cleanerOnlyApp]);
 
   const handleOnboard = async () => {
     setLoading(true);
@@ -95,12 +103,16 @@ const OnboardingPage = forwardRef<HTMLDivElement>(function OnboardingPage(_props
           </div>
           <CardTitle className="text-2xl">{t("Complete Your Setup")}</CardTitle>
           <CardDescription>
-            {t("Set up your host account")}
+            {cleanerOnlyApp ? t("This Android app is only for invited cleaners.") : t("Set up your host account")}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {accessLoading ? (
+            {cleanerOnlyApp ? (
+              <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                {t("Ask your host to invite this email and finish setup from the invitation link.")}
+              </div>
+            ) : accessLoading ? (
               <Button className="w-full" disabled>
                 {`${t("Loading...").replace("...", "")}...`}
               </Button>

@@ -29,6 +29,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { NotificationBell } from "@/components/NotificationBell";
+import { isNativeCleanerApp } from "@/lib/appVariant";
 
 const mainNavItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard, roles: ["host", "cleaner"] },
@@ -71,7 +72,8 @@ export function AppSidebar() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
   const hideMobileBottomNav = /^\/events\/[^/]+\/checklist$/.test(pathname);
-  const useSharedAppShell = role === "cleaner" || role === "host";
+  const nativeCleanerApp = isNativeCleanerApp();
+  const useSharedAppShell = nativeCleanerApp || role === "cleaner" || role === "host";
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
@@ -162,7 +164,7 @@ export function AppSidebar() {
             </Button>
             <div className="min-w-0 text-center">
               <p className={cn("text-[10px] uppercase tracking-[0.18em]", useSharedAppShell ? "text-sidebar-foreground/65" : "text-muted-foreground")}>
-                {role ? t(role === "host" ? "Host" : "Cleaner") : ""}
+                {nativeCleanerApp ? t("Cleaner") : role ? t(role === "host" ? "Host" : "Cleaner") : ""}
               </p>
               <p className={cn("truncate text-sm font-semibold", useSharedAppShell ? "text-sidebar-primary-foreground" : "text-foreground")}>CleannerManager</p>
             </div>
@@ -179,7 +181,7 @@ export function AppSidebar() {
               </SheetHeader>
               <div className="border-b border-sidebar-border px-4 py-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-sidebar-foreground/60">
-                  {role ? t(role === "host" ? "Host" : "Cleaner") : t("User")}
+                  {nativeCleanerApp ? t("Cleaner") : role ? t(role === "host" ? "Host" : "Cleaner") : t("User")}
                 </p>
                 <p className="mt-1 truncate text-base font-semibold text-sidebar-primary-foreground">CleannerManager</p>
                 <p className="mt-2 truncate text-sm text-sidebar-foreground">{displayName}</p>
