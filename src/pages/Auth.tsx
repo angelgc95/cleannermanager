@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ClipboardCheck } from "lucide-react";
 import { useI18n } from "@/i18n/LanguageProvider";
 import { getPublicAppOrigin } from "@/lib/publicAppUrl";
+import { isNativeCleanerApp } from "@/lib/appVariant";
 
 type AuthMode = "login" | "host-signup";
 
@@ -21,6 +22,8 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { t } = useI18n();
+  const cleanerOnlyApp = isNativeCleanerApp();
+  const currentMode: AuthMode = cleanerOnlyApp ? "login" : mode;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,11 +122,11 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
           </div>
           <CardTitle className="text-2xl">CleannerManager</CardTitle>
           <CardDescription>
-            {mode === "login" ? t("Sign in to your account") : t("Create a new host account")}
+            {cleanerOnlyApp ? t("Sign in to your cleaner account") : currentMode === "login" ? t("Sign in to your account") : t("Create a new host account")}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {mode === "login" ? (
+          {currentMode === "login" ? (
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">{t("Email")}</Label>
@@ -139,14 +142,16 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
               <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3 text-sm text-muted-foreground">
                 {t("Cleaners are invited by their host. Use the invitation link from your email to finish your account setup.")}
               </div>
-              <div className="text-center space-y-2 pt-2">
-                <p className="text-sm text-muted-foreground">{t("Need a host account?")}</p>
-                <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => setMode("host-signup")}>
-                  {t("Sign up as Host")}
-                </Button>
-              </div>
+              {!cleanerOnlyApp && (
+                <div className="text-center space-y-2 pt-2">
+                  <p className="text-sm text-muted-foreground">{t("Need a host account?")}</p>
+                  <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => setMode("host-signup")}>
+                    {t("Sign up as Host")}
+                  </Button>
+                </div>
+              )}
             </form>
-          ) : mode === "host-signup" ? (
+          ) : currentMode === "host-signup" ? (
             <form onSubmit={handleSignup} className="space-y-4">
               <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3 text-sm text-muted-foreground">
                 {t("Host accounts are invitation-only. Use an approved email address to sign up.")}

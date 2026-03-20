@@ -22,7 +22,9 @@ import PayoutsPage from "./pages/PayoutsPage";
 import GuidesPage from "./pages/GuidesPage";
 import SettingsPage from "./pages/SettingsPage";
 import CleanerSettingsPage from "./pages/CleanerSettingsPage";
+import CleanerAppAccessPage from "./pages/CleanerAppAccessPage";
 import NotFound from "./pages/NotFound";
+import { isNativeCleanerApp } from "@/lib/appVariant";
 
 const queryClient = new QueryClient();
 
@@ -35,6 +37,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, role, profileComplete } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/auth" replace />;
+  if (isNativeCleanerApp() && role === "host") return <Navigate to="/cleaner-app-only" replace />;
   if (!role) return <Navigate to="/onboarding" replace />;
   if (role === "cleaner" && !profileComplete) return <Navigate to="/complete-profile" replace />;
   return <>{children}</>;
@@ -43,6 +46,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function SettingsRoute() {
   const { role, loading } = useAuth();
   if (loading) return <LoadingScreen />;
+  if (isNativeCleanerApp()) return <CleanerSettingsPage />;
   if (role === "cleaner") return <CleanerSettingsPage />;
   return <SettingsPage />;
 }
@@ -51,6 +55,7 @@ function OnboardingRoute() {
   const { user, loading, role } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/auth" replace />;
+  if (isNativeCleanerApp()) return <CleanerAppAccessPage />;
   if (role) return <Navigate to="/" replace />;
   return <OnboardingPage />;
 }
@@ -75,6 +80,7 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               <Route path="/auth" element={<Auth />} />
+              <Route path="/cleaner-app-only" element={<CleanerAppAccessPage />} />
               <Route path="/onboarding" element={<OnboardingRoute />} />
               <Route path="/complete-profile" element={<CompleteProfileRoute />} />
               <Route

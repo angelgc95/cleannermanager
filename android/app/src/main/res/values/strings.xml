@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">CleannerManager</string>
-    <string name="title_activity_main">CleannerManager</string>
+    <string name="app_name">CleannerManager Cleaner</string>
+    <string name="title_activity_main">CleannerManager Cleaner</string>
     <string name="package_name">com.cleannermanager.app</string>
     <string name="custom_url_scheme">com.cleannermanager.app</string>
 </resources>

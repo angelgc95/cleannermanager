@@ -4,13 +4,14 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useLocation } from "react-router-dom";
+import { isNativeCleanerApp } from "@/lib/appVariant";
 
 export function AppLayout() {
   const { role } = useAuth();
   const isMobile = useIsMobile();
   const { pathname } = useLocation();
   const hideMobileBottomNav = /^\/events\/[^/]+\/checklist$/.test(pathname);
-  const themeClass = role === "cleaner" ? "cleaner-theme" : role === "host" ? "host-theme" : undefined;
+  const themeClass = isNativeCleanerApp() ? "cleaner-theme" : role === "cleaner" ? "cleaner-theme" : role === "host" ? "host-theme" : undefined;
 
   return (
     <div className={cn("flex min-h-[100svh] w-full bg-background", themeClass)}>
