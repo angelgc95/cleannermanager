@@ -6,7 +6,7 @@
 - Default language: `English (United States)` recommended
 - App or game: `App`
 - Free or paid: `Free`
-- Package name: `com.cleannermanager.app`
+- Package name: `com.cleannermanager.cleaner`
 - Version code: `1`
 - Version name: `1.0`
 
@@ -31,7 +31,7 @@
 
 1. Create app in Play Console.
 2. Use app name `CleannerManager Cleaner`.
-3. Keep package name as `com.cleannermanager.app` unless you decide to rename it before the first upload.
+3. Keep package name as `com.cleannermanager.cleaner`.
 4. Create a new release in `Testing -> Internal testing`.
 5. Upload `app-release.aab`.
 6. Paste the copy from [store-listing-copy.md](./store-listing-copy.md).
