@@ -11,7 +11,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -23,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/i18n/LanguageProvider";
+import { ChecklistReviewFlagsCard } from "@/components/checklist/ChecklistReviewFlagsCard";
 
 const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props, ref) {
   const { id } = useParams();
@@ -190,7 +190,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
 
   const { data: runPhotos = [] } = useQuery({
     queryKey: ["event-run-photos", event?.checklist_run_id],
-    enabled: isAdmin && !!event?.checklist_run_id,
+    enabled: !!event?.checklist_run_id,
     queryFn: async () => {
       const { data: photos } = await supabase
         .from("checklist_photos")
@@ -303,6 +303,11 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
   const submissionDuration = checklistRun?.duration_minutes ?? loggedHours?.duration_minutes ?? null;
   const submissionCleanerName = submissionCleaner?.name || submissionCleaner?.email || "Cleaner";
   const selectedPhoto = selectedPhotoIndex !== null ? runPhotos[selectedPhotoIndex] : null;
+  const reviewChecklistRunId = event?.checklist_run_id || checklistRun?.id || null;
+  const reviewCleanerUserId =
+    checklistRun?.cleaner_user_id ||
+    event?.assigned_cleaner_id ||
+    (!isAdmin ? user?.id ?? null : null);
 
   return (
     <div ref={ref}>
@@ -589,6 +594,18 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
               )}
             </CardContent>
           </Card>
+        )}
+
+        {effectiveStatus === "COMPLETED" && reviewChecklistRunId && reviewCleanerUserId && event?.host_user_id && (
+          <ChecklistReviewFlagsCard
+            eventId={id!}
+            checklistRunId={reviewChecklistRunId}
+            hostUserId={event.host_user_id}
+            cleanerUserId={reviewCleanerUserId}
+            runPhotos={runPhotos}
+            isHost={isAdmin}
+            canCreate={isAdmin && !!checklistRun?.finished_at}
+          />
         )}
 
         {/* === Status Mismatch Warning === */}

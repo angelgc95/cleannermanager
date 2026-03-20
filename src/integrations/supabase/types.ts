@@ -175,6 +175,102 @@ export type Database = {
           },
         ]
       }
+      checklist_review_flag_photos: {
+        Row: {
+          annotation_type: string | null
+          annotation_x: number | null
+          annotation_y: number | null
+          checklist_photo_id: string
+          created_at: string
+          flag_id: string
+          id: string
+        }
+        Insert: {
+          annotation_type?: string | null
+          annotation_x?: number | null
+          annotation_y?: number | null
+          checklist_photo_id: string
+          created_at?: string
+          flag_id: string
+          id?: string
+        }
+        Update: {
+          annotation_type?: string | null
+          annotation_x?: number | null
+          annotation_y?: number | null
+          checklist_photo_id?: string
+          created_at?: string
+          flag_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checklist_review_flag_photos_checklist_photo_id_fkey"
+            columns: ["checklist_photo_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_photos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "checklist_review_flag_photos_flag_id_fkey"
+            columns: ["flag_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_review_flags"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      checklist_review_flags: {
+        Row: {
+          checklist_run_id: string
+          cleaner_user_id: string
+          cleaning_event_id: string
+          comment: string
+          created_at: string
+          host_user_id: string
+          id: string
+          reviewed_at: string | null
+          status: string
+        }
+        Insert: {
+          checklist_run_id: string
+          cleaner_user_id: string
+          cleaning_event_id: string
+          comment: string
+          created_at?: string
+          host_user_id: string
+          id?: string
+          reviewed_at?: string | null
+          status?: string
+        }
+        Update: {
+          checklist_run_id?: string
+          cleaner_user_id?: string
+          cleaning_event_id?: string
+          comment?: string
+          created_at?: string
+          host_user_id?: string
+          id?: string
+          reviewed_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checklist_review_flags_checklist_run_id_fkey"
+            columns: ["checklist_run_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "checklist_review_flags_cleaning_event_id_fkey"
+            columns: ["cleaning_event_id"]
+            isOneToOne: false
+            referencedRelation: "cleaning_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       checklist_responses: {
         Row: {
           host_user_id: string | null
