@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/LanguageProvider";
+import { buildPublicAppUrl } from "@/lib/publicAppUrl";
 
 interface CleanerWithAssignments {
   user_id: string;
@@ -104,7 +105,7 @@ export function AdminCleanerManagement() {
         body: {
           type: "invite_cleaner",
           cleaner_email: normalizedEmail,
-          redirect_to: `${window.location.origin}/complete-profile`,
+          redirect_to: buildPublicAppUrl("/complete-profile"),
         },
       });
       if (error) throw error;

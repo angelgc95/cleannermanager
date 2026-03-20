@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { ClipboardCheck } from "lucide-react";
 import { useI18n } from "@/i18n/LanguageProvider";
+import { getPublicAppOrigin } from "@/lib/publicAppUrl";
 
 type AuthMode = "login" | "host-signup";
 
@@ -64,12 +65,12 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
 
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
-      password,
-      options: {
-        data: { name },
-        emailRedirectTo: window.location.origin,
-      },
-    });
+        password,
+        options: {
+          data: { name },
+          emailRedirectTo: getPublicAppOrigin(),
+        },
+      });
 
     if (signUpError) {
       toast({ title: t("Error"), description: signUpError.message, variant: "destructive" });
