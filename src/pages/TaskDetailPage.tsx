@@ -194,8 +194,9 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
     queryFn: async () => {
       const { data: photos } = await supabase
         .from("checklist_photos")
-        .select("photo_url, item_id")
-        .eq("run_id", event!.checklist_run_id!);
+        .select("id, photo_url, item_id, sort_order")
+        .eq("run_id", event!.checklist_run_id!)
+        .order("sort_order", { ascending: true });
       return await Promise.all(
         (photos || []).map(async (p: any) => {
           if (p.photo_url && !p.photo_url.startsWith("http")) {
@@ -467,6 +468,18 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
           </CardContent>
         </Card>
 
+        {effectiveStatus === "COMPLETED" && reviewChecklistRunId && reviewCleanerUserId && event?.host_user_id && (
+          <ChecklistReviewFlagsCard
+            eventId={id!}
+            checklistRunId={reviewChecklistRunId}
+            hostUserId={event.host_user_id}
+            cleanerUserId={reviewCleanerUserId}
+            runPhotos={runPhotos}
+            isHost={isAdmin}
+            canCreate={isAdmin && !!checklistRun?.finished_at}
+          />
+        )}
+
         {/* === CHECKLIST RUN SUMMARY (admin only, if completed) === */}
         {isAdmin && checklistRun?.finished_at && (
           <Card>
@@ -594,18 +607,6 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
               )}
             </CardContent>
           </Card>
-        )}
-
-        {effectiveStatus === "COMPLETED" && reviewChecklistRunId && reviewCleanerUserId && event?.host_user_id && (
-          <ChecklistReviewFlagsCard
-            eventId={id!}
-            checklistRunId={reviewChecklistRunId}
-            hostUserId={event.host_user_id}
-            cleanerUserId={reviewCleanerUserId}
-            runPhotos={runPhotos}
-            isHost={isAdmin}
-            canCreate={isAdmin && !!checklistRun?.finished_at}
-          />
         )}
 
         {/* === Status Mismatch Warning === */}

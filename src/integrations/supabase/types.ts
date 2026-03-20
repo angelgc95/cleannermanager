@@ -321,6 +321,7 @@ export type Database = {
       }
       checklist_runs: {
         Row: {
+          approved_at: string | null
           cleaner_user_id: string
           cleaning_event_id: string | null
           created_at: string
@@ -331,9 +332,11 @@ export type Database = {
           listing_id: string | null
           overall_notes: string | null
           payout_id: string | null
+          review_status: string
           started_at: string | null
         }
         Insert: {
+          approved_at?: string | null
           cleaner_user_id: string
           cleaning_event_id?: string | null
           created_at?: string
@@ -344,9 +347,11 @@ export type Database = {
           listing_id?: string | null
           overall_notes?: string | null
           payout_id?: string | null
+          review_status?: string
           started_at?: string | null
         }
         Update: {
+          approved_at?: string | null
           cleaner_user_id?: string
           cleaning_event_id?: string | null
           created_at?: string
@@ -357,6 +362,7 @@ export type Database = {
           listing_id?: string | null
           overall_notes?: string | null
           payout_id?: string | null
+          review_status?: string
           started_at?: string | null
         }
         Relationships: [

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,6 +58,11 @@ interface ReviewFlagPhoto {
   annotation_y: number | null;
 }
 
+interface ReviewRunState {
+  review_status: string;
+  approved_at: string | null;
+}
+
 const EMPTY_REVIEW_FLAGS: ReviewFlag[] = [];
 const EMPTY_REVIEW_FLAG_PHOTOS: ReviewFlagPhoto[] = [];
 
@@ -70,6 +75,12 @@ type AnnotationDraft = {
 const statusStyles: Record<string, string> = {
   OPEN: "bg-amber-100 text-amber-800 border-amber-200",
   REVIEWED: "bg-emerald-100 text-emerald-800 border-emerald-200",
+};
+
+const reviewStatusStyles: Record<string, string> = {
+  PENDING: "bg-slate-100 text-slate-800 border-slate-200",
+  FLAGGED: "bg-amber-100 text-amber-800 border-amber-200",
+  APPROVED: "bg-emerald-100 text-emerald-800 border-emerald-200",
 };
 
 function AnnotationOverlay({
@@ -151,6 +162,7 @@ export function ChecklistReviewFlagsCard({
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Record<string, boolean>>({});
   const [annotationDrafts, setAnnotationDrafts] = useState<Record<string, AnnotationDraft>>({});
   const [reviewingFlagId, setReviewingFlagId] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
 
   const photosById = useMemo(
     () =>
@@ -173,9 +185,20 @@ export function ChecklistReviewFlagsCard({
         .order("created_at", { ascending: false });
       if (flagError) throw flagError;
 
+      const { data: runState, error: runStateError } = await supabase
+        .from("checklist_runs")
+        .select("review_status, approved_at")
+        .eq("id", checklistRunId!)
+        .single();
+      if (runStateError) throw runStateError;
+
       const flagIds = (flags || []).map((flag) => flag.id);
       if (flagIds.length === 0) {
-        return { flags: [] as ReviewFlag[], flagPhotos: [] as ReviewFlagPhoto[] };
+        return {
+          flags: [] as ReviewFlag[],
+          flagPhotos: [] as ReviewFlagPhoto[],
+          runState: runState as ReviewRunState,
+        };
       }
 
       const { data: flagPhotos, error: photoError } = await supabase
@@ -187,12 +210,15 @@ export function ChecklistReviewFlagsCard({
       return {
         flags: (flags as ReviewFlag[]) || [],
         flagPhotos: (flagPhotos as ReviewFlagPhoto[]) || [],
+        runState: runState as ReviewRunState,
       };
     },
   });
 
   const flags = data?.flags ?? EMPTY_REVIEW_FLAGS;
   const flagPhotos = data?.flagPhotos ?? EMPTY_REVIEW_FLAG_PHOTOS;
+  const runState = data?.runState ?? { review_status: "PENDING", approved_at: null };
+  const openFlagsCount = flags.filter((flag) => flag.status === "OPEN").length;
 
   const flagPhotosByFlagId = useMemo(
     () =>
@@ -233,7 +259,7 @@ export function ChecklistReviewFlagsCard({
     }));
   };
 
-  const placeAnnotation = (photoId: string, event: React.MouseEvent<HTMLButtonElement>) => {
+  const placeAnnotation = (photoId: string, event: MouseEvent<HTMLButtonElement>) => {
     const currentDraft = annotationDrafts[photoId];
     if (!currentDraft?.annotationType) return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -323,6 +349,32 @@ export function ChecklistReviewFlagsCard({
     }
   };
 
+  const approveChecklist = async () => {
+    if (!checklistRunId) return;
+    setApproving(true);
+    try {
+      const { error } = await supabase
+        .from("checklist_runs")
+        .update({
+          review_status: "APPROVED",
+          approved_at: new Date().toISOString(),
+        })
+        .eq("id", checklistRunId);
+      if (error) throw error;
+      await queryClient.invalidateQueries({ queryKey: ["checklist-review-flags", eventId, checklistRunId] });
+      toast({ title: t("Checklist approved") });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : t("Please try again.");
+      toast({
+        title: t("Unable to approve checklist"),
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setApproving(false);
+    }
+  };
+
   return (
     <>
       <Card>
@@ -338,6 +390,50 @@ export function ChecklistReviewFlagsCard({
           </div>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border bg-muted/20 p-4">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {t("Submission review")}
+              </p>
+              <div className="flex items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className={cn("border", reviewStatusStyles[runState.review_status] || reviewStatusStyles.PENDING)}
+                >
+                  {runState.review_status === "APPROVED"
+                    ? t("Approved")
+                    : runState.review_status === "FLAGGED"
+                      ? t("Flagged")
+                      : t("Pending review")}
+                </Badge>
+                {openFlagsCount > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {t("Open flags")}: {openFlagsCount}
+                  </span>
+                )}
+              </div>
+              {runState.approved_at && (
+                <p className="text-xs text-muted-foreground">
+                  {t("Approved at")}:{" "}
+                  {formatDateTime(runState.approved_at, { dateStyle: "medium", timeStyle: "short" })}
+                </p>
+              )}
+            </div>
+
+            {isHost && (
+              <Button
+                size="sm"
+                variant={runState.review_status === "APPROVED" ? "secondary" : "default"}
+                className="gap-1.5"
+                onClick={approveChecklist}
+                disabled={approving || openFlagsCount > 0 || runState.review_status === "APPROVED"}
+              >
+                {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                {runState.review_status === "APPROVED" ? t("Approved") : t("Approve checklist")}
+              </Button>
+            )}
+          </div>
+
           {isLoading ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
