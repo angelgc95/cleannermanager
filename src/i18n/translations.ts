@@ -81,6 +81,7 @@ const SPANISH_TRANSLATIONS: Record<string, string> = {
   "Your account and assigned listings": "Tu cuenta y alojamientos asignados",
   Account: "Cuenta",
   Name: "Nombre",
+  Manual: "Manual",
   Cleaners: "Cleaners",
   "Invite cleaner by email": "Invitar cleaner por correo",
   Invite: "Invitar",
