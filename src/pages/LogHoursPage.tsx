@@ -38,10 +38,14 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
       const payoutIds = [...new Set(data.filter((e: any) => e.payout_id).map((e: any) => e.payout_id))];
       let payoutStatusMap: Record<string, string> = {};
       let payoutPeriodMap: Record<string, string | null> = {};
+      let payoutPartialMap: Record<string, number> = {};
+      let payoutTotalMap: Record<string, number> = {};
       let periodMap: Record<string, { start_date: string; end_date: string; status: string | null }> = {};
       if (payoutIds.length > 0) {
-        const { data: payouts } = await supabase.from("payouts").select("id, status, period_id").in("id", payoutIds);
+        const { data: payouts } = await supabase.from("payouts").select("id, status, period_id, partial_paid_amount, total_amount").in("id", payoutIds);
         payoutStatusMap = Object.fromEntries((payouts || []).map((p: any) => [p.id, p.status]));
+        payoutPartialMap = Object.fromEntries((payouts || []).map((p: any) => [p.id, Number(p.partial_paid_amount || 0)]));
+        payoutTotalMap = Object.fromEntries((payouts || []).map((p: any) => [p.id, Number(p.total_amount || 0)]));
         payoutPeriodMap = Object.fromEntries((payouts || []).map((p: any) => [p.id, p.period_id || null]));
 
         const periodIds = [...new Set((payouts || []).map((p: any) => p.period_id).filter(Boolean))];
@@ -77,6 +81,9 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
             _payout_period_start: e.payout_id && payoutPeriodMap[e.payout_id] ? periodMap[payoutPeriodMap[e.payout_id]]?.start_date || null : null,
             _payout_period_end: e.payout_id && payoutPeriodMap[e.payout_id] ? periodMap[payoutPeriodMap[e.payout_id]]?.end_date || null : null,
             _payout_period_status: e.payout_id && payoutPeriodMap[e.payout_id] ? periodMap[payoutPeriodMap[e.payout_id]]?.status || null : null,
+            _payout_partial_paid_amount: e.payout_id ? payoutPartialMap[e.payout_id] || 0 : 0,
+            _payout_total_amount: e.payout_id ? payoutTotalMap[e.payout_id] || 0 : 0,
+            _payout_remaining_amount: e.payout_id ? Math.max((payoutTotalMap[e.payout_id] || 0) - (payoutPartialMap[e.payout_id] || 0), 0) : 0,
           }))
         );
       } else {
@@ -89,6 +96,9 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
             _payout_period_start: e.payout_id && payoutPeriodMap[e.payout_id] ? periodMap[payoutPeriodMap[e.payout_id]]?.start_date || null : null,
             _payout_period_end: e.payout_id && payoutPeriodMap[e.payout_id] ? periodMap[payoutPeriodMap[e.payout_id]]?.end_date || null : null,
             _payout_period_status: e.payout_id && payoutPeriodMap[e.payout_id] ? periodMap[payoutPeriodMap[e.payout_id]]?.status || null : null,
+            _payout_partial_paid_amount: e.payout_id ? payoutPartialMap[e.payout_id] || 0 : 0,
+            _payout_total_amount: e.payout_id ? payoutTotalMap[e.payout_id] || 0 : 0,
+            _payout_remaining_amount: e.payout_id ? Math.max((payoutTotalMap[e.payout_id] || 0) - (payoutPartialMap[e.payout_id] || 0), 0) : 0,
           }))
         );
       }
@@ -191,6 +201,7 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
           totalMinutes: 0,
           cleanerIds: new Set<string>(),
           allPaid: true,
+          hasPartialPaid: false,
         };
       }
 
@@ -199,6 +210,9 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
       acc[key].cleanerIds.add(entry.user_id);
       if (entry._payout_status !== "PAID") {
         acc[key].allPaid = false;
+      }
+      if (entry._payout_status === "PARTIALLY_PAID") {
+        acc[key].hasPartialPaid = true;
       }
       return acc;
     }, {});
@@ -227,9 +241,14 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
               )}
               <StatusBadge status={entry._processing_status || "PENDING"} />
               {processed && entry._payout_status && (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <span className="inline-flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                   <span>{t("Payout status")}:</span>
                   <StatusBadge status={entry._payout_status} className="align-middle" />
+                  {entry._payout_status === "PARTIALLY_PAID" && (
+                    <span>
+                      · {t("Paid amount")}: €{Number(entry._payout_partial_paid_amount || 0).toFixed(2)} · {t("Remaining pending")}: €{Number(entry._payout_remaining_amount || 0).toFixed(2)}
+                    </span>
+                  )}
                 </span>
               )}
             </div>
@@ -349,7 +368,7 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
                               {isHost ? ` · ${group.cleanerIds.size} ${group.cleanerIds.size === 1 ? "cleaner" : "cleaners"}` : ""}
                             </p>
                           </div>
-                          <StatusBadge status={group.allPaid ? "PAID" : "PENDING"} />
+                          <StatusBadge status={group.allPaid ? "PAID" : group.hasPartialPaid ? "PARTIALLY_PAID" : "PENDING"} />
                         </div>
                         <div className="space-y-3">
                           {group.entries.map((entry: any) => renderEntry(entry, true))}

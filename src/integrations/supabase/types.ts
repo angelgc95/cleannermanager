@@ -1253,6 +1253,7 @@ export type Database = {
           hourly_rate_used: number
           id: string
           paid_at: string | null
+          partial_paid_amount: number | null
           payment_reference: string | null
           period_id: string
           status: Database["public"]["Enums"]["payout_status"] | null
@@ -1266,6 +1267,7 @@ export type Database = {
           hourly_rate_used: number
           id?: string
           paid_at?: string | null
+          partial_paid_amount?: number | null
           payment_reference?: string | null
           period_id: string
           status?: Database["public"]["Enums"]["payout_status"] | null
@@ -1279,6 +1281,7 @@ export type Database = {
           hourly_rate_used?: number
           id?: string
           paid_at?: string | null
+          partial_paid_amount?: number | null
           payment_reference?: string | null
           period_id?: string
           status?: Database["public"]["Enums"]["payout_status"] | null
@@ -1650,7 +1653,7 @@ export type Database = {
         | "PROCESSING"
       notification_type: "REMINDER_12H" | "REMINDER_1H" | "CHECKLIST_2PM"
       payout_period_status: "OPEN" | "CLOSED"
-      payout_status: "PENDING" | "PAID"
+      payout_status: "PENDING" | "PARTIALLY_PAID" | "PAID"
       shopping_created_from: "MANUAL" | "CHECKLIST"
       shopping_status: "MISSING" | "ORDERED" | "BOUGHT" | "OK"
     }
@@ -1797,7 +1800,7 @@ export const Constants = {
       ],
       notification_type: ["REMINDER_12H", "REMINDER_1H", "CHECKLIST_2PM"],
       payout_period_status: ["OPEN", "CLOSED"],
-      payout_status: ["PENDING", "PAID"],
+      payout_status: ["PENDING", "PARTIALLY_PAID", "PAID"],
       shopping_created_from: ["MANUAL", "CHECKLIST"],
       shopping_status: ["MISSING", "ORDERED", "BOUGHT", "OK"],
     },
