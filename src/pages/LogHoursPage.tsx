@@ -14,11 +14,13 @@ import { Plus, X, Clock, User, Pencil, Trash2 } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useI18n } from "@/i18n/LanguageProvider";
 import { cn } from "@/lib/utils";
+import { useNavigate } from "react-router-dom";
 
 const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _ref) {
   const { user, hostId, role } = useAuth();
   const { toast } = useToast();
   const { formatDate, t } = useI18n();
+  const navigate = useNavigate();
   const [entries, setEntries] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -157,7 +159,7 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
     } else {
       const { error } = await supabase.from("log_hours").insert({
         user_id: targetUserId, date: form.date, start_at: form.start_at, end_at: form.end_at,
-        duration_minutes: duration > 0 ? duration : 0, description: form.description, host_user_id: hostId,
+        duration_minutes: duration > 0 ? duration : 0, description: form.description, host_user_id: hostId, source: "MANUAL",
       });
       if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
       else { toast({ title: "Hours logged" }); resetForm(); fetchEntries(); }
@@ -237,6 +239,23 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
               {isHost && entry._user_name && (
                 <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">
                   {entry._user_name}
+                </span>
+              )}
+              {(entry.source === "CHECKLIST" || entry.checklist_run_id) ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 rounded-full px-2.5 text-[11px]"
+                  onClick={() => {
+                    if (entry.cleaning_event_id) navigate(`/events/${entry.cleaning_event_id}`);
+                  }}
+                  disabled={!entry.cleaning_event_id}
+                >
+                  {t("Checklist")}
+                </Button>
+              ) : (
+                <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  {t("Manual")}
                 </span>
               )}
               <StatusBadge status={entry._processing_status || "PENDING"} />
