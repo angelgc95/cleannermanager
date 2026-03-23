@@ -4,9 +4,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/LanguageProvider";
 
 interface PeriodGroup { period: any; payouts: any[]; }
+type PayoutStatus = "PENDING" | "PARTIALLY_PAID" | "PAID";
 
 const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref) {
   const { role, user } = useAuth();
@@ -28,6 +32,10 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
   const [generating, setGenerating] = useState(false);
   const [startDate, setStartDate] = useState<Date>();
   const [endDate, setEndDate] = useState<Date>();
+  const [partialDialogOpen, setPartialDialogOpen] = useState(false);
+  const [selectedPayout, setSelectedPayout] = useState<any | null>(null);
+  const [partialAmount, setPartialAmount] = useState("");
+  const [savingPartial, setSavingPartial] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -84,12 +92,30 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
     finally { setGenerating(false); }
   };
 
-  const handleUpdatePayoutStatus = async (payoutId: string, newStatus: "PENDING" | "PAID") => {
+  const handleUpdatePayoutStatus = async (
+    payoutId: string,
+    newStatus: PayoutStatus,
+    options?: { partialPaidAmount?: number | null; totalAmount?: number }
+  ) => {
     const updates: any = { status: newStatus };
-    if (newStatus === "PAID") updates.paid_at = new Date().toISOString();
+    if (newStatus === "PAID") {
+      updates.paid_at = new Date().toISOString();
+      updates.partial_paid_amount = Number(options?.totalAmount || 0) || null;
+    } else if (newStatus === "PARTIALLY_PAID") {
+      updates.paid_at = null;
+      updates.partial_paid_amount = options?.partialPaidAmount ?? null;
+    } else {
+      updates.paid_at = null;
+      updates.partial_paid_amount = null;
+    }
     const { error } = await supabase.from("payouts").update(updates).eq("id", payoutId);
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
-    else { toast({ title: `Payout marked as ${newStatus}` }); fetchData(); }
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+      return false;
+    }
+    toast({ title: t("Payout updated") });
+    fetchData();
+    return true;
   };
 
   const handleUpdatePeriodStatus = async (periodId: string, newStatus: "OPEN" | "CLOSED") => {
@@ -121,6 +147,49 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
   const periodTotal = (payouts: any[]) => payouts.reduce((sum, p) => sum + Number(p.total_amount || 0), 0);
   const periodMinutes = (payouts: any[]) => payouts.reduce((sum, p) => sum + (p.total_minutes || 0), 0);
   const allPaid = (payouts: any[]) => payouts.length > 0 && payouts.every((p) => p.status === "PAID");
+  const hasPartial = (payouts: any[]) => payouts.some((p) => p.status === "PARTIALLY_PAID");
+  const getPaidAmount = (payout: any) => {
+    const total = Number(payout.total_amount || 0);
+    if (payout.status === "PAID") return total;
+    return Math.min(Number(payout.partial_paid_amount || 0), total);
+  };
+  const getRemainingAmount = (payout: any) => Math.max(Number(payout.total_amount || 0) - getPaidAmount(payout), 0);
+  const getPeriodPaymentStatus = (payouts: any[]) => {
+    if (allPaid(payouts)) return "PAID";
+    if (hasPartial(payouts)) return "PARTIALLY_PAID";
+    return null;
+  };
+  const openPartialPaymentDialog = (payout: any) => {
+    setSelectedPayout(payout);
+    setPartialAmount(String(Number(payout.partial_paid_amount || 0) || ""));
+    setPartialDialogOpen(true);
+  };
+  const closePartialPaymentDialog = () => {
+    setPartialDialogOpen(false);
+    setSelectedPayout(null);
+    setPartialAmount("");
+    setSavingPartial(false);
+  };
+  const savePartialPayment = async () => {
+    if (!selectedPayout) return;
+    const value = Number(partialAmount);
+    const total = Number(selectedPayout.total_amount || 0);
+    if (!Number.isFinite(value)) {
+      toast({ title: t("Select a partial amount"), description: t("Enter amount already paid"), variant: "destructive" });
+      return;
+    }
+    if (value <= 0 || value >= total) {
+      toast({ title: t("Partial payment"), description: t("Partial amount must be greater than 0 and less than the total payout."), variant: "destructive" });
+      return;
+    }
+    setSavingPartial(true);
+    const ok = await handleUpdatePayoutStatus(selectedPayout.id, "PARTIALLY_PAID", {
+      partialPaidAmount: value,
+      totalAmount: total,
+    });
+    if (ok) closePartialPaymentDialog();
+    else setSavingPartial(false);
+  };
 
   return (
     <div>
@@ -179,6 +248,7 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
           const total = periodTotal(payouts);
           const mins = periodMinutes(payouts);
           const isPaid = allPaid(payouts);
+          const periodPaymentStatus = getPeriodPaymentStatus(payouts);
           return (
             <Card key={period.id}>
               <button onClick={() => togglePeriod(period.id)} className="w-full text-left">
@@ -187,7 +257,7 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
                     {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                     <div><p className="font-semibold text-sm">{formatDate(period.start_date, "MMM d")} – {formatDate(period.end_date, "MMM d, yyyy")}</p><p className="text-xs text-muted-foreground">{payouts.length} cleaner{payouts.length !== 1 ? "s" : ""} · {Math.floor(mins / 60)}h {mins % 60}m</p></div>
                   </div>
-                  <div className="flex items-center gap-3"><div className="text-right"><p className="font-bold text-sm">€{total.toFixed(2)}</p><StatusBadge status={isPaid && payouts.length > 0 ? "PAID" : period.status} /></div></div>
+                  <div className="flex items-center gap-3"><div className="text-right"><p className="font-bold text-sm">€{total.toFixed(2)}</p><StatusBadge status={periodPaymentStatus || period.status} /></div></div>
                 </CardContent>
               </button>
               {isExpanded && (
@@ -197,12 +267,34 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
                     <div key={p.id} className="flex items-center justify-between px-6 py-3 border-b border-border last:border-b-0">
                       <div><p className="text-sm font-medium">{p.cleaner_name}</p><p className="text-xs text-muted-foreground">{p.total_minutes} min @ €{Number(p.hourly_rate_used).toFixed(2)}/hr</p></div>
                       <div className="flex items-center gap-3">
-                        <div className="text-right"><p className="font-semibold text-sm">€{Number(p.total_amount).toFixed(2)}</p><StatusBadge status={p.status} /></div>
+                        <div className="text-right">
+                          <p className="font-semibold text-sm">€{Number(p.total_amount).toFixed(2)}</p>
+                          <StatusBadge status={p.status} />
+                          {p.status === "PARTIALLY_PAID" && (
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              {t("Paid amount")}: €{getPaidAmount(p).toFixed(2)} · {t("Remaining pending")}: €{getRemainingAmount(p).toFixed(2)}
+                            </p>
+                          )}
+                        </div>
                          {isHost && (
                           <>
-                            <Select value={p.status} onValueChange={(v) => handleUpdatePayoutStatus(p.id, v as "PENDING" | "PAID")}>
-                              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue /></SelectTrigger>
-                              <SelectContent><SelectItem value="PENDING">Pending</SelectItem><SelectItem value="PAID">Paid</SelectItem></SelectContent>
+                            <Select
+                              value={p.status}
+                              onValueChange={(v) => {
+                                const nextStatus = v as PayoutStatus;
+                                if (nextStatus === "PARTIALLY_PAID") {
+                                  openPartialPaymentDialog(p);
+                                  return;
+                                }
+                                handleUpdatePayoutStatus(p.id, nextStatus, { totalAmount: Number(p.total_amount || 0) });
+                              }}
+                            >
+                              <SelectTrigger className="w-[140px] h-8 text-xs"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="PENDING">{t("Pending")}</SelectItem>
+                                <SelectItem value="PARTIALLY_PAID">{t("Partially paid")}</SelectItem>
+                                <SelectItem value="PAID">{t("Paid")}</SelectItem>
+                              </SelectContent>
                             </Select>
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
@@ -221,7 +313,7 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
                   {isHost && (
                     <div className="flex items-center justify-end gap-2 px-6 py-3 bg-muted/30">
                       {period.status === "OPEN" ? <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleUpdatePeriodStatus(period.id, "CLOSED"); }}>Close Period</Button> : <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleUpdatePeriodStatus(period.id, "OPEN"); }}>Reopen Period</Button>}
-                      {payouts.length > 0 && !isPaid && <Button size="sm" onClick={async (e) => { e.stopPropagation(); for (const p of payouts) { if (p.status !== "PAID") await handleUpdatePayoutStatus(p.id, "PAID"); } }}>Mark All Paid</Button>}
+                      {payouts.length > 0 && !isPaid && <Button size="sm" onClick={async (e) => { e.stopPropagation(); for (const p of payouts) { if (p.status !== "PAID") await handleUpdatePayoutStatus(p.id, "PAID", { totalAmount: Number(p.total_amount || 0) }); } }}>Mark All Paid</Button>}
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button variant="destructive" size="sm" onClick={(e) => e.stopPropagation()}><Trash2 className="h-3.5 w-3.5 mr-1" />Delete Period</Button>
@@ -239,6 +331,45 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
           );
         })}
       </div>
+
+      <Dialog open={partialDialogOpen} onOpenChange={(open) => !open && closePartialPaymentDialog()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("Partial payment")}</DialogTitle>
+            <DialogDescription>
+              {selectedPayout
+                ? `${selectedPayout.cleaner_name} · €${Number(selectedPayout.total_amount || 0).toFixed(2)}`
+                : t("Enter amount already paid")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="partial-paid-amount">{t("Partial amount paid")}</Label>
+              <Input
+                id="partial-paid-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={partialAmount}
+                onChange={(e) => setPartialAmount(e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+            {selectedPayout && (
+              <p className="text-sm text-muted-foreground">
+                {t("Remaining pending")}: €
+                {Math.max(Number(selectedPayout.total_amount || 0) - (Number(partialAmount) || 0), 0).toFixed(2)}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closePartialPaymentDialog}>{t("Cancel")}</Button>
+            <Button onClick={savePartialPayment} disabled={savingPartial}>
+              {savingPartial ? t("Saving...") : t("Save partial payment")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 });
