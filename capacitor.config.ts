@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "com.cleannermanager.cleaner",
-  appName: "CleannerManager Cleaner",
+  appName: "Cleaner Manager",
   webDir: "dist",
   bundledWebRuntime: false,
   server: {

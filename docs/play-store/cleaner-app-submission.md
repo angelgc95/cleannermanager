@@ -2,7 +2,7 @@
 
 ## App Identity
 
-- App name: `CleannerManager Cleaner`
+- App name: `Cleaner Manager`
 - Default language: `English (United States)` recommended
 - App or game: `App`
 - Free or paid: `Free`
@@ -20,7 +20,7 @@
 - Native permission in manifest:
   - `android.permission.INTERNET`
 - Native app label:
-  - `CleannerManager Cleaner`
+  - `Cleaner Manager`
 - Native app is cleaner-only:
   - host accounts are blocked in the Android app
   - host signup is not shown in the Android app
@@ -30,7 +30,7 @@
 ## Play Console Steps
 
 1. Create app in Play Console.
-2. Use app name `CleannerManager Cleaner`.
+2. Use app name `Cleaner Manager`.
 3. Keep package name as `com.cleannermanager.cleaner`.
 4. Create a new release in `Testing -> Internal testing`.
 5. Upload `app-release.aab`.

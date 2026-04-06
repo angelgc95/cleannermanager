@@ -10,10 +10,16 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+.env
+.env.*
+!.env.example
 *.local
 supabase/.branches/
 supabase/.temp/
 .playwright-cli/
+.lovable/
+builds/
+booking plataform*
 
 # Editor directories and files
 .vscode/*

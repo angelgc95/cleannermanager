@@ -1,57 +1,76 @@
-# Cleanner Manager Local Setup
+# Cleaner Manager
 
-This clone can run independently from Lovable using the local Supabase project in [`supabase/`](/Users/angel/Documents/Playground/cleannermanager/supabase). The frontend uses `.env.local`, so it can point at the local backend even if the checked-in `.env` still contains old hosted values.
+![Cleaner Manager cover](docs/assets/cover.svg)
+
+Cleaner workflow software for short-term-rental turnovers, checklists, hours, and payout visibility.
+
+## Problem
+
+Hospitality turnovers are hard to run well when schedules, checklists, supplies, proof of completion, and payout tracking are spread across chat threads and manual admin work.
+
+## Solution
+
+Cleaner Manager gives hosts and invited cleaners a single operational workspace for recurring turnover work. Cleaners get a mobile-first app for assigned jobs, while hosts can manage templates, guides, schedules, and workflow oversight from the web dashboard.
+
+## Key Features
+
+- Assigned cleaning events and daily workflow views
+- Step-by-step turnover checklists with proof-photo support
+- Shopping and supply requests linked to operational work
+- Property guides and instructions for field teams
+- Logged work hours with payout status visibility
+- Host-side checklist template management and onboarding flows
+- Capacitor Android app shell for cleaner-facing mobile use
 
 ## Stack
 
-- Vite
-- React
-- TypeScript
-- Tailwind CSS
-- Supabase local stack
+- Vite, React, TypeScript, Tailwind CSS
+- Supabase for auth, database, storage, and Edge Functions
+- Capacitor for Android packaging
 
-## Requirements
+## Architecture
+
+- `src/` contains the mobile-first React application for hosts and cleaners.
+- `supabase/` contains schema, policies, and operational Edge Functions.
+- `scripts/start-local-backend.sh` boots the local Supabase stack and writes `.env.local`.
+- `android/` contains the Capacitor wrapper for the cleaner app.
+
+## Run Locally
+
+### Requirements
 
 - Node.js 20+
 - npm
 - Supabase CLI
-- A Docker runtime
+- Docker runtime
 
-If you use Colima on macOS, create or start it with `sshfs` mounts. Supabase local logging sidecars are excluded in the local scripts because they are not needed for app development and can fail under Colima socket mounting.
+If you use Colima on macOS, run it with `sshfs` mounts so the local Supabase stack can start cleanly.
 
-## First-time local bootstrap
+### Start the Web App
 
 ```sh
 npm install
+cp .env.example .env.local
 npm run local:backend
 npm run dev
 ```
 
-What `npm run local:backend` does:
+The local scripts start Supabase, skip the logging sidecars that are unnecessary for development, and write the active local connection values into `.env.local`.
 
-- starts Docker if Colima is installed and Docker is not already running
-- starts the local Supabase stack from this repo
-- skips `vector` and `logflare` sidecars
-- writes `.env.local` with the local Supabase URL and publishable key
-
-The app will then be available at [http://127.0.0.1:8080](http://127.0.0.1:8080).
-
-## Daily local workflow
+### Daily Workflow
 
 ```sh
 npm run local:backend
 npm run dev
 ```
 
-To stop the backend:
+Stop the local backend with:
 
 ```sh
 npm run local:stop
 ```
 
-## Android app
-
-This repo can now build a real Android app shell with Capacitor around the existing mobile-first React app.
+### Android Build
 
 Requirements:
 
@@ -59,7 +78,7 @@ Requirements:
 - Java 21
 - Android SDK
 
-First-time Android setup:
+First-time setup:
 
 ```sh
 npm install
@@ -72,49 +91,26 @@ Build a debug APK:
 npm run android:build:debug
 ```
 
-Open the native project in Android Studio:
+Open the native project:
 
 ```sh
 npm run android:open
 ```
 
-The debug APK is generated at:
+## Local Endpoints
 
-- [`android/app/build/outputs/apk/debug/app-debug.apk`](/Users/angel/Documents/Playground/cleannermanager/android/app/build/outputs/apk/debug/app-debug.apk)
+- App: `http://127.0.0.1:8080`
+- Supabase API: `http://127.0.0.1:54321`
+- Supabase Studio: `http://127.0.0.1:54323`
+- Mailpit: `http://127.0.0.1:54324`
 
-Release build setup:
+## Current Status
 
-- create `android/key.properties` from [`android/key.properties.example`](/Users/angel/Documents/Playground/cleannermanager/android/key.properties.example)
-- place your upload keystore at `android/keystore/upload-keystore.jks`
-- then run:
+- Active operations product with both web and Android delivery paths
+- Local backend workflow is documented and reproducible
+- Public production domain: `https://www.cleannermanager.com`
+- Android release packaging is prepared, while package identifiers remain aligned with the existing domain and app registration
 
-```sh
-npm run android:build:release
-```
+## Why It Matters
 
-Release outputs:
-
-- [`android/app/build/outputs/bundle/release/app-release.aab`](/Users/angel/Documents/Playground/cleannermanager/android/app/build/outputs/bundle/release/app-release.aab)
-- [`android/app/build/outputs/apk/release/app-release.apk`](/Users/angel/Documents/Playground/cleannermanager/android/app/build/outputs/apk/release/app-release.apk)
-
-Important auth note:
-
-- Native Android builds use the public web domain for email redirects and cleaner invite completion links.
-- Current native auth works for normal email/password sign-in.
-- If you want invite links to open directly back into the Android app instead of the web domain, the next step is adding Android deep links plus matching Supabase redirect URLs.
-
-## Local endpoints
-
-- App: [http://127.0.0.1:8080](http://127.0.0.1:8080)
-- Supabase API: [http://127.0.0.1:54321](http://127.0.0.1:54321)
-- Supabase Studio: [http://127.0.0.1:54323](http://127.0.0.1:54323)
-- Mailpit: [http://127.0.0.1:54324](http://127.0.0.1:54324)
-
-## Local data notes
-
-- Database schema and edge functions come from the files in [`supabase/`](/Users/angel/Documents/Playground/cleannermanager/supabase).
-- A fresh local database starts empty, which is expected.
-- Create your first account through the app locally, then complete onboarding there.
-- Optional features still need their own local secrets if you want them:
-  - `TICKETMASTER_API_KEY` for event fetching
-  - `OPENAI_API_KEY` for checklist suggestions
+This project shows applied STR operations work: not just a dashboard, but a workflow system designed to reduce coordination overhead around turnovers, staff execution, and payout visibility.

@@ -4,7 +4,7 @@ This folder contains the Android Play Store submission pack for the cleaner-only
 
 ## Current App Identity
 
-- App name: `CleannerManager Cleaner`
+- App name: `Cleaner Manager`
 - Package name: `com.cleannermanager.cleaner`
 - Version code: `1`
 - Version name: `1.0`

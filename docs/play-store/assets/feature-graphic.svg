@@ -12,7 +12,7 @@
   <circle cx="290" cy="213" r="16" fill="#28D39D"/>
   <circle cx="318" cy="257" r="16" fill="#28D39D"/>
   <circle cx="274" cy="301" r="16" fill="#28D39D"/>
-  <text x="436" y="198" fill="#F8FAFC" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="700">CleannerManager</text>
+  <text x="436" y="198" fill="#F8FAFC" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="700">Cleaner Manager</text>
   <text x="436" y="248" fill="#B4C3DC" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="600">Cleaner</text>
   <text x="436" y="304" fill="#D9E4F3" font-family="Arial, Helvetica, sans-serif" font-size="24">Checklists, supplies, hours, and payouts</text>
   <g>
