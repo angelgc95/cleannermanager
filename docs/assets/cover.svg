@@ -1,0 +1,43 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="132" y1="68" x2="1094" y2="558" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#13294B"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="862" y1="118" x2="1088" y2="534" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#34D399"/>
+    </linearGradient>
+    <style>
+      .eyebrow { fill: #93C5FD; font: 600 24px 'Inter', 'Segoe UI', sans-serif; letter-spacing: 0.22em; }
+      .title { fill: #F8FAFC; font: 700 68px 'Inter', 'Segoe UI', sans-serif; }
+      .body { fill: #CBD5E1; font: 500 30px 'Inter', 'Segoe UI', sans-serif; }
+      .chip { fill: rgba(15, 23, 42, 0.6); stroke: rgba(148, 163, 184, 0.3); }
+      .chipText { fill: #E2E8F0; font: 600 22px 'Inter', 'Segoe UI', sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="630" rx="36" fill="url(#bg)"/>
+  <circle cx="1017" cy="173" r="160" fill="url(#accent)" fill-opacity="0.16"/>
+  <circle cx="1012" cy="482" r="210" fill="#0B1322" fill-opacity="0.8"/>
+  <rect x="852" y="112" width="244" height="381" rx="34" fill="#0B1220" stroke="rgba(148, 163, 184, 0.24)"/>
+  <rect x="894" y="150" width="160" height="34" rx="17" fill="#172554"/>
+  <rect x="882" y="211" width="185" height="72" rx="24" fill="#101B31"/>
+  <rect x="882" y="298" width="185" height="72" rx="24" fill="#101B31"/>
+  <rect x="882" y="385" width="185" height="72" rx="24" fill="#101B31"/>
+  <path d="M917 247L946 276L1018 201" stroke="#34D399" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M917 334L946 363L1018 288" stroke="#60A5FA" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M917 421L946 450L1018 375" stroke="#F59E0B" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="90" y="136" class="eyebrow">HOSPITALITY OPERATIONS</text>
+  <text x="90" y="232" class="title">Cleaner Manager</text>
+  <text x="90" y="288" class="body">Turnover workflows, checklists, and payout visibility</text>
+  <text x="90" y="330" class="body">for short-term-rental operations.</text>
+
+  <rect x="90" y="402" width="186" height="58" rx="29" class="chip"/>
+  <rect x="294" y="402" width="210" height="58" rx="29" class="chip"/>
+  <rect x="522" y="402" width="218" height="58" rx="29" class="chip"/>
+  <text x="125" y="439" class="chipText">Checklists</text>
+  <text x="331" y="439" class="chipText">Hours &amp; payouts</text>
+  <text x="557" y="439" class="chipText">Android shell</text>
+</svg>

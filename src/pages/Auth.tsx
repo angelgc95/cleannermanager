@@ -120,7 +120,7 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
               <ClipboardCheck className="h-6 w-6 text-primary-foreground" />
             </div>
           </div>
-          <CardTitle className="text-2xl">CleannerManager</CardTitle>
+          <CardTitle className="text-2xl">Cleaner Manager</CardTitle>
           <CardDescription>
             {cleanerOnlyApp ? t("Sign in to your cleaner account") : currentMode === "login" ? t("Sign in to your account") : t("Create a new host account")}
           </CardDescription>

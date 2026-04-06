@@ -4,7 +4,7 @@
 
 ### App Name
 
-`CleannerManager Cleaner`
+`Cleaner Manager`
 
 ### Short Description
 
@@ -12,11 +12,11 @@
 
 ### Full Description
 
-`CleannerManager Cleaner gives invited cleaners one mobile workspace to handle vacation-rental turnovers from start to finish.
+`Cleaner Manager gives invited cleaners one mobile workspace to handle vacation-rental turnovers from start to finish.
 
 Built for cleaning teams working with short-stay properties, the app keeps daily work organized in a clear, practical flow.
 
-With CleannerManager Cleaner you can:
+With Cleaner Manager you can:
 
 - View assigned cleaning events and today’s schedule
 - Open step-by-step checklists for each turnover
@@ -28,13 +28,13 @@ With CleannerManager Cleaner you can:
 
 The Android app is cleaner-only. Hosts manage access separately, and invited cleaners sign in with their own account.
 
-CleannerManager Cleaner is designed for real turnover operations: fast to use on mobile, clear in the field, and focused on getting each property guest-ready.`
+Cleaner Manager is designed for real turnover operations: fast to use on mobile, clear in the field, and focused on getting each property guest-ready.`
 
 ## Localized Listing: Spanish
 
 ### Nombre De La App
 
-`CleannerManager Cleaner`
+`Cleaner Manager`
 
 ### Descripción Corta
 
@@ -42,11 +42,11 @@ CleannerManager Cleaner is designed for real turnover operations: fast to use on
 
 ### Descripción Completa
 
-`CleannerManager Cleaner ofrece a los cleaners invitados un espacio móvil único para gestionar limpiezas de alquiler vacacional de principio a fin.
+`Cleaner Manager ofrece a los cleaners invitados un espacio móvil único para gestionar limpiezas de alquiler vacacional de principio a fin.
 
 La app está pensada para equipos de limpieza que trabajan con estancias cortas y necesitan una operativa clara y rápida desde el móvil.
 
-Con CleannerManager Cleaner puedes:
+Con Cleaner Manager puedes:
 
 - Ver eventos de limpieza asignados y la agenda del día
 - Abrir checklists paso a paso para cada cambio de huésped
@@ -58,7 +58,7 @@ Con CleannerManager Cleaner puedes:
 
 La app Android es solo para cleaners. Los hosts gestionan el acceso por separado y cada cleaner entra con su propia cuenta invitada.
 
-CleannerManager Cleaner está diseñada para operativa real: rápida en móvil, clara en campo y enfocada en dejar cada alojamiento listo para el huésped.`
+Cleaner Manager está diseñada para operativa real: rápida en móvil, clara en campo y enfocada en dejar cada alojamiento listo para el huésped.`
 
 ## Notes
 

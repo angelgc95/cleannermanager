@@ -2,9 +2,9 @@
 
 This draft is a starting point for publication on your website before Play Store submission. Review it legally before using it as a public policy.
 
-## CleannerManager Cleaner Privacy Policy
+## Cleaner Manager Privacy Policy
 
-CleannerManager Cleaner is a mobile application used by invited cleaning staff to manage operational tasks related to property turnovers, checklists, shopping requests, maintenance reports, work hours, and payout visibility.
+Cleaner Manager is a mobile application used by invited cleaning staff to manage operational tasks related to property turnovers, checklists, shopping requests, maintenance reports, work hours, and payout visibility.
 
 ### Information We Collect
 

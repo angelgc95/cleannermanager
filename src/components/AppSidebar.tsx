@@ -166,7 +166,7 @@ export function AppSidebar() {
               <p className={cn("text-[10px] uppercase tracking-[0.18em]", useSharedAppShell ? "text-sidebar-foreground/65" : "text-muted-foreground")}>
                 {nativeCleanerApp ? t("Cleaner") : role ? t(role === "host" ? "Host" : "Cleaner") : ""}
               </p>
-              <p className={cn("truncate text-sm font-semibold", useSharedAppShell ? "text-sidebar-primary-foreground" : "text-foreground")}>CleannerManager</p>
+              <p className={cn("truncate text-sm font-semibold", useSharedAppShell ? "text-sidebar-primary-foreground" : "text-foreground")}>Cleaner Manager</p>
             </div>
             <NotificationBell />
           </div>
@@ -183,7 +183,7 @@ export function AppSidebar() {
                 <p className="text-xs uppercase tracking-[0.18em] text-sidebar-foreground/60">
                   {nativeCleanerApp ? t("Cleaner") : role ? t(role === "host" ? "Host" : "Cleaner") : t("User")}
                 </p>
-                <p className="mt-1 truncate text-base font-semibold text-sidebar-primary-foreground">CleannerManager</p>
+                <p className="mt-1 truncate text-base font-semibold text-sidebar-primary-foreground">Cleaner Manager</p>
                 <p className="mt-2 truncate text-sm text-sidebar-foreground">{displayName}</p>
               </div>
 
@@ -278,7 +278,7 @@ export function AppSidebar() {
         </button>
         {!collapsed && (
           <span className="font-semibold text-sm text-sidebar-primary-foreground truncate">
-            CleannerManager
+            Cleaner Manager
           </span>
         )}
       </div>
