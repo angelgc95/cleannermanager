@@ -12,6 +12,24 @@ import { useQuery } from "@tanstack/react-query";
 import type { CleaningEvent, PricingSuggestion } from "@/types/domain";
 import { useI18n } from "@/i18n/LanguageProvider";
 import { useEffectiveStatuses } from "@/hooks/useEffectiveStatus";
+import { ManualCleaningEventDialog } from "@/components/admin/ManualCleaningEventDialog";
+import type { Json } from "@/integrations/supabase/types";
+
+type EventDetails = {
+  nights?: number | null;
+  guests?: number | null;
+};
+
+type SuggestionReason = {
+  category: string;
+  title: string;
+  contribution: number | string;
+};
+
+function isSuggestionReason(value: Json): value is SuggestionReason {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return typeof value.category === "string" && typeof value.title === "string";
+}
 
 const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _ref) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -100,7 +118,12 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
     red: "bg-red-500/20 text-red-700 dark:text-red-400",
   };
 
-  const details = (ev: CleaningEvent) => ev.event_details_json as Record<string, any> || {};
+  const details = (ev: CleaningEvent): EventDetails => (ev.event_details_json as EventDetails | null) || {};
+
+  const reasonsForSuggestion = (suggestion: PricingSuggestion): SuggestionReason[] => {
+    if (!Array.isArray(suggestion.reasons)) return [];
+    return suggestion.reasons.filter(isSuggestionReason);
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -110,6 +133,7 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
           <span className="text-sm font-medium min-w-[140px] text-center">{formatDate(currentMonth, "MMMM yyyy")}</span>
           <Button variant="outline" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}><ChevronRight className="h-4 w-4" /></Button>
           <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date())}>{t("Today")}</Button>
+          {isHost && <ManualCleaningEventDialog />}
         </div>
       } />
       <div className="flex-1 p-4 overflow-auto">
@@ -169,46 +193,50 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
             <SheetTitle>{`${t("Price Suggestions -")} ${selectedDay ? formatDate(selectedDay, "PPP") : ""}`}</SheetTitle>
           </SheetHeader>
           <div className="mt-4 space-y-4">
-            {selectedSuggestions.map((s) => (
-              <div key={s.id} className="border border-border rounded-lg p-4 space-y-3">
-                {s.listings?.name && (
-                  <p className="text-xs font-medium text-muted-foreground">{s.listings.name}</p>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className={cn("inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold", colorClasses[s.color_level] || colorClasses.green)}>
-                    +{Math.round(s.uplift_pct)}%
-                  </span>
-                  <span className="text-sm text-muted-foreground">{`${t("Confidence:")} ${Math.round(s.confidence * 100)}%`}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">{t("Base Price")}</p>
-                    <p className="font-semibold">€{s.base_price}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">{t("Suggested Price")}</p>
-                    <p className="font-semibold text-primary">€{s.suggested_price}</p>
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs font-medium mb-1.5">{t("Why this price:")}</p>
-                  {s.reasons && Array.isArray(s.reasons) && (s.reasons as any[]).length > 0 ? (
-                    <ul className="space-y-1.5">
-                      {(s.reasons as any[]).map((r: any, i: number) => (
-                        <li key={i} className="text-xs flex items-center gap-1.5">
-                          <span className={cn("w-2 h-2 rounded-full shrink-0", r.category === "bank_holiday" ? "bg-red-400" : r.category === "weekend" ? "bg-blue-400" : r.category === "festival" ? "bg-purple-400" : r.category === "sports" ? "bg-green-400" : "bg-amber-400")} />
-                          <span className="font-medium capitalize">{r.category.replace(/_/g, " ")}</span>
-                          <span className="text-muted-foreground">— {r.title}</span>
-                          <span className="text-muted-foreground ml-auto">(+{r.contribution})</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-muted-foreground italic">{t("No specific events detected - based on minimum uplift setting.")}</p>
+            {selectedSuggestions.map((s) => {
+              const reasons = reasonsForSuggestion(s);
+
+              return (
+                <div key={s.id} className="border border-border rounded-lg p-4 space-y-3">
+                  {s.listings?.name && (
+                    <p className="text-xs font-medium text-muted-foreground">{s.listings.name}</p>
                   )}
+                  <div className="flex items-center justify-between">
+                    <span className={cn("inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold", colorClasses[s.color_level] || colorClasses.green)}>
+                      +{Math.round(s.uplift_pct)}%
+                    </span>
+                    <span className="text-sm text-muted-foreground">{`${t("Confidence:")} ${Math.round(s.confidence * 100)}%`}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">{t("Base Price")}</p>
+                      <p className="font-semibold">€{s.base_price}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t("Suggested Price")}</p>
+                      <p className="font-semibold text-primary">€{s.suggested_price}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1.5">{t("Why this price:")}</p>
+                    {reasons.length > 0 ? (
+                      <ul className="space-y-1.5">
+                        {reasons.map((r, i) => (
+                          <li key={i} className="text-xs flex items-center gap-1.5">
+                            <span className={cn("w-2 h-2 rounded-full shrink-0", r.category === "bank_holiday" ? "bg-red-400" : r.category === "weekend" ? "bg-blue-400" : r.category === "festival" ? "bg-purple-400" : r.category === "sports" ? "bg-green-400" : "bg-amber-400")} />
+                            <span className="font-medium capitalize">{r.category.replace(/_/g, " ")}</span>
+                            <span className="text-muted-foreground">— {r.title}</span>
+                            <span className="text-muted-foreground ml-auto">(+{r.contribution})</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">{t("No specific events detected - based on minimum uplift setting.")}</p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {selectedSuggestions.length === 0 && (
               <p className="text-sm text-muted-foreground">{t("No suggestions for this date.")}</p>
             )}
