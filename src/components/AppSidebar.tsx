@@ -277,9 +277,16 @@ export function AppSidebar() {
           <Menu className="h-5 w-5" />
         </button>
         {!collapsed && (
-          <span className="font-semibold text-sm text-sidebar-primary-foreground truncate">
-            Cleaner Manager
-          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-sidebar-primary-foreground">
+              Cleaner Manager
+            </p>
+            {role && (
+              <p className="truncate text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/60">
+                {t(role === "host" ? "Host" : "Cleaner")} workspace
+              </p>
+            )}
+          </div>
         )}
       </div>
 

@@ -111,6 +111,16 @@ npm run android:open
 - Public production domain: `https://www.cleannermanager.com`
 - Android release packaging is prepared, while package identifiers remain aligned with the existing domain and app registration
 
+## Production Scheduling
+
+Production automation is triggered through GitHub Actions and Supabase Edge Functions:
+
+- iCal sync
+- notification dispatch
+- scheduled payouts
+
+Deployment wiring for those jobs, including the required `SUPABASE_CRON_SECRET` and Supabase `CRON_SECRET`, is documented in [docs/deployment/scheduled-operations.md](docs/deployment/scheduled-operations.md).
+
 ## Why It Matters
 
 This project shows applied STR operations work: not just a dashboard, but a workflow system designed to reduce coordination overhead around turnovers, staff execution, and payout visibility.

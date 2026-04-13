@@ -37,6 +37,7 @@ Deno.serve(async (req) => {
     if (hostError) throw hostError;
 
     const processed: any[] = [];
+    const failed: any[] = [];
 
     for (const host of hosts || []) {
       if (host.payout_frequency !== "WEEKLY") continue;
@@ -55,23 +56,31 @@ Deno.serve(async (req) => {
       if (localMinutes < scheduledMinutes || localMinutes >= scheduledMinutes + 5) continue;
 
       const { startStr, endStr } = buildWeeklyRange(local.date);
-      const result = await generatePayoutsForHost({
-        supabase,
-        hostUserId: host.host_user_id,
-        startStr,
-        endStr,
-      });
 
-      processed.push({
-        host_user_id: host.host_user_id,
-        period_id: result.periodId,
-        payouts_created: result.payoutsCreated,
-        start_date: startStr,
-        end_date: endStr,
-      });
+      try {
+        const result = await generatePayoutsForHost({
+          supabase,
+          hostUserId: host.host_user_id,
+          startStr,
+          endStr,
+        });
+
+        processed.push({
+          host_user_id: host.host_user_id,
+          period_id: result.periodId,
+          payouts_created: result.payoutsCreated,
+          start_date: startStr,
+          end_date: endStr,
+        });
+      } catch (error) {
+        failed.push({
+          host_user_id: host.host_user_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
-    return new Response(JSON.stringify({ processed }), {
+    return new Response(JSON.stringify({ processed, failed }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {

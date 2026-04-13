@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version, x-cron-secret",
 };
 
 Deno.serve(async (req) => {
@@ -14,25 +14,31 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const cronSecret = Deno.env.get("CRON_SECRET");
+    const providedCronSecret = req.headers.get("x-cron-secret");
 
     // Authenticate: accept either a valid JWT (host role) or the service role key as Bearer token
-    const authHeader = req.headers.get("Authorization") || req.headers.get("authorization");
     let authorized = false;
 
-    if (authHeader?.startsWith("Bearer ")) {
-      const token = authHeader.replace("Bearer ", "");
-      if (token === serviceKey) {
-        authorized = true;
-      } else {
-        const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-        const userClient = createClient(supabaseUrl, anonKey, {
-          global: { headers: { Authorization: authHeader } },
-        });
-        const { data: { user }, error: userError } = await userClient.auth.getUser();
-        if (!userError && user) {
-          const svc = createClient(supabaseUrl, serviceKey);
-          const { data: isHost } = await svc.rpc("has_role", { _user_id: user.id, _role: "host" });
-          if (isHost) authorized = true;
+    if (cronSecret && providedCronSecret === cronSecret) {
+      authorized = true;
+    } else {
+      const authHeader = req.headers.get("Authorization") || req.headers.get("authorization");
+      if (authHeader?.startsWith("Bearer ")) {
+        const token = authHeader.replace("Bearer ", "");
+        if (token === serviceKey) {
+          authorized = true;
+        } else {
+          const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+          const userClient = createClient(supabaseUrl, anonKey, {
+            global: { headers: { Authorization: authHeader } },
+          });
+          const { data: { user }, error: userError } = await userClient.auth.getUser();
+          if (!userError && user) {
+            const svc = createClient(supabaseUrl, serviceKey);
+            const { data: isHost } = await svc.rpc("has_role", { _user_id: user.id, _role: "host" });
+            if (isHost) authorized = true;
+          }
         }
       }
     }
@@ -59,7 +65,7 @@ Deno.serve(async (req) => {
 
     // Fetch event data for all claimed jobs
     const eventIds = [...new Set(claimedJobs.map((j: any) => j.cleaning_event_id).filter(Boolean))];
-    let eventsMap: Record<string, any> = {};
+    const eventsMap: Record<string, any> = {};
 
     if (eventIds.length > 0) {
       const { data: events } = await supabase
