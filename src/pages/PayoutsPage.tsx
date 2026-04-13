@@ -1,4 +1,4 @@
-import { useEffect, useState, forwardRef } from "react";
+import { useEffect, useMemo, useState, forwardRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -125,8 +125,9 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
   };
 
   const handleDeletePayout = async (payoutId: string) => {
-    // Unlink log_hours first
+    // Unlink payout-linked work before deleting the payout row.
     await supabase.from("log_hours").update({ payout_id: null }).eq("payout_id", payoutId);
+    await supabase.from("checklist_runs").update({ payout_id: null }).eq("payout_id", payoutId);
     const { error } = await supabase.from("payouts").delete().eq("id", payoutId);
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
     else { toast({ title: "Payout deleted" }); fetchData(); }
@@ -137,6 +138,7 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
     const payoutIds = (periodPayouts || []).map((p: any) => p.id);
     if (payoutIds.length > 0) {
       await supabase.from("log_hours").update({ payout_id: null } as any).in("payout_id", payoutIds);
+      await supabase.from("checklist_runs").update({ payout_id: null } as any).in("payout_id", payoutIds);
       await supabase.from("payouts").delete().eq("period_id", periodId);
     }
     const { error } = await supabase.from("payout_periods").delete().eq("id", periodId);
@@ -146,6 +148,7 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
 
   const periodTotal = (payouts: any[]) => payouts.reduce((sum, p) => sum + Number(p.total_amount || 0), 0);
   const periodMinutes = (payouts: any[]) => payouts.reduce((sum, p) => sum + (p.total_minutes || 0), 0);
+  const periodEvents = (payouts: any[]) => payouts.reduce((sum, p) => sum + Number(p.event_count || 0), 0);
   const allPaid = (payouts: any[]) => payouts.length > 0 && payouts.every((p) => p.status === "PAID");
   const hasPartial = (payouts: any[]) => payouts.some((p) => p.status === "PARTIALLY_PAID");
   const getPaidAmount = (payout: any) => {
@@ -159,6 +162,19 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
     if (hasPartial(payouts)) return "PARTIALLY_PAID";
     return null;
   };
+  const payoutSummary = useMemo(() => {
+    const payouts = periodGroups.flatMap((group) => group.payouts);
+    const totalAmount = payouts.reduce((sum, payout) => sum + Number(payout.total_amount || 0), 0);
+    const paidAmount = payouts.reduce((sum, payout) => sum + getPaidAmount(payout), 0);
+    const outstandingAmount = Math.max(totalAmount - paidAmount, 0);
+
+    return {
+      periods: periodGroups.length,
+      openPeriods: periodGroups.filter((group) => group.period.status !== "CLOSED").length,
+      totalAmount,
+      outstandingAmount,
+    };
+  }, [periodGroups]);
   const openPartialPaymentDialog = (payout: any) => {
     setSelectedPayout(payout);
     setPartialAmount(String(Number(payout.partial_paid_amount || 0) || ""));
@@ -194,11 +210,16 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
   return (
     <div>
       <PageHeader title={t("Payouts")} description={isHost ? t("Generate and manage payout periods") : t("Your payout history")} />
-      <div className="p-6 space-y-4 max-w-3xl">
+      <div className="max-w-5xl space-y-4 p-6">
         {isHost && (
-          <Card>
-            <CardContent className="p-4 space-y-3">
-              <p className="text-sm font-medium">Generate Payouts for Period</p>
+          <Card className="border-border/70 bg-card/90 shadow-sm">
+            <CardContent className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">{t("Generate payouts for a period")}</p>
+                <p className="max-w-2xl text-sm text-muted-foreground">
+                  {t("Use this when a payout window is ready to lock. Generated payouts respect the current host earning model, including per-event pay plus extra logged hours when enabled.")}
+                </p>
+              </div>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">Start Date</label>
@@ -229,13 +250,40 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
                   </Popover>
                 </div>
                 <Button size="sm" onClick={handleGeneratePayouts} disabled={generating || !startDate || !endDate}>
-                  <RefreshCw className={`h-4 w-4 mr-1 ${generating ? "animate-spin" : ""}`} />
+                  <RefreshCw className={`mr-1 h-4 w-4 ${generating ? "animate-spin" : ""}`} />
                   {generating ? t("Generating...") : t("Generate Payouts")}
                 </Button>
               </div>
             </CardContent>
           </Card>
         )}
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Card className="border-border/70 bg-card/90 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Periods")}</p>
+              <p className="mt-1 text-2xl font-semibold text-foreground">{payoutSummary.periods}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-border/70 bg-card/90 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Open periods")}</p>
+              <p className="mt-1 text-2xl font-semibold text-foreground">{payoutSummary.openPeriods}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-border/70 bg-card/90 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Total generated")}</p>
+              <p className="mt-1 text-2xl font-semibold text-foreground">€{payoutSummary.totalAmount.toFixed(2)}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-border/70 bg-card/90 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Still pending")}</p>
+              <p className="mt-1 text-2xl font-semibold text-foreground">€{payoutSummary.outstandingAmount.toFixed(2)}</p>
+            </CardContent>
+          </Card>
+        </div>
 
         {loading && <p className="text-center text-muted-foreground py-8">{t("Loading...")}</p>}
         {!loading && periodGroups.length === 0 && (
@@ -247,6 +295,7 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
           const isExpanded = expandedPeriods.has(period.id);
           const total = periodTotal(payouts);
           const mins = periodMinutes(payouts);
+          const eventsCount = periodEvents(payouts);
           const isPaid = allPaid(payouts);
           const periodPaymentStatus = getPeriodPaymentStatus(payouts);
           return (
@@ -255,7 +304,14 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-3">
                     {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                    <div><p className="font-semibold text-sm">{formatDate(period.start_date, "MMM d")} – {formatDate(period.end_date, "MMM d, yyyy")}</p><p className="text-xs text-muted-foreground">{payouts.length} cleaner{payouts.length !== 1 ? "s" : ""} · {Math.floor(mins / 60)}h {mins % 60}m</p></div>
+                    <div>
+                      <p className="font-semibold text-sm">{formatDate(period.start_date, "MMM d")} – {formatDate(period.end_date, "MMM d, yyyy")}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {payouts.length} cleaner{payouts.length !== 1 ? "s" : ""}
+                        {eventsCount > 0 ? ` · ${eventsCount} completed event${eventsCount !== 1 ? "s" : ""}` : ""}
+                        {mins > 0 ? ` · ${Math.floor(mins / 60)}h ${mins % 60}m extra time` : ""}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3"><div className="text-right"><p className="font-bold text-sm">€{total.toFixed(2)}</p><StatusBadge status={periodPaymentStatus || period.status} /></div></div>
                 </CardContent>
@@ -265,7 +321,21 @@ const PayoutsPage = forwardRef<HTMLDivElement>(function PayoutsPage(_props, _ref
                   {payouts.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">{t("No payouts in this period.")}</p>}
                   {payouts.map((p: any) => (
                     <div key={p.id} className="flex items-center justify-between px-6 py-3 border-b border-border last:border-b-0">
-                      <div><p className="text-sm font-medium">{p.cleaner_name}</p><p className="text-xs text-muted-foreground">{p.total_minutes} min @ €{Number(p.hourly_rate_used).toFixed(2)}/hr</p></div>
+                      <div>
+                        <p className="text-sm font-medium">{p.cleaner_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {p.payout_model === "PER_EVENT_PLUS_HOURLY"
+                            ? [
+                                `${Number(p.event_count || 0)} event${Number(p.event_count || 0) === 1 ? "" : "s"} @ €${Number(p.event_rate_used || 0).toFixed(2)}`,
+                                Number(p.total_minutes || 0) > 0
+                                  ? `+ ${p.total_minutes} extra min @ €${Number(p.hourly_rate_used).toFixed(2)}/hr`
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" ")
+                            : `${p.total_minutes} min @ €${Number(p.hourly_rate_used).toFixed(2)}/hr`}
+                        </p>
+                      </div>
                       <div className="flex items-center gap-3">
                         <div className="text-right">
                           <p className="font-semibold text-sm">€{Number(p.total_amount).toFixed(2)}</p>

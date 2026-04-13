@@ -1,0 +1,22 @@
+name: Dispatch Notifications
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch due notifications
+        env:
+          SUPABASE_URL: https://qevpbbaxelsckmlcnvrb.supabase.co
+          SUPABASE_CRON_SECRET: ${{ secrets.SUPABASE_CRON_SECRET }}
+        run: |
+          curl --fail --silent --show-error \
+            -X POST \
+            "${SUPABASE_URL}/functions/v1/dispatch-notifications" \
+            -H "Content-Type: application/json" \
+            -H "x-cron-secret: ${SUPABASE_CRON_SECRET}" \
+            -d '{}'

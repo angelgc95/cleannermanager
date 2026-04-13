@@ -125,10 +125,26 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
     return suggestion.reasons.filter(isSuggestionReason);
   };
 
+  const calendarSummary = useMemo(() => {
+    const completed = events.filter((event) => {
+      const status = effectiveStatuses[event.id] || event.status;
+      return status === "COMPLETED" || event.status === "DONE";
+    }).length;
+    const inProgress = events.filter((event) => (effectiveStatuses[event.id] || event.status) === "IN_PROGRESS").length;
+    const suggestionDays = Object.keys(suggestionsByDate).length;
+
+    return {
+      total: events.length,
+      completed,
+      inProgress,
+      suggestionDays,
+    };
+  }, [effectiveStatuses, events, suggestionsByDate]);
+
   return (
     <div className="flex flex-col h-full">
       <PageHeader title={t("Calendar")} description={t("Cleaning schedule overview")} actions={
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}><ChevronLeft className="h-4 w-4" /></Button>
           <span className="text-sm font-medium min-w-[140px] text-center">{formatDate(currentMonth, "MMMM yyyy")}</span>
           <Button variant="outline" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}><ChevronRight className="h-4 w-4" /></Button>
@@ -136,53 +152,90 @@ const CalendarPage = forwardRef<HTMLDivElement>(function CalendarPage(_props, _r
           {isHost && <ManualCleaningEventDialog />}
         </div>
       } />
-      <div className="flex-1 p-4 overflow-auto">
-        <div className="grid grid-cols-7 border border-border rounded-lg overflow-hidden bg-card">
-          {weekDays.map((d) => (
-            <div key={d} className="p-2 text-xs font-medium text-muted-foreground text-center border-b border-border bg-muted/30">{d}</div>
-          ))}
-          {days.map((day) => {
-            const key = format(day, "yyyy-MM-dd");
-            const dayEvents = eventsByDate[key] || [];
-            const daySuggestions = isHost ? (suggestionsByDate[key] || []) : [];
-            const topSuggestion = daySuggestions.length > 0
-              ? daySuggestions.reduce((a, b) => (b.uplift_pct > a.uplift_pct ? b : a))
-              : null;
+      <div className="flex-1 overflow-auto p-4">
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Scheduled in view")}</p>
+              <p className="mt-1 text-2xl font-semibold text-foreground">{calendarSummary.total}</p>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Completed")}</p>
+              <p className="mt-1 text-2xl font-semibold text-foreground">{calendarSummary.completed}</p>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("In progress")}</p>
+              <p className="mt-1 text-2xl font-semibold text-foreground">{calendarSummary.inProgress}</p>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Price-lift days")}</p>
+              <p className="mt-1 text-2xl font-semibold text-foreground">{calendarSummary.suggestionDays}</p>
+            </div>
+          </div>
 
-            return (
-              <div
-                key={key}
-                className={cn(
-                  "min-h-[100px] p-1.5 border-b border-r border-border last:border-r-0 transition-colors cursor-pointer hover:bg-muted/10",
-                  !isSameMonth(day, currentMonth) && "bg-muted/20",
-                  isToday(day) && "bg-primary/5"
-                )}
-                onClick={() => isHost && daySuggestions.length > 0 && setSelectedDay(key)}
-              >
-                <div className="flex items-center justify-between">
-                  <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-full text-xs", isToday(day) && "bg-primary text-primary-foreground font-bold", !isSameMonth(day, currentMonth) && "text-muted-foreground")}>{format(day, "d")}</span>
-                  {topSuggestion && topSuggestion.uplift_pct > 0 && (
-                    <span className={cn("inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold", colorClasses[topSuggestion.color_level] || colorClasses.green)}>
-                      +{Math.round(topSuggestion.uplift_pct)}%
-                    </span>
-                  )}
-                </div>
-                <div className="mt-1 space-y-1">
-                  {dayEvents.slice(0, 3).map((ev) => {
-                    const isCancelled = ev.status === "CANCELLED";
-                    const displayStatus = effectiveStatuses[ev.id] || ev.status;
-                    const isCompleted = displayStatus === "COMPLETED" || ev.status === "DONE";
-                    return (
-                      <button key={ev.id} onClick={(e) => { e.stopPropagation(); navigate(`/events/${ev.id}`); }} className={cn("w-full text-left px-1.5 py-0.5 rounded text-xs truncate transition-colors", isCancelled ? "bg-muted text-muted-foreground line-through opacity-60" : isCompleted ? "bg-muted text-muted-foreground opacity-75" : displayStatus === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
-                        {ev.listings?.name || t("Cleaning")}{details(ev).nights != null ? ` · ${details(ev).nights}N` : ""}{details(ev).guests != null ? ` · ${details(ev).guests}G` : ""}
-                      </button>
-                    );
-                  })}
-                  {dayEvents.length > 3 && <p className="text-xs text-muted-foreground px-1">+{dayEvents.length - 3} more</p>}
-                </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/70 bg-card/80 px-4 py-3 text-xs text-muted-foreground shadow-sm">
+            <span className="font-medium text-foreground">{t("Legend")}</span>
+            <span className="inline-flex items-center rounded-full bg-[hsl(var(--status-todo)/0.15)] px-2 py-1 text-[hsl(var(--status-todo))]">{t("Upcoming")}</span>
+            <span className="inline-flex items-center rounded-full bg-[hsl(var(--status-in-progress)/0.15)] px-2 py-1 text-[hsl(var(--status-in-progress))]">{t("In progress")}</span>
+            <span className="inline-flex items-center rounded-full bg-muted px-2 py-1 text-muted-foreground">{t("Completed")}</span>
+            {isHost && (
+              <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-1 text-emerald-700 dark:text-emerald-400">
+                {t("Price suggestion available")}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-7 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
+            {weekDays.map((d) => (
+              <div key={d} className="border-b border-border bg-muted/30 p-2 text-center text-xs font-medium text-muted-foreground">
+                {d}
               </div>
-            );
-          })}
+            ))}
+            {days.map((day) => {
+              const key = format(day, "yyyy-MM-dd");
+              const dayEvents = eventsByDate[key] || [];
+              const daySuggestions = isHost ? (suggestionsByDate[key] || []) : [];
+              const topSuggestion = daySuggestions.length > 0
+                ? daySuggestions.reduce((a, b) => (b.uplift_pct > a.uplift_pct ? b : a))
+                : null;
+
+              return (
+                <div
+                  key={key}
+                  className={cn(
+                    "min-h-[100px] cursor-pointer border-b border-r border-border p-1.5 transition-colors hover:bg-muted/10 last:border-r-0",
+                    !isSameMonth(day, currentMonth) && "bg-muted/20",
+                    isToday(day) && "bg-primary/5"
+                  )}
+                  onClick={() => isHost && daySuggestions.length > 0 && setSelectedDay(key)}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-full text-xs", isToday(day) && "bg-primary font-bold text-primary-foreground", !isSameMonth(day, currentMonth) && "text-muted-foreground")}>
+                      {format(day, "d")}
+                    </span>
+                    {topSuggestion && topSuggestion.uplift_pct > 0 && (
+                      <span className={cn("inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold", colorClasses[topSuggestion.color_level] || colorClasses.green)}>
+                        +{Math.round(topSuggestion.uplift_pct)}%
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    {dayEvents.slice(0, 3).map((ev) => {
+                      const isCancelled = ev.status === "CANCELLED";
+                      const displayStatus = effectiveStatuses[ev.id] || ev.status;
+                      const isCompleted = displayStatus === "COMPLETED" || ev.status === "DONE";
+                      return (
+                        <button key={ev.id} onClick={(e) => { e.stopPropagation(); navigate(`/events/${ev.id}`); }} className={cn("w-full truncate rounded px-1.5 py-0.5 text-left text-xs transition-colors", isCancelled ? "bg-muted text-muted-foreground line-through opacity-60" : isCompleted ? "bg-muted text-muted-foreground opacity-75" : displayStatus === "IN_PROGRESS" ? "bg-[hsl(var(--status-in-progress)/0.15)] text-[hsl(var(--status-in-progress))]" : "bg-[hsl(var(--status-todo)/0.15)] text-[hsl(var(--status-todo))]")}>
+                          {ev.listings?.name || t("Cleaning")}{details(ev).nights != null ? ` · ${details(ev).nights}N` : ""}{details(ev).guests != null ? ` · ${details(ev).guests}G` : ""}
+                        </button>
+                      );
+                    })}
+                    {dayEvents.length > 3 && <p className="px-1 text-xs text-muted-foreground">+{dayEvents.length - 3} more</p>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 

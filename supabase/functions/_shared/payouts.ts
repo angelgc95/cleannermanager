@@ -11,6 +11,12 @@ export interface GeneratePayoutsForHostResult {
   message: string;
 }
 
+export type PayoutModel = "HOURLY" | "PER_EVENT_PLUS_HOURLY";
+
+function normalizePayoutModel(value: string | null | undefined): PayoutModel {
+  return value === "PER_EVENT_PLUS_HOURLY" ? "PER_EVENT_PLUS_HOURLY" : "HOURLY";
+}
+
 export function getLocalTimeContext(date: Date, timeZone: string) {
   const formatter = new Intl.DateTimeFormat("en-GB", {
     timeZone,
@@ -55,9 +61,17 @@ export async function generatePayoutsForHost({
 }: GeneratePayoutsForHostArgs): Promise<GeneratePayoutsForHostResult> {
   const { data: settings } = await supabase
     .from("host_settings")
-    .select("default_hourly_rate")
+    .select("default_hourly_rate, payout_model, default_event_rate")
     .eq("host_user_id", hostUserId)
     .single();
+
+  const payoutModel = normalizePayoutModel(settings?.payout_model);
+  const hourlyRate = Number(settings?.default_hourly_rate || 15);
+  const eventRate = Number(settings?.default_event_rate || 0);
+
+  if (payoutModel === "PER_EVENT_PLUS_HOURLY" && eventRate <= 0) {
+    throw new Error("Set a per-event rate before generating payouts.");
+  }
 
   const { data: existingPeriod } = await supabase
     .from("payout_periods")
@@ -101,7 +115,6 @@ export async function generatePayoutsForHost({
   }
 
   let payoutsCreated = 0;
-  const hourlyRate = settings?.default_hourly_rate || 15;
 
   for (const cleanerId of cleanerIds) {
     const { data: existingPayout } = await supabase
@@ -115,7 +128,7 @@ export async function generatePayoutsForHost({
 
     const { data: logHours } = await supabase
       .from("log_hours")
-      .select("id, duration_minutes")
+      .select("id, duration_minutes, checklist_run_id")
       .eq("user_id", cleanerId)
       .eq("host_user_id", hostUserId)
       .is("payout_id", null)
@@ -124,30 +137,55 @@ export async function generatePayoutsForHost({
 
     const { data: runs } = await supabase
       .from("checklist_runs")
-      .select("id, duration_minutes, started_at, finished_at, cleaning_event_id, listing_id")
+      .select("id, duration_minutes")
       .eq("cleaner_user_id", cleanerId)
       .eq("host_user_id", hostUserId)
+      .is("payout_id", null)
       .not("finished_at", "is", null)
-      .not("duration_minutes", "is", null)
       .gte("finished_at", `${startStr}T00:00:00`)
       .lte("finished_at", `${endStr}T23:59:59`);
 
-    const { data: existingLogRuns } = await supabase
-      .from("log_hours")
-      .select("checklist_run_id")
-      .eq("user_id", cleanerId)
-      .not("checklist_run_id", "is", null);
+    const checklistRunIds = new Set((runs || []).map((run: any) => run.id));
+    const manualHourEntries: any[] = [];
+    const checklistHourEntries: any[] = [];
+    const orphanChecklistHourEntries: any[] = [];
 
-    const existingRunIds = new Set((existingLogRuns || []).map((entry: any) => entry.checklist_run_id));
-    const orphanRuns = (runs || []).filter((run: any) => !existingRunIds.has(run.id));
+    for (const entry of logHours || []) {
+      if (entry.checklist_run_id) {
+        if (checklistRunIds.has(entry.checklist_run_id)) {
+          checklistHourEntries.push(entry);
+        } else {
+          orphanChecklistHourEntries.push(entry);
+        }
+      } else {
+        manualHourEntries.push(entry);
+      }
+    }
 
-    const totalMinutesFromLogs = (logHours || []).reduce((sum: number, entry: any) => sum + (entry.duration_minutes || 0), 0);
-    const totalMinutesFromRuns = orphanRuns.reduce((sum: number, run: any) => sum + (run.duration_minutes || 0), 0);
-    const totalMinutes = totalMinutesFromLogs + totalMinutesFromRuns;
+    const eventCount = payoutModel === "PER_EVENT_PLUS_HOURLY" ? (runs || []).length : 0;
+    const checklistMinutes = (runs || []).reduce(
+      (sum: number, run: any) => sum + (run.duration_minutes || 0),
+      0
+    );
+    const manualMinutes = manualHourEntries.reduce(
+      (sum: number, entry: any) => sum + (entry.duration_minutes || 0),
+      0
+    );
+    const orphanChecklistMinutes = orphanChecklistHourEntries.reduce(
+      (sum: number, entry: any) => sum + (entry.duration_minutes || 0),
+      0
+    );
+    const hourlyMinutes =
+      payoutModel === "HOURLY"
+        ? manualMinutes + checklistMinutes + orphanChecklistMinutes
+        : manualMinutes + orphanChecklistMinutes;
 
-    if (totalMinutes === 0 && (logHours || []).length === 0 && orphanRuns.length === 0) continue;
+    if (eventCount === 0 && hourlyMinutes === 0) continue;
 
-    const totalAmount = (totalMinutes / 60) * hourlyRate;
+    const totalAmount =
+      payoutModel === "HOURLY"
+        ? (hourlyMinutes / 60) * hourlyRate
+        : eventCount * eventRate + (hourlyMinutes / 60) * hourlyRate;
 
     const { data: payout, error: payoutError } = await supabase
       .from("payouts")
@@ -156,7 +194,10 @@ export async function generatePayoutsForHost({
         cleaner_user_id: cleanerId,
         host_user_id: hostUserId,
         hourly_rate_used: hourlyRate,
-        total_minutes: totalMinutes,
+        payout_model: payoutModel,
+        event_count: eventCount,
+        event_rate_used: payoutModel === "PER_EVENT_PLUS_HOURLY" ? eventRate : null,
+        total_minutes: hourlyMinutes,
         total_amount: totalAmount,
         status: "PENDING",
       })
@@ -168,25 +209,24 @@ export async function generatePayoutsForHost({
       continue;
     }
 
-    if ((logHours || []).length > 0) {
-      await supabase.from("log_hours").update({ payout_id: payout.id }).in("id", logHours.map((entry: any) => entry.id));
+    const logHourIds = [
+      ...manualHourEntries.map((entry: any) => entry.id),
+      ...checklistHourEntries.map((entry: any) => entry.id),
+      ...orphanChecklistHourEntries.map((entry: any) => entry.id),
+    ];
+
+    if (logHourIds.length > 0) {
+      await supabase
+        .from("log_hours")
+        .update({ payout_id: payout.id })
+        .in("id", logHourIds);
     }
 
-    if (orphanRuns.length > 0) {
-      const orphanRows = orphanRuns.map((run: any) => ({
-        user_id: cleanerId,
-        host_user_id: hostUserId,
-        date: run.finished_at.split("T")[0],
-        start_at: run.started_at ? new Date(run.started_at).toTimeString().slice(0, 5) : "09:00",
-        end_at: run.finished_at ? new Date(run.finished_at).toTimeString().slice(0, 5) : "17:00",
-        duration_minutes: run.duration_minutes,
-        source: "CHECKLIST",
-        checklist_run_id: run.id,
-        cleaning_event_id: run.cleaning_event_id,
-        listing_id: run.listing_id || null,
-        payout_id: payout.id,
-      }));
-      await supabase.from("log_hours").insert(orphanRows);
+    if ((runs || []).length > 0) {
+      await supabase
+        .from("checklist_runs")
+        .update({ payout_id: payout.id })
+        .in("id", (runs || []).map((run: any) => run.id));
     }
 
     payoutsCreated++;

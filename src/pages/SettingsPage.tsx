@@ -23,11 +23,32 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 function HostPayoutSettings({ settings, onUpdate }: { settings: any; onUpdate: () => void }) {
   const { toast } = useToast();
   const [hourlyRate, setHourlyRate] = useState<string>(String(settings.default_hourly_rate ?? 15));
+  const [payoutModel, setPayoutModel] = useState<string>(settings.payout_model ?? "HOURLY");
+  const [eventRate, setEventRate] = useState<string>(String(settings.default_event_rate ?? 0));
+
+  useEffect(() => {
+    setHourlyRate(String(settings.default_hourly_rate ?? 15));
+    setPayoutModel(settings.payout_model ?? "HOURLY");
+    setEventRate(String(settings.default_event_rate ?? 0));
+  }, [settings]);
 
   const handleSave = async () => {
+    if (payoutModel === "PER_EVENT_PLUS_HOURLY" && Number(eventRate) <= 0) {
+      toast({
+        title: "Set the event amount",
+        description: "Per-event pay needs a flat amount for each completed room.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const { error } = await supabase
       .from("host_settings")
-      .update({ default_hourly_rate: parseFloat(hourlyRate) })
+      .update({
+        default_hourly_rate: parseFloat(hourlyRate),
+        payout_model: payoutModel,
+        default_event_rate: parseFloat(eventRate || "0"),
+      })
       .eq("id", settings.id);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -39,12 +60,54 @@ function HostPayoutSettings({ settings, onUpdate }: { settings: any; onUpdate: (
 
   return (
     <Card>
-      <CardHeader><CardTitle className="text-base flex items-center gap-2"><DollarSign className="h-4 w-4" /> Host Payout Settings</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <DollarSign className="h-4 w-4" /> Cleaner Pay Settings
+        </CardTitle>
+      </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-1">
-          <Label>Hourly Rate (€)</Label>
-          <Input type="number" step="0.50" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} className="max-w-[200px]" />
+          <Label>Earning model</Label>
+          <Select value={payoutModel} onValueChange={setPayoutModel}>
+            <SelectTrigger className="max-w-[320px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="HOURLY">Pay by hours only</SelectItem>
+              <SelectItem value="PER_EVENT_PLUS_HOURLY">Pay per cleaned event + extra hours</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Hourly keeps the current model. Per-event pays one flat amount for each finished checklist and keeps manual extra hours payable separately.
+          </p>
         </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label>{payoutModel === "HOURLY" ? "Hourly Rate (€)" : "Extra Hours Rate (€)"}</Label>
+            <Input
+              type="number"
+              step="0.50"
+              min="0"
+              value={hourlyRate}
+              onChange={(e) => setHourlyRate(e.target.value)}
+            />
+          </div>
+
+          {payoutModel === "PER_EVENT_PLUS_HOURLY" && (
+            <div className="space-y-1">
+              <Label>Per Cleaned Event (€)</Label>
+              <Input
+                type="number"
+                step="0.50"
+                min="0"
+                value={eventRate}
+                onChange={(e) => setEventRate(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+
         <Button size="sm" onClick={handleSave}>Save</Button>
       </CardContent>
     </Card>
@@ -305,7 +368,12 @@ const SettingsPage = forwardRef<HTMLDivElement>(function SettingsPage(_props, _r
     try {
       const { data, error } = await supabase.functions.invoke("sync-ics", { body: { listing_id: id } });
       if (error) throw error;
-      toast({ title: "Sync complete", description: `${data.bookings_synced} bookings synced, ${data.events_created} new cleaning events created.` });
+      const syncSummary = [
+        `${data.bookings_synced ?? 0} bookings synced`,
+        `${data.events_created ?? 0} new cleaning events created`,
+        `${data.events_removed ?? 0} auto events removed`,
+      ].join(", ");
+      toast({ title: "Sync complete", description: syncSummary });
       fetchListings();
     } catch (err: any) {
       toast({ title: "Sync failed", description: err.message || "Unknown error", variant: "destructive" });

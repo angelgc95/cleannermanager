@@ -24,6 +24,7 @@ export type Database = {
           guests_count: number | null
           host_user_id: string
           id: string
+          last_seen_at: string | null
           listing_id: string
           nights: number | null
           raw_ics_payload: string | null
@@ -40,6 +41,7 @@ export type Database = {
           guests_count?: number | null
           host_user_id: string
           id?: string
+          last_seen_at?: string | null
           listing_id: string
           nights?: number | null
           raw_ics_payload?: string | null
@@ -56,6 +58,7 @@ export type Database = {
           guests_count?: number | null
           host_user_id?: string
           id?: string
+          last_seen_at?: string | null
           listing_id?: string
           nights?: number | null
           raw_ics_payload?: string | null
@@ -751,6 +754,7 @@ export type Database = {
         Row: {
           cleaning_event_start_mode: string
           created_at: string
+          default_event_rate: number
           default_hourly_rate: number
           expense_grouping: string
           host_user_id: string
@@ -760,6 +764,7 @@ export type Database = {
           min_uplift_pct: number
           nightly_price_suggestions_enabled: boolean
           payout_frequency: string
+          payout_model: string
           payout_run_time: string
           payout_run_timezone: string
           payout_shortcut_enabled: boolean
@@ -772,6 +777,7 @@ export type Database = {
         Insert: {
           cleaning_event_start_mode?: string
           created_at?: string
+          default_event_rate?: number
           default_hourly_rate?: number
           expense_grouping?: string
           host_user_id: string
@@ -781,6 +787,7 @@ export type Database = {
           min_uplift_pct?: number
           nightly_price_suggestions_enabled?: boolean
           payout_frequency?: string
+          payout_model?: string
           payout_run_time?: string
           payout_run_timezone?: string
           payout_shortcut_enabled?: boolean
@@ -793,6 +800,7 @@ export type Database = {
         Update: {
           cleaning_event_start_mode?: string
           created_at?: string
+          default_event_rate?: number
           default_hourly_rate?: number
           expense_grouping?: string
           host_user_id?: string
@@ -802,6 +810,7 @@ export type Database = {
           min_uplift_pct?: number
           nightly_price_suggestions_enabled?: boolean
           payout_frequency?: string
+          payout_model?: string
           payout_run_time?: string
           payout_run_timezone?: string
           payout_shortcut_enabled?: boolean
@@ -1249,6 +1258,8 @@ export type Database = {
         Row: {
           cleaner_user_id: string
           created_at: string
+          event_count: number
+          event_rate_used: number | null
           host_user_id: string
           hourly_rate_used: number
           id: string
@@ -1256,6 +1267,7 @@ export type Database = {
           partial_paid_amount: number | null
           payment_reference: string | null
           period_id: string
+          payout_model: string
           status: Database["public"]["Enums"]["payout_status"] | null
           total_amount: number
           total_minutes: number | null
@@ -1263,6 +1275,8 @@ export type Database = {
         Insert: {
           cleaner_user_id: string
           created_at?: string
+          event_count?: number
+          event_rate_used?: number | null
           host_user_id: string
           hourly_rate_used: number
           id?: string
@@ -1270,6 +1284,7 @@ export type Database = {
           partial_paid_amount?: number | null
           payment_reference?: string | null
           period_id: string
+          payout_model?: string
           status?: Database["public"]["Enums"]["payout_status"] | null
           total_amount?: number
           total_minutes?: number | null
@@ -1277,6 +1292,8 @@ export type Database = {
         Update: {
           cleaner_user_id?: string
           created_at?: string
+          event_count?: number
+          event_rate_used?: number | null
           host_user_id?: string
           hourly_rate_used?: number
           id?: string
@@ -1284,6 +1301,7 @@ export type Database = {
           partial_paid_amount?: number | null
           payment_reference?: string | null
           period_id?: string
+          payout_model?: string
           status?: Database["public"]["Enums"]["payout_status"] | null
           total_amount?: number
           total_minutes?: number | null

@@ -190,6 +190,8 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
   const summaryList = Object.entries(summaryByUser).map(([uid, data]) => ({ userId: uid, ...(data as any) }));
   const pendingEntries = entries.filter((entry: any) => entry._processing_status !== "PROCESSED");
   const processedEntries = entries.filter((entry: any) => entry._processing_status === "PROCESSED");
+  const pendingMinutes = pendingEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration_minutes || 0), 0);
+  const processedMinutes = processedEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration_minutes || 0), 0);
 
   const processedGroups = useMemo(() => {
     const groups = processedEntries.reduce((acc: Record<string, any>, entry: any) => {
@@ -305,7 +307,34 @@ const LogHoursPage = forwardRef<HTMLDivElement>(function LogHoursPage(_props, _r
           {showForm ? <><X className="h-4 w-4 mr-1" /> {t("Cancel")}</> : <><Plus className="h-4 w-4 mr-1" /> {t("Log Hours")}</>}
         </Button>
       } />
-      <div className="p-6 space-y-6 max-w-3xl">
+      <div className="max-w-4xl space-y-6 p-6">
+        <Card className="border-border/70 bg-card/90 shadow-sm">
+          <CardContent className="grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">{t("Extra time only")}</p>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                {isHost
+                  ? t("Checklist completions are already tracked from cleaning events. Use this page for extra/manual support hours that should stay outside the main event payout.")
+                  : t("Use this page for extra work outside the scheduled cleaning itself, such as supply runs, key handling, or follow-up support.")}
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Pending entries")}</p>
+                <p className="mt-1 text-2xl font-semibold text-foreground">{pendingEntries.length}</p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Pending time")}</p>
+                <p className="mt-1 text-2xl font-semibold text-foreground">{Math.floor(pendingMinutes / 60)}h {pendingMinutes % 60}m</p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Processed time")}</p>
+                <p className="mt-1 text-2xl font-semibold text-foreground">{Math.floor(processedMinutes / 60)}h {processedMinutes % 60}m</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {showForm && (
           <Card><CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="space-y-4">

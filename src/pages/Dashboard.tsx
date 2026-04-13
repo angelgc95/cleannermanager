@@ -13,7 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { CalendarDays, Clock, Wrench, ShoppingCart, Plus, Check, X, Loader2, ListTodo, StickyNote, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { format } from "date-fns";
+import { endOfWeek, format, startOfWeek } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,7 @@ interface StatCardProps {
   value: string | number;
   icon: React.ElementType;
   color?: string;
+  helper?: string;
 }
 
 interface CompletedShoppingItem {
@@ -48,16 +49,17 @@ interface CompletedEventSummary {
   checklistNotes: string | null;
 }
 
-function StatCard({ title, value, icon: Icon, color }: StatCardProps) {
+function StatCard({ title, value, icon: Icon, color, helper }: StatCardProps) {
   return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div className={`h-11 w-11 rounded-lg flex items-center justify-center shrink-0 ${color || 'bg-primary/10'}`}>
-          <Icon className={`h-5 w-5 ${color ? 'text-card-foreground' : 'text-primary'}`} />
+    <Card className="border-border/70 bg-card/90 shadow-sm">
+      <CardContent className="flex items-start gap-4 p-5">
+        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${color || "bg-primary/10"}`}>
+          <Icon className={`h-5 w-5 ${color ? "text-card-foreground" : "text-primary"}`} />
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-sm text-muted-foreground">{title}</p>
-          <p className="text-2xl font-bold text-foreground">{value}</p>
+          <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
+          {helper && <p className="mt-1 text-xs text-muted-foreground">{helper}</p>}
         </div>
       </CardContent>
     </Card>
@@ -66,7 +68,7 @@ function StatCard({ title, value, icon: Icon, color }: StatCardProps) {
 
 const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
   const navigate = useNavigate();
-  const { user, hostId, role } = useAuth();
+  const { user, role } = useAuth();
   const { toast } = useToast();
   const { formatDate, t } = useI18n();
   const queryClient = useQueryClient();
@@ -82,6 +84,13 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
   const [taskCleanerId, setTaskCleanerId] = useState("");
 
   const today = format(new Date(), "yyyy-MM-dd");
+  const weekWindow = useMemo(() => {
+    const currentDate = new Date();
+    return {
+      start: format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      end: format(endOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+    };
+  }, [today]);
 
   const { data: todayEvents = [] } = useQuery({
     queryKey: ["dashboard-events", today],
@@ -112,6 +121,26 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
     queryFn: async () => {
       const { data } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
       return (data as TaskItem[]) || [];
+    },
+  });
+
+  const { data: weeklyHoursMinutes = 0 } = useQuery({
+    queryKey: ["dashboard-weekly-hours", weekWindow.start, weekWindow.end, role, user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      let query = supabase
+        .from("log_hours")
+        .select("duration_minutes")
+        .gte("date", weekWindow.start)
+        .lte("date", weekWindow.end);
+
+      query = isHost ? query.eq("host_user_id", user!.id) : query.eq("user_id", user!.id);
+
+      const { data } = await query;
+      return ((data as { duration_minutes: number | null }[] | null) || []).reduce(
+        (sum, entry) => sum + Number(entry.duration_minutes || 0),
+        0
+      );
     },
   });
 
@@ -189,6 +218,7 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
   const { statuses: effectiveStatuses } = useEffectiveStatuses(eventIds);
 
   const details = (ev: CleaningEvent) => ev.event_details_json as Record<string, any> || {};
+  const formatMinutes = (minutes: number) => `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 
   const getCleanerName = (id: string) => cleaners.find((c) => c.id === id)?.name || "Cleaner";
 
@@ -300,15 +330,96 @@ const Dashboard = forwardRef<HTMLDivElement>(function Dashboard(_props, _ref) {
     },
   });
 
+  const dashboardSummary = useMemo(() => {
+    if (todayEvents.length === 0) {
+      return isHost
+        ? t("No turnovers are scheduled today. Use the calendar to review upcoming work and adjust assignments.")
+        : t("No cleanings are scheduled today. Check the calendar for upcoming turnovers or log extra time if needed.");
+    }
+
+    if (activeTodayEvents.length === 0) {
+      return isHost
+        ? t("Today's turnovers are complete. Review submissions, shopping follow-ups, and payout readiness.")
+        : t("Today's cleanings are finished. You can review completed work or log any extra support hours.");
+    }
+
+    return isHost
+      ? t("Track active turnovers, cleaner submissions, and unresolved operational issues from one place.")
+      : t("Stay on top of your assigned cleanings, pending tasks, and any extra work that still needs to be logged.");
+  }, [activeTodayEvents.length, isHost, t, todayEvents.length]);
+
   return (
     <div>
-      <PageHeader title={t("Dashboard")} description={t("Overview of today's activity")} />
+      <PageHeader
+        title={t("Dashboard")}
+        description={t("Overview of today's activity")}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => navigate("/calendar")}>
+              {t("Open Calendar")}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate(isHost ? "/payouts" : "/hours")}>
+              {isHost ? t("Review Payouts") : t("Log Extra Hours")}
+            </Button>
+          </div>
+        }
+      />
       <div className="p-6 space-y-6">
+        <Card className="overflow-hidden border-border/70 bg-card/85 shadow-sm">
+          <CardContent className="flex flex-col gap-5 p-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                {isHost ? t("Host operations") : t("Cleaner schedule")}
+              </p>
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+                  {formatDate(today, "PPPP")}
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{dashboardSummary}</p>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Active now")}</p>
+                <p className="mt-1 text-2xl font-semibold text-foreground">{activeTodayEvents.length}</p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Completed today")}</p>
+                <p className="mt-1 text-2xl font-semibold text-foreground">{completedTodayEvents.length}</p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("Pending tasks")}</p>
+                <p className="mt-1 text-2xl font-semibold text-foreground">{pendingTasks.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard title={t("Today's Cleanings")} value={todayEvents.length} icon={CalendarDays} />
-          <StatCard title={t("Hours This Week")} value={0} icon={Clock} />
-          <StatCard title={t("Open Maintenance")} value={stats.openMaintenance} icon={Wrench} />
-          <StatCard title={t("Missing Items")} value={stats.missingItems} icon={ShoppingCart} />
+          <StatCard
+            title={t("Today's Cleanings")}
+            value={todayEvents.length}
+            icon={CalendarDays}
+            helper={activeTodayEvents.length > 0 ? t("Still in motion today") : t("Nothing overdue in today's queue")}
+          />
+          <StatCard
+            title={t("Hours This Week")}
+            value={formatMinutes(weeklyHoursMinutes)}
+            icon={Clock}
+            helper={t("Logged hours in the current week")}
+          />
+          <StatCard
+            title={t("Open Maintenance")}
+            value={stats.openMaintenance}
+            icon={Wrench}
+            helper={t("Tickets waiting on action")}
+          />
+          <StatCard
+            title={t("Missing Items")}
+            value={stats.missingItems}
+            icon={ShoppingCart}
+            helper={t("Supply requests still unresolved")}
+          />
         </div>
 
         {/* Today's Cleaning Events */}
