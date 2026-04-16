@@ -512,6 +512,7 @@ export type Database = {
           locked: boolean | null
           next_booking_id: string | null
           notes: string | null
+          payout_id: string | null
           reference: string | null
           source: string | null
           start_at: string | null
@@ -532,6 +533,7 @@ export type Database = {
           locked?: boolean | null
           next_booking_id?: string | null
           notes?: string | null
+          payout_id?: string | null
           reference?: string | null
           source?: string | null
           start_at?: string | null
@@ -552,6 +554,7 @@ export type Database = {
           locked?: boolean | null
           next_booking_id?: string | null
           notes?: string | null
+          payout_id?: string | null
           reference?: string | null
           source?: string | null
           start_at?: string | null
@@ -1256,6 +1259,7 @@ export type Database = {
       }
       payouts: {
         Row: {
+          calculated_amount: number
           cleaner_user_id: string
           created_at: string
           event_count: number
@@ -1263,6 +1267,7 @@ export type Database = {
           host_user_id: string
           hourly_rate_used: number
           id: string
+          manual_adjustment_amount: number
           paid_at: string | null
           partial_paid_amount: number | null
           payment_reference: string | null
@@ -1273,6 +1278,7 @@ export type Database = {
           total_minutes: number | null
         }
         Insert: {
+          calculated_amount?: number
           cleaner_user_id: string
           created_at?: string
           event_count?: number
@@ -1280,6 +1286,7 @@ export type Database = {
           host_user_id: string
           hourly_rate_used: number
           id?: string
+          manual_adjustment_amount?: number
           paid_at?: string | null
           partial_paid_amount?: number | null
           payment_reference?: string | null
@@ -1290,6 +1297,7 @@ export type Database = {
           total_minutes?: number | null
         }
         Update: {
+          calculated_amount?: number
           cleaner_user_id?: string
           created_at?: string
           event_count?: number
@@ -1297,6 +1305,7 @@ export type Database = {
           host_user_id?: string
           hourly_rate_used?: number
           id?: string
+          manual_adjustment_amount?: number
           paid_at?: string | null
           partial_paid_amount?: number | null
           payment_reference?: string | null
