@@ -1,6 +1,6 @@
 import { useState, forwardRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,14 @@ import { isNativeCleanerApp } from "@/lib/appVariant";
 
 type AuthMode = "login" | "host-signup";
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return fallback;
+}
+
 const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
@@ -20,10 +28,12 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const { t } = useI18n();
   const cleanerOnlyApp = isNativeCleanerApp();
-  const currentMode: AuthMode = cleanerOnlyApp ? "login" : mode;
+  const cleanerInviteMode = cleanerOnlyApp || searchParams.get("cleaner") === "1" || searchParams.get("invite") === "cleaner";
+  const currentMode: AuthMode = cleanerInviteMode ? "login" : mode;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,10 +66,10 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
         setLoading(false);
         return;
       }
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: t("Error"),
-        description: err.message || t("Unable to validate host access right now."),
+        description: getErrorMessage(err, t("Unable to validate host access right now.")),
         variant: "destructive",
       });
       setLoading(false);
@@ -103,8 +113,8 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
         description: t("Your host account is ready."),
       });
       navigate("/");
-    } catch (err: any) {
-      toast({ title: t("Onboarding failed"), description: err.message || t("Please try again."), variant: "destructive" });
+    } catch (err) {
+      toast({ title: t("Onboarding failed"), description: getErrorMessage(err, t("Please try again.")), variant: "destructive" });
       await supabase.auth.signOut();
     }
 
@@ -122,7 +132,7 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
           </div>
           <CardTitle className="text-2xl">Cleaner Manager</CardTitle>
           <CardDescription>
-            {cleanerOnlyApp ? t("Sign in to your cleaner account") : currentMode === "login" ? t("Sign in to your account") : t("Create a new host account")}
+            {cleanerInviteMode ? t("Sign in to your cleaner account") : currentMode === "login" ? t("Sign in to your account") : t("Create a new host account")}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -142,7 +152,7 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
               <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3 text-sm text-muted-foreground">
                 {t("Cleaners are invited by their host. Use the invitation link from your email to finish your account setup.")}
               </div>
-              {!cleanerOnlyApp && (
+              {!cleanerInviteMode && (
                 <div className="text-center space-y-2 pt-2">
                   <p className="text-sm text-muted-foreground">{t("Need a host account?")}</p>
                   <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => setMode("host-signup")}>

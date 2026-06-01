@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,21 @@ interface CleanerWithAssignments {
   assignments: { id: string; listing_id: string; listing_name: string }[];
 }
 
+interface CleanerAssignmentRow {
+  id: string;
+  cleaner_user_id: string;
+  listing_id: string;
+  listings: { name?: string } | null;
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return fallback;
+}
+
 export function AdminCleanerManagement() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -40,63 +55,82 @@ export function AdminCleanerManagement() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!user) return;
 
-    const [{ data: listingData }, { data: connections }, { data: assignments }] = await Promise.all([
-      supabase.from("listings").select("id, name").eq("host_user_id", user.id).order("name"),
-      supabase.from("host_cleaners").select("cleaner_user_id, invited_email, status").eq("host_user_id", user.id).order("created_at", { ascending: true }),
-      supabase
-        .from("cleaner_assignments")
-        .select("id, cleaner_user_id, listing_id, listings(name)")
-        .eq("host_user_id", user.id),
-    ]);
+    try {
+      const [
+        { data: listingData, error: listingError },
+        { data: connections, error: connectionError },
+        { data: assignments, error: assignmentError },
+      ] = await Promise.all([
+        supabase.from("listings").select("id, name").eq("host_user_id", user.id).order("name"),
+        supabase.from("host_cleaners").select("cleaner_user_id, invited_email, status").eq("host_user_id", user.id).order("created_at", { ascending: true }),
+        supabase
+          .from("cleaner_assignments")
+          .select("id, cleaner_user_id, listing_id, listings(name)")
+          .eq("host_user_id", user.id),
+      ]);
 
-    setListings((listingData || []) as { id: string; name: string }[]);
+      if (listingError) throw listingError;
+      if (connectionError) throw connectionError;
+      if (assignmentError) throw assignmentError;
 
-    if (!connections || connections.length === 0) {
-      setCleaners([]);
-      return;
+      setListings((listingData || []) as { id: string; name: string }[]);
+
+      if (!connections || connections.length === 0) {
+        setCleaners([]);
+        return;
+      }
+
+      const cleanerIds = [...new Set(connections.map((connection) => connection.cleaner_user_id))];
+      const { data: profiles, error: profileError } = await supabase
+        .from("profiles")
+        .select("user_id, name, email, setup_completed")
+        .in("user_id", cleanerIds);
+
+      if (profileError) throw profileError;
+
+      const profileMap = new Map((profiles || []).map((profile) => [profile.user_id, profile]));
+
+      const assignmentRows = (assignments || []) as CleanerAssignmentRow[];
+      const cleanerList: CleanerWithAssignments[] = connections.map((connection) => {
+        const profile = profileMap.get(connection.cleaner_user_id);
+        const setupCompleted = profile?.setup_completed ?? connection.status === "ACTIVE";
+        const effectiveStatus: CleanerWithAssignments["status"] = setupCompleted ? "ACTIVE" : connection.status;
+        return {
+          user_id: connection.cleaner_user_id,
+          name: profile?.name?.trim() || "",
+          email: profile?.email || connection.invited_email || "",
+          setup_completed: setupCompleted,
+          status: effectiveStatus,
+          assignments: assignmentRows
+            .filter((assignment) => assignment.cleaner_user_id === connection.cleaner_user_id)
+            .map((assignment) => ({
+              id: assignment.id,
+              listing_id: assignment.listing_id,
+              listing_name: assignment.listings?.name || "Unknown",
+            })),
+        };
+      });
+
+      cleanerList.sort((a, b) => a.email.localeCompare(b.email));
+      setCleaners(cleanerList);
+    } catch (error) {
+      toast({
+        title: t("Unable to load cleaners"),
+        description: getErrorMessage(error, t("Please refresh and try again.")),
+        variant: "destructive",
+      });
     }
-
-    const cleanerIds = [...new Set(connections.map((connection) => connection.cleaner_user_id))];
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("user_id, name, email, setup_completed")
-      .in("user_id", cleanerIds);
-
-    const profileMap = new Map((profiles || []).map((profile) => [profile.user_id, profile]));
-
-    const cleanerList: CleanerWithAssignments[] = connections.map((connection) => {
-      const profile = profileMap.get(connection.cleaner_user_id);
-      const setupCompleted = profile?.setup_completed ?? connection.status === "ACTIVE";
-      const effectiveStatus: CleanerWithAssignments["status"] = setupCompleted ? "ACTIVE" : connection.status;
-      return {
-        user_id: connection.cleaner_user_id,
-        name: profile?.name?.trim() || "",
-        email: profile?.email || connection.invited_email || "",
-        setup_completed: setupCompleted,
-        status: effectiveStatus,
-        assignments: (assignments || [])
-          .filter((assignment: any) => assignment.cleaner_user_id === connection.cleaner_user_id)
-          .map((assignment: any) => ({
-            id: assignment.id,
-            listing_id: assignment.listing_id,
-            listing_name: (assignment.listings as { name?: string } | null)?.name || "Unknown",
-          })),
-      };
-    });
-
-    cleanerList.sort((a, b) => a.email.localeCompare(b.email));
-    setCleaners(cleanerList);
-  };
+  }, [t, toast, user]);
 
   useEffect(() => {
-    fetchData();
-  }, [user]);
+    void fetchData();
+  }, [fetchData]);
 
-  const handleInviteCleaner = async () => {
-    const normalizedEmail = inviteEmail.trim().toLowerCase();
+  const submitCleanerInvite = async (rawEmail: string, clearInput: boolean) => {
+    const normalizedEmail = rawEmail.trim().toLowerCase();
     if (!normalizedEmail) return;
 
     setInviting(true);
@@ -112,18 +146,24 @@ export function AdminCleanerManagement() {
       if (data?.error) throw new Error(data.error);
 
       toast({
-        title: data?.invited ? t("Invitation sent") : t("Cleaner linked"),
-        description: data?.invited
+        title: data?.reinvited ? t("Invitation resent") : data?.invited ? t("Invitation sent") : t("Cleaner linked"),
+        description: data?.reinvited
+          ? t("A new setup email has been sent.")
+          : data?.invited
           ? t("The cleaner invitation email has been sent.")
           : t("The cleaner is now available in your cleaner list."),
       });
-      setInviteEmail("");
-      fetchData();
-    } catch (error: any) {
-      toast({ title: t("Error"), description: error.message, variant: "destructive" });
+      if (clearInput) setInviteEmail("");
+      void fetchData();
+    } catch (error) {
+      toast({ title: t("Error"), description: getErrorMessage(error, t("Please try again.")), variant: "destructive" });
     } finally {
       setInviting(false);
     }
+  };
+
+  const handleInviteCleaner = async () => {
+    await submitCleanerInvite(inviteEmail, true);
   };
 
   const handleAssignListing = async (cleanerUserId: string, listingId: string) => {
@@ -137,7 +177,7 @@ export function AdminCleanerManagement() {
       toast({ title: t("Error"), description: error.message, variant: "destructive" });
     } else {
       toast({ title: t("Listing assigned") });
-      fetchData();
+      void fetchData();
     }
   };
 
@@ -147,7 +187,7 @@ export function AdminCleanerManagement() {
       toast({ title: t("Error"), description: error.message, variant: "destructive" });
     } else {
       toast({ title: t("Assignment removed") });
-      fetchData();
+      void fetchData();
     }
   };
 
@@ -159,9 +199,9 @@ export function AdminCleanerManagement() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       toast({ title: t("Cleaner removed") });
-      fetchData();
-    } catch (error: any) {
-      toast({ title: t("Error"), description: error.message, variant: "destructive" });
+      void fetchData();
+    } catch (error) {
+      toast({ title: t("Error"), description: getErrorMessage(error, t("Please try again.")), variant: "destructive" });
     }
   };
 
@@ -219,25 +259,39 @@ export function AdminCleanerManagement() {
                         </p>
                       )}
                     </div>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive">
-                          <Trash2 className="h-3.5 w-3.5" />
+                    <div className="flex items-center gap-1">
+                      {!cleaner.setup_completed && cleaner.email && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1 px-2 text-xs"
+                          disabled={inviting}
+                          onClick={() => void submitCleanerInvite(cleaner.email, false)}
+                        >
+                          <Mail className="h-3.5 w-3.5" />
+                          {t("Resend")}
                         </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>{t("Remove cleaner?")}</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            {t("This will remove all listing assignments for this cleaner.")}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>{t("Cancel")}</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleRemoveCleaner(cleaner.user_id)}>{t("Remove")}</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                      )}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t("Remove cleaner?")}</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {t("This will remove all listing assignments for this cleaner.")}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t("Cancel")}</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleRemoveCleaner(cleaner.user_id)}>{t("Remove")}</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </div>
 
                   <div className="space-y-1">

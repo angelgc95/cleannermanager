@@ -14,6 +14,11 @@ additional_redirect_urls = [
 [auth.email]
 max_frequency = "1m0s"
 otp_length = 8
+otp_expiry = 86400
+
+[auth.email.template.invite]
+subject = "Your Cleaner Manager invitation expires in 24 hours"
+content_path = "./supabase/templates/invite.html"
 
 [auth.mfa]
 max_enrolled_factors = 10

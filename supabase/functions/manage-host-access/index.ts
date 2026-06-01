@@ -17,8 +17,26 @@ function normalizeEmail(value: unknown) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
+function maskEmail(email: string) {
+  const [local, domain] = email.split("@");
+  if (!local || !domain) return "[invalid-email]";
+  return `${local.slice(0, 1)}***@${domain}`;
+}
+
+function logEvent(event: string, details: Record<string, unknown>) {
+  console.log(JSON.stringify({ event, ...details }));
+}
+
+function logError(event: string, details: Record<string, unknown>) {
+  console.error(JSON.stringify({ event, ...details }));
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 async function hasCleanerLink(supabase: ReturnType<typeof createClient>, userId: string) {
-  const [{ data: connection }, { data: assignment }] = await Promise.all([
+  const [{ data: connection, error: connectionError }, { data: assignment, error: assignmentError }] = await Promise.all([
     supabase
       .from("host_cleaners")
       .select("host_user_id")
@@ -33,6 +51,8 @@ async function hasCleanerLink(supabase: ReturnType<typeof createClient>, userId:
       .maybeSingle(),
   ]);
 
+  if (connectionError) throw connectionError;
+  if (assignmentError) throw assignmentError;
   return Boolean(connection?.host_user_id || assignment?.id);
 }
 
@@ -41,6 +61,10 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let action = "unknown";
+  let stage = "start";
+  let logContext: Record<string, unknown> = {};
+
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -48,25 +72,27 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, serviceKey);
 
     const body = await req.json().catch(() => ({}));
-    const action = typeof body.action === "string" ? body.action : "";
+    action = typeof body.action === "string" ? body.action : "";
 
     if (!["check_email", "get_my_invite", "get_admin_status", "list_invites", "authorize_host_email", "revoke_invite"].includes(action)) {
       return json({ error: "Invalid action" }, 400);
     }
 
     if (action === "check_email") {
+      stage = "check_email";
       const email = normalizeEmail(body.email);
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
         return json({ authorized: false });
       }
 
-      const { data: invite } = await supabase
+      const { data: invite, error: inviteError } = await supabase
         .from("host_signup_invites")
         .select("id, status")
         .eq("email", email)
         .eq("status", "PENDING")
         .maybeSingle();
+      if (inviteError) throw inviteError;
 
       return json({ authorized: Boolean(invite?.id) });
     }
@@ -88,22 +114,27 @@ Deno.serve(async (req) => {
     if (userError || !user) {
       return json({ error: "Invalid token" }, 401);
     }
+    logContext = { actor_user_id: user.id };
 
     if (action === "get_my_invite") {
+      stage = "get_my_invite";
       const email = normalizeEmail(user.email);
       if (!email) return json({ invite: null });
 
-      const { data: invite } = await supabase
+      const { data: invite, error: inviteError } = await supabase
         .from("host_signup_invites")
         .select("id, email, status, created_at, accepted_at")
         .eq("email", email)
         .eq("status", "PENDING")
         .maybeSingle();
+      if (inviteError) throw inviteError;
 
       return json({ invite: invite || null });
     }
 
-    const { data: isAdmin } = await supabase.rpc("is_platform_admin", { _user_id: user.id });
+    stage = "get_admin_status";
+    const { data: isAdmin, error: adminError } = await supabase.rpc("is_platform_admin", { _user_id: user.id });
+    if (adminError) throw adminError;
 
     if (action === "get_admin_status") {
       return json({ is_admin: Boolean(isAdmin) });
@@ -114,6 +145,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "list_invites") {
+      stage = "list_invites";
       const { data: invites, error } = await supabase
         .from("host_signup_invites")
         .select("id, email, status, invited_by_user_id, accepted_by_user_id, created_at, accepted_at")
@@ -125,21 +157,29 @@ Deno.serve(async (req) => {
     }
 
     if (action === "authorize_host_email") {
+      stage = "authorize_host_email";
       const email = normalizeEmail(body.email);
+      logContext = { ...logContext, email: maskEmail(email) };
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
       if (!emailRegex.test(email)) {
         return json({ error: "Invalid email" }, 400);
       }
 
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("user_id")
         .eq("email", email)
         .maybeSingle();
+      if (profileError) throw profileError;
 
       if (profile?.user_id) {
-        const [{ data: existingHostRole }, { data: existingCleanerRole }, cleanerLinked] = await Promise.all([
+        stage = "check_existing_account";
+        const [
+          { data: existingHostRole, error: hostRoleError },
+          { data: existingCleanerRole, error: cleanerRoleError },
+          cleanerLinked,
+        ] = await Promise.all([
           supabase.rpc("has_role", {
             _user_id: profile.user_id,
             _role: "host",
@@ -150,6 +190,8 @@ Deno.serve(async (req) => {
           }),
           hasCleanerLink(supabase, profile.user_id),
         ]);
+        if (hostRoleError) throw hostRoleError;
+        if (cleanerRoleError) throw cleanerRoleError;
 
         if (existingHostRole) {
           return json({ error: "This email already belongs to a host account." }, 400);
@@ -160,6 +202,7 @@ Deno.serve(async (req) => {
         }
       }
 
+      stage = "upsert_host_signup_invite";
       const { error } = await supabase
         .from("host_signup_invites")
         .upsert(
@@ -174,10 +217,12 @@ Deno.serve(async (req) => {
         );
 
       if (error) throw error;
+      logEvent("host_signup_invite_authorized", logContext);
       return json({ success: true, email });
     }
 
     if (action === "revoke_invite") {
+      stage = "revoke_invite";
       const inviteId = typeof body.invite_id === "string" ? body.invite_id : "";
       if (!inviteId) {
         return json({ error: "Missing invite_id" }, 400);
@@ -192,12 +237,18 @@ Deno.serve(async (req) => {
         .eq("status", "PENDING");
 
       if (error) throw error;
+      logEvent("host_signup_invite_revoked", { ...logContext, invite_id: inviteId });
       return json({ success: true });
     }
 
     return json({ error: "Invalid action" }, 400);
-  } catch (error: any) {
-    console.error("manage-host-access error:", error);
-    return json({ error: error.message || "Unable to process request." }, 500);
+  } catch (error) {
+    logError("manage_host_access_error", {
+      ...logContext,
+      action,
+      stage,
+      message: getErrorMessage(error),
+    });
+    return json({ error: getErrorMessage(error) || "Unable to process request." }, 500);
   }
 });

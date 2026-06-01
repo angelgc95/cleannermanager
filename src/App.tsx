@@ -3,11 +3,15 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { LanguageProvider, useI18n } from "@/i18n/LanguageProvider";
 import { isNativeCleanerApp } from "@/lib/appVariant";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { LogOut, MailWarning, UserCheck } from "lucide-react";
 
 const queryClient = new QueryClient();
 const Auth = lazy(() => import("./pages/Auth"));
@@ -61,12 +65,59 @@ function OnboardingRoute() {
   return <OnboardingPage />;
 }
 
+function CleanerInviteAccessMessage({ signedIn = false }: { signedIn?: boolean }) {
+  const navigate = useNavigate();
+  const { t } = useI18n();
+
+  const handleCleanerSignIn = async () => {
+    if (signedIn) {
+      await supabase.auth.signOut();
+    }
+    navigate("/auth?cleaner=1", { replace: true });
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <div className="flex justify-center mb-3">
+            <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
+              {signedIn ? (
+                <UserCheck className="h-6 w-6 text-primary-foreground" />
+              ) : (
+                <MailWarning className="h-6 w-6 text-primary-foreground" />
+              )}
+            </div>
+          </div>
+          <CardTitle className="text-2xl">
+            {signedIn ? t("Cleaner setup only") : t("Cleaner invitation expired")}
+          </CardTitle>
+          <CardDescription>
+            {signedIn
+              ? t("This page is only for invited cleaner accounts.")
+              : t("This cleaner invitation is expired or already used.")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+            {t("Ask your host to resend the cleaner invitation from the cleaner list.")}
+          </div>
+          <Button className="w-full gap-2" variant={signedIn ? "outline" : "default"} onClick={handleCleanerSignIn}>
+            {signedIn && <LogOut className="h-4 w-4" />}
+            {signedIn ? t("Sign out and use the cleaner invite") : t("Sign in as cleaner")}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function CompleteProfileRoute() {
   const { user, loading, role, profileComplete } = useAuth();
   if (loading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/auth" replace />;
-  if (!role) return <Navigate to="/onboarding" replace />;
-  if (role !== "cleaner") return <Navigate to="/" replace />;
+  if (!user) return <CleanerInviteAccessMessage />;
+  if (!role) return <CleanerInviteAccessMessage signedIn />;
+  if (role !== "cleaner") return <CleanerInviteAccessMessage signedIn />;
   if (profileComplete) return <Navigate to="/" replace />;
   return <CompleteCleanerProfilePage />;
 }
