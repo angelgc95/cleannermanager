@@ -1,11 +1,23 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { buildWeeklyRange, generatePayoutsForHost, getLocalTimeContext } from "../_shared/payouts.ts";
+import {
+  buildPayoutRange,
+  buildPreviousMonthRange,
+  generatePayoutsForHost,
+  getLocalTimeContext,
+  isFirstWeekdayOfMonth,
+} from "../_shared/payouts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-cron-secret",
 };
+
+type PayoutFrequency = "WEEKLY" | "BIWEEKLY" | "MONTHLY";
+
+function normalizePayoutFrequency(value: unknown): PayoutFrequency {
+  return value === "BIWEEKLY" || value === "MONTHLY" ? value : "WEEKLY";
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -40,8 +52,7 @@ Deno.serve(async (req) => {
     const failed: any[] = [];
 
     for (const host of hosts || []) {
-      if (host.payout_frequency !== "WEEKLY") continue;
-
+      const frequency = normalizePayoutFrequency(host.payout_frequency);
       const local = getLocalTimeContext(now, host.payout_run_timezone || "Europe/Madrid");
       const [runHour, runMinute] = String(host.payout_run_time || "17:00:00")
         .split(":")
@@ -52,10 +63,27 @@ Deno.serve(async (req) => {
       const scheduledMinutes = runHour * 60 + runMinute;
 
       if (local.weekdayIndex !== Number(host.payout_week_end_day ?? 0)) continue;
+      if (frequency === "MONTHLY" && !isFirstWeekdayOfMonth(local.date)) continue;
       // GitHub Actions runs every 5 minutes, so only trigger inside the next 5-minute slot.
       if (localMinutes < scheduledMinutes || localMinutes >= scheduledMinutes + 5) continue;
 
-      const { startStr, endStr } = buildWeeklyRange(local.date);
+      const { startStr, endStr } = frequency === "MONTHLY"
+        ? buildPreviousMonthRange(local.date)
+        : buildPayoutRange(frequency, local.date);
+
+      if (frequency !== "WEEKLY") {
+        const { data: overlappingPeriod, error: overlapError } = await supabase
+          .from("payout_periods")
+          .select("id")
+          .eq("host_user_id", host.host_user_id)
+          .lte("start_date", endStr)
+          .gte("end_date", startStr)
+          .limit(1)
+          .maybeSingle();
+
+        if (overlapError) throw overlapError;
+        if (overlappingPeriod) continue;
+      }
 
       try {
         const result = await generatePayoutsForHost({

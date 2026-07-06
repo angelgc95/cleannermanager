@@ -16,6 +16,7 @@ import { EventInlineEdit } from "@/components/admin/EventInlineEdit";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { requireSupabaseSuccess } from "@/lib/supabaseResult";
 
 interface PhotoEntry {
   id?: string;
@@ -515,94 +516,121 @@ const ChecklistRunPage = forwardRef<HTMLDivElement>(function ChecklistRunPage(_p
     if (!runId || !eventId || !user) return;
 
     setFinishing(true);
+    try {
+      const finishedAt = new Date().toISOString();
+      const today = new Date().toISOString().split("T")[0];
 
-    const finishedAt = new Date().toISOString();
-    const today = new Date().toISOString().split("T")[0];
+      const [sh, sm] = workStart.split(":").map(Number);
+      const [eh, em] = workEnd.split(":").map(Number);
+      const durationMinutes = (eh * 60 + em) - (sh * 60 + sm);
 
-    const [sh, sm] = workStart.split(":").map(Number);
-    const [eh, em] = workEnd.split(":").map(Number);
-    const durationMinutes = (eh * 60 + em) - (sh * 60 + sm);
+      const responseEntries = Object.entries(responses)
+        .filter(([, val]) => val !== null)
+        .map(([itemId, val]) => ({
+          run_id: runId,
+          item_id: itemId,
+          yesno_value: val,
+          host_user_id: hostId,
+        }));
 
-    const responseEntries = Object.entries(responses)
-      .filter(([, val]) => val !== null)
-      .map(([itemId, val]) => ({
-        run_id: runId,
-        item_id: itemId,
-        yesno_value: val,
-        host_user_id: hostId,
-      }));
+      if (responseEntries.length > 0) {
+        requireSupabaseSuccess(
+          await supabase.from("checklist_responses").insert(responseEntries),
+          "Saving checklist responses",
+        );
+      }
 
-    if (responseEntries.length > 0) {
-      await supabase.from("checklist_responses").insert(responseEntries);
-    }
-
-    await supabase.from("checklist_runs").update({
-      finished_at: finishedAt,
-      duration_minutes: durationMinutes,
-    }).eq("id", runId);
-
-    await supabase.from("log_hours").upsert({
-      user_id: user.id,
-      date: today,
-      start_at: workStart,
-      end_at: workEnd,
-      duration_minutes: durationMinutes,
-      source: "CHECKLIST" as const,
-      checklist_run_id: runId,
-      cleaning_event_id: eventId,
-      listing_id: event?.listing_id || null,
-      description: workNotes || null,
-      host_user_id: hostId,
-    } as any, { onConflict: "checklist_run_id" });
-
-    let checklistSubmissionId: string | null = null;
-    if (missingItems.length > 0) {
-      const checklistSubmissionLabel = [
-        "Added from checklist",
-        event?.listings?.name || null,
-        event?.reference ? `Ref ${event.reference}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-
-      const { data: checklistSubmission } = await supabase
-        .from("shopping_submissions")
-        .insert({
-          created_by_user_id: user.id,
-          host_user_id: event?.host_user_id || hostId,
-          status: "PENDING",
-          notes: checklistSubmissionLabel,
-        } as any)
-        .select("id")
-        .maybeSingle();
-
-      checklistSubmissionId = checklistSubmission?.id || null;
-    }
-
-    if (missingItems.length > 0) {
-      await supabase.from("shopping_list").insert(
-        missingItems.map((item) => ({
-          product_id: item.productId,
-          created_by_user_id: user.id,
-          status: "MISSING" as const,
-          quantity_needed: item.quantity,
-          note: item.note || null,
-          created_from: "CHECKLIST" as const,
-          checklist_run_id: runId,
-          submission_id: checklistSubmissionId,
-          listing_id: event?.listing_id || null,
-          host_user_id: event?.host_user_id || hostId,
-        })) as any
+      requireSupabaseSuccess(
+        await supabase.from("checklist_runs").update({
+          finished_at: finishedAt,
+          duration_minutes: durationMinutes,
+        }).eq("id", runId),
+        "Finishing checklist run",
       );
+
+      requireSupabaseSuccess(
+        await supabase.from("log_hours").upsert({
+          user_id: user.id,
+          date: today,
+          start_at: workStart,
+          end_at: workEnd,
+          duration_minutes: durationMinutes,
+          source: "CHECKLIST" as const,
+          checklist_run_id: runId,
+          cleaning_event_id: eventId,
+          listing_id: event?.listing_id || null,
+          description: workNotes || null,
+          host_user_id: hostId,
+        } as any, { onConflict: "checklist_run_id" }),
+        "Saving work hours",
+      );
+
+      let checklistSubmissionId: string | null = null;
+      if (missingItems.length > 0) {
+        const checklistSubmissionLabel = [
+          "Added from checklist",
+          event?.listings?.name || null,
+          event?.reference ? `Ref ${event.reference}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+
+        const checklistSubmission = requireSupabaseSuccess(
+          await supabase
+            .from("shopping_submissions")
+            .insert({
+              created_by_user_id: user.id,
+              host_user_id: event?.host_user_id || hostId,
+              status: "PENDING",
+              notes: checklistSubmissionLabel,
+            } as any)
+            .select("id")
+            .maybeSingle(),
+          "Creating shopping submission",
+        );
+
+        checklistSubmissionId = checklistSubmission?.id || null;
+      }
+
+      if (missingItems.length > 0) {
+        requireSupabaseSuccess(
+          await supabase.from("shopping_list").insert(
+            missingItems.map((item) => ({
+              product_id: item.productId,
+              created_by_user_id: user.id,
+              status: "MISSING" as const,
+              quantity_needed: item.quantity,
+              note: item.note || null,
+              created_from: "CHECKLIST" as const,
+              checklist_run_id: runId,
+              submission_id: checklistSubmissionId,
+              listing_id: event?.listing_id || null,
+              host_user_id: event?.host_user_id || hostId,
+            })) as any
+          ),
+          "Saving missing shopping items",
+        );
+      }
+
+      requireSupabaseSuccess(
+        await supabase.from("cleaning_events").update({
+          status: "DONE",
+          checklist_run_id: runId,
+        }).eq("id", eventId),
+        "Marking cleaning event done",
+      );
+
+      toast({ title: "Checklist complete!", description: `Duration: ${durationMinutes} minutes` });
+      navigate(`/events/${eventId}`);
+    } catch (error) {
+      toast({
+        title: "Checklist completion failed",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setFinishing(false);
     }
-
-    await supabase.from("cleaning_events").update({
-      status: "DONE",
-      checklist_run_id: runId,
-    }).eq("id", eventId);
-
-    toast({ title: "Checklist complete!", description: `Duration: ${durationMinutes} minutes` });
-    navigate(`/events/${eventId}`);
   };
 
   const handleRequestReset = async () => {

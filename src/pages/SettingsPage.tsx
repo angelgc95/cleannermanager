@@ -187,7 +187,7 @@ function OrganizationWorkflowSettings({ settings, onUpdate }: { settings: any; o
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between rounded-lg border border-border p-3">
           <div className="space-y-1">
-            <p className="text-sm font-medium">Auto-run weekly payout shortcut</p>
+            <p className="text-sm font-medium">Auto-run payout shortcut</p>
             <p className="text-xs text-muted-foreground">
               Runs for the whole organization using the schedule below.
             </p>
@@ -208,7 +208,7 @@ function OrganizationWorkflowSettings({ settings, onUpdate }: { settings: any; o
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>Week ends on</Label>
+            <Label>Run day</Label>
             <Select value={weekEndDay} onValueChange={setWeekEndDay}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -217,6 +217,9 @@ function OrganizationWorkflowSettings({ settings, onUpdate }: { settings: any; o
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              Weekly and bi-weekly periods end on this day. Monthly payouts run on the first selected day after a month closes.
+            </p>
           </div>
           <div className="space-y-1">
             <Label>Run time</Label>

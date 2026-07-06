@@ -46,7 +46,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.generate-checklist-suggestions]
-verify_jwt = false
+verify_jwt = true
 
 [functions.onboard-user]
 verify_jwt = false

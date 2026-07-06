@@ -12,6 +12,12 @@ export interface GeneratePayoutsForHostResult {
 }
 
 export type PayoutModel = "HOURLY" | "PER_EVENT_PLUS_HOURLY";
+export type PayoutFrequency = "WEEKLY" | "BIWEEKLY" | "MONTHLY";
+
+export interface PayoutDateRange {
+  startStr: string;
+  endStr: string;
+}
 
 function normalizePayoutModel(value: string | null | undefined): PayoutModel {
   return value === "PER_EVENT_PLUS_HOURLY" ? "PER_EVENT_PLUS_HOURLY" : "HOURLY";
@@ -20,6 +26,19 @@ function normalizePayoutModel(value: string | null | undefined): PayoutModel {
 function includeUnpaidOrCurrent(query: any, currentPayoutId: string | null) {
   if (!currentPayoutId) return query.is("payout_id", null);
   return query.or(`payout_id.is.null,payout_id.eq.${currentPayoutId}`);
+}
+
+function normalizePayoutFrequency(value: string | null | undefined): PayoutFrequency {
+  if (value === "BIWEEKLY" || value === "MONTHLY") return value;
+  return "WEEKLY";
+}
+
+function parseUtcDate(dateStr: string) {
+  return new Date(`${dateStr}T00:00:00Z`);
+}
+
+function formatUtcDate(date: Date) {
+  return date.toISOString().slice(0, 10);
 }
 
 export function getLocalTimeContext(date: Date, timeZone: string) {
@@ -47,15 +66,43 @@ export function getLocalTimeContext(date: Date, timeZone: string) {
   };
 }
 
-export function buildWeeklyRange(endDateStr: string) {
-  const endDate = new Date(`${endDateStr}T00:00:00Z`);
+export function buildPayoutRange(
+  frequencyValue: string | null | undefined,
+  endDateStr: string,
+): PayoutDateRange {
+  const frequency = normalizePayoutFrequency(frequencyValue);
+  const endDate = parseUtcDate(endDateStr);
   const startDate = new Date(endDate);
-  startDate.setUTCDate(startDate.getUTCDate() - 6);
+
+  if (frequency === "MONTHLY") {
+    startDate.setUTCDate(1);
+  } else {
+    startDate.setUTCDate(startDate.getUTCDate() - (frequency === "BIWEEKLY" ? 13 : 6));
+  }
 
   return {
-    startStr: startDate.toISOString().slice(0, 10),
-    endStr: endDate.toISOString().slice(0, 10),
+    startStr: formatUtcDate(startDate),
+    endStr: formatUtcDate(endDate),
   };
+}
+
+export function buildPreviousMonthRange(runDateStr: string): PayoutDateRange {
+  const runDate = parseUtcDate(runDateStr);
+  const startDate = new Date(Date.UTC(runDate.getUTCFullYear(), runDate.getUTCMonth() - 1, 1));
+  const endDate = new Date(Date.UTC(runDate.getUTCFullYear(), runDate.getUTCMonth(), 0));
+
+  return {
+    startStr: formatUtcDate(startDate),
+    endStr: formatUtcDate(endDate),
+  };
+}
+
+export function isFirstWeekdayOfMonth(dateStr: string) {
+  return parseUtcDate(dateStr).getUTCDate() <= 7;
+}
+
+export function buildWeeklyRange(endDateStr: string) {
+  return buildPayoutRange("WEEKLY", endDateStr);
 }
 
 export async function generatePayoutsForHost({

@@ -52,6 +52,7 @@ const SPANISH_TRANSLATIONS: Record<string, string> = {
   "Unable to validate host access right now.": "No se pudo validar el acceso de anfitrion en este momento.",
   "Check your email": "Revisa tu correo",
   "We sent you a confirmation link. After confirming, sign in and you'll be onboarded.": "Te enviamos un enlace de confirmacion. Despues de confirmar, inicia sesion y completaras el registro.",
+  "We sent you a confirmation link. After confirming, sign in to finish the host access check.": "Te enviamos un enlace de confirmacion. Despues de confirmar, inicia sesion para terminar la verificacion de acceso de anfitrion.",
   "Welcome!": "Bienvenido!",
   "Welcome, Cleaner!": "Bienvenido, cleaner!",
   "Your unique ID has been generated. Share it with your host so they can assign you to listings.": "Se ha generado tu ID unico. Compartelo con tu anfitrion para que pueda asignarte a los alojamientos.",

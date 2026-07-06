@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -29,6 +30,47 @@ interface RawSection {
 }
 
 type ResponseFormatSchema = Record<string, unknown>;
+
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+async function authorizeHost(req: Request) {
+  const authHeader = req.headers.get("Authorization") || req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return jsonResponse({ error: "Unauthorized" }, 401);
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !anonKey || !serviceKey) {
+    return jsonResponse({ error: "Auth not configured" }, 500);
+  }
+
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: { user }, error: userError } = await userClient.auth.getUser();
+  if (userError || !user) {
+    return jsonResponse({ error: "Invalid token" }, 401);
+  }
+
+  const serviceClient = createClient(supabaseUrl, serviceKey);
+  const { data: isHost, error: roleError } = await serviceClient.rpc("has_role", {
+    _user_id: user.id,
+    _role: "host",
+  });
+  if (roleError) throw roleError;
+  if (!isHost) {
+    return jsonResponse({ error: "Forbidden" }, 403);
+  }
+
+  return null;
+}
 
 const AIRBNB_RESOURCE_PRIORITIES = [
   "Prioritize high-touch surfaces and frequently used items.",
@@ -559,6 +601,9 @@ serve(async (req) => {
   }
 
   try {
+    const authErrorResponse = await authorizeHost(req);
+    if (authErrorResponse) return authErrorResponse;
+
     const body = await req.json();
     const currentMode = (body.mode || "template") as SuggestionMode;
     const sectionTitle = typeof body.section_title === "string" ? body.section_title.trim() : "Untitled";

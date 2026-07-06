@@ -86,15 +86,8 @@ Deno.serve(async (req) => {
         return json({ authorized: false });
       }
 
-      const { data: invite, error: inviteError } = await supabase
-        .from("host_signup_invites")
-        .select("id, status")
-        .eq("email", email)
-        .eq("status", "PENDING")
-        .maybeSingle();
-      if (inviteError) throw inviteError;
-
-      return json({ authorized: Boolean(invite?.id) });
+      logEvent("host_signup_email_checked", { email: maskEmail(email) });
+      return json({ authorized: true });
     }
 
     const authHeader = req.headers.get("Authorization");

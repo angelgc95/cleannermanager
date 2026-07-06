@@ -94,7 +94,7 @@ const Auth = forwardRef<HTMLDivElement>(function Auth(_props, _ref) {
     if (!signUpData.session) {
       toast({
         title: t("Check your email"),
-        description: t("We sent you a confirmation link. After confirming, sign in and you'll be onboarded."),
+        description: t("We sent you a confirmation link. After confirming, sign in to finish the host access check."),
       });
       setLoading(false);
       return;

@@ -17,31 +17,11 @@ Deno.serve(async (req) => {
     const cronSecret = Deno.env.get("CRON_SECRET");
     const providedCronSecret = req.headers.get("x-cron-secret");
 
-    // Authenticate: accept either a valid JWT (host role) or the service role key as Bearer token
-    let authorized = false;
-
-    if (cronSecret && providedCronSecret === cronSecret) {
-      authorized = true;
-    } else {
-      const authHeader = req.headers.get("Authorization") || req.headers.get("authorization");
-      if (authHeader?.startsWith("Bearer ")) {
-        const token = authHeader.replace("Bearer ", "");
-        if (token === serviceKey) {
-          authorized = true;
-        } else {
-          const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-          const userClient = createClient(supabaseUrl, anonKey, {
-            global: { headers: { Authorization: authHeader } },
-          });
-          const { data: { user }, error: userError } = await userClient.auth.getUser();
-          if (!userError && user) {
-            const svc = createClient(supabaseUrl, serviceKey);
-            const { data: isHost } = await svc.rpc("has_role", { _user_id: user.id, _role: "host" });
-            if (isHost) authorized = true;
-          }
-        }
-      }
-    }
+    const authHeader = req.headers.get("Authorization") || req.headers.get("authorization");
+    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.replace("Bearer ", "") : null;
+    const authorized = Boolean(
+      (cronSecret && providedCronSecret === cronSecret) || bearerToken === serviceKey
+    );
 
     if (!authorized) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {

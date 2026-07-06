@@ -16,6 +16,11 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Plus, X, Camera, Loader2, Trash2 } from "lucide-react";
 import { useI18n } from "@/i18n/LanguageProvider";
+import { buildMaintenancePhotoPath } from "@/lib/storagePaths";
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
 
 const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_props, _ref) {
   const { user, hostId, role } = useAuth();
@@ -77,11 +82,11 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
     setPhotos((prev) => { URL.revokeObjectURL(prev[idx].preview); return prev.filter((_, i) => i !== idx); });
   };
 
-  const uploadPhoto = async (file: File): Promise<string | null> => {
-    const ext = file.name.split(".").pop();
-    const path = `maintenance/${crypto.randomUUID()}.${ext}`;
-    const { error } = await supabase.storage.from("checklist-photos").upload(path, file);
-    if (error) return null;
+  const uploadPhoto = async (file: File): Promise<string> => {
+    if (!user?.id) throw new Error("Missing authenticated user.");
+    const path = buildMaintenancePhotoPath(user.id, file.name);
+    const { error } = await supabase.storage.from("checklist-photos").upload(path, file, { contentType: file.type });
+    if (error) throw error;
     return path;
   };
 
@@ -89,27 +94,40 @@ const MaintenancePage = forwardRef<HTMLDivElement>(function MaintenancePage(_pro
     e.preventDefault();
     if (!user || !hostId) return;
     setUploading(true);
-    let pic1_url: string | null = null;
-    let pic2_url: string | null = null;
-    if (photos[0]) pic1_url = await uploadPhoto(photos[0].file);
-    if (photos[1]) pic2_url = await uploadPhoto(photos[1].file);
-    const { error } = await supabase.from("maintenance_tickets").insert([{
-      created_by_user_id: user.id,
-      issue,
-      pic1_url,
-      pic2_url,
-      host_user_id: hostId,
-    }]);
-    setUploading(false);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
+    const uploadedPaths: string[] = [];
+    try {
+      let pic1_url: string | null = null;
+      let pic2_url: string | null = null;
+      if (photos[0]) {
+        pic1_url = await uploadPhoto(photos[0].file);
+        uploadedPaths.push(pic1_url);
+      }
+      if (photos[1]) {
+        pic2_url = await uploadPhoto(photos[1].file);
+        uploadedPaths.push(pic2_url);
+      }
+      const { error } = await supabase.from("maintenance_tickets").insert([{
+        created_by_user_id: user.id,
+        issue,
+        pic1_url,
+        pic2_url,
+        host_user_id: hostId,
+      }]);
+      if (error) throw error;
+
       toast({ title: "Ticket created" });
       setShowForm(false);
       setIssue("");
       photos.forEach((p) => URL.revokeObjectURL(p.preview));
       setPhotos([]);
       fetchTickets();
+    } catch (error) {
+      if (uploadedPaths.length > 0) {
+        await supabase.storage.from("checklist-photos").remove(uploadedPaths);
+      }
+      toast({ title: "Error", description: getErrorMessage(error), variant: "destructive" });
+    } finally {
+      setUploading(false);
     }
   };
 
