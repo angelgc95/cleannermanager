@@ -126,6 +126,8 @@ const SPANISH_TRANSLATIONS: Record<string, string> = {
   "Listing assigned": "Alojamiento asignado",
   "Assignment removed": "Asignacion eliminada",
   "Assignment updated": "Asignacion actualizada",
+  "Open auto events were reassigned.": "Los eventos automaticos abiertos fueron reasignados.",
+  "Existing events could not be reassigned.": "No se pudieron reasignar los eventos existentes.",
   "Assignment types": "Tipos de asignacion",
   "Room/listing assignments keep access to the property. Day routing sends new events to the cleaner selected for the event weekday.": "Las asignaciones por alojamiento mantienen el acceso a la propiedad. El enrutamiento por dias envia los eventos nuevos al cleaner seleccionado para el dia del evento.",
   "Routing:": "Enrutamiento:",

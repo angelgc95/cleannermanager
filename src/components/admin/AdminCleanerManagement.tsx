@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/LanguageProvider";
 import { buildPublicAppUrl } from "@/lib/publicAppUrl";
 import { formatAssignmentDays, normalizeAssignmentWeekdays } from "@/lib/assignmentRules";
+import { reassignOpenCleaningEventsForListing } from "@/lib/assignmentBackfill";
 
 interface CleanerWithAssignments {
   user_id: string;
@@ -190,12 +191,25 @@ export function AdminCleanerManagement() {
     if (error) {
       toast({ title: t("Error"), description: error.message, variant: "destructive" });
     } else {
-      toast({ title: t("Listing assigned") });
+      try {
+        const result = await reassignOpenCleaningEventsForListing({ supabase, hostUserId: user.id, listingId });
+        toast({
+          title: t("Listing assigned"),
+          description: result.updated > 0 ? t("Open auto events were reassigned.") : undefined,
+        });
+      } catch (backfillError) {
+        toast({
+          title: t("Listing assigned"),
+          description: getErrorMessage(backfillError, t("Existing events could not be reassigned.")),
+          variant: "destructive",
+        });
+      }
       void fetchData();
     }
   };
 
-  const handleUpdateAssignmentDays = async (assignmentId: string, days: number[]) => {
+  const handleUpdateAssignmentDays = async (assignmentId: string, listingId: string, days: number[]) => {
+    if (!user) return;
     setSavingAssignmentId(assignmentId);
     const { error } = await supabase
       .from("cleaner_assignments")
@@ -208,17 +222,42 @@ export function AdminCleanerManagement() {
     if (error) {
       toast({ title: t("Error"), description: error.message, variant: "destructive" });
     } else {
-      toast({ title: t("Assignment updated") });
+      try {
+        const result = await reassignOpenCleaningEventsForListing({ supabase, hostUserId: user.id, listingId });
+        toast({
+          title: t("Assignment updated"),
+          description: result.updated > 0 ? t("Open auto events were reassigned.") : undefined,
+        });
+      } catch (backfillError) {
+        toast({
+          title: t("Assignment updated"),
+          description: getErrorMessage(backfillError, t("Existing events could not be reassigned.")),
+          variant: "destructive",
+        });
+      }
       void fetchData();
     }
   };
 
-  const handleRemoveAssignment = async (assignmentId: string) => {
+  const handleRemoveAssignment = async (assignmentId: string, listingId: string) => {
+    if (!user) return;
     const { error } = await supabase.from("cleaner_assignments").delete().eq("id", assignmentId);
     if (error) {
       toast({ title: t("Error"), description: error.message, variant: "destructive" });
     } else {
-      toast({ title: t("Assignment removed") });
+      try {
+        const result = await reassignOpenCleaningEventsForListing({ supabase, hostUserId: user.id, listingId });
+        toast({
+          title: t("Assignment removed"),
+          description: result.updated > 0 ? t("Open auto events were reassigned.") : undefined,
+        });
+      } catch (backfillError) {
+        toast({
+          title: t("Assignment removed"),
+          description: getErrorMessage(backfillError, t("Existing events could not be reassigned.")),
+          variant: "destructive",
+        });
+      }
       void fetchData();
     }
   };
@@ -354,7 +393,7 @@ export function AdminCleanerManagement() {
                                 {t("Routing:")} {t(formatAssignmentDays(assignment.assignment_weekdays))}
                               </p>
                             </div>
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleRemoveAssignment(assignment.id)}>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleRemoveAssignment(assignment.id, assignment.listing_id)}>
                               <Trash2 className="h-3 w-3" />
                             </Button>
                           </div>
@@ -374,7 +413,7 @@ export function AdminCleanerManagement() {
                                   size="sm"
                                   className="h-7 px-2 text-xs"
                                   disabled={savingAssignmentId === assignment.id}
-                                  onClick={() => void handleUpdateAssignmentDays(assignment.id, nextDays)}
+                                  onClick={() => void handleUpdateAssignmentDays(assignment.id, assignment.listing_id, nextDays)}
                                 >
                                   {day.label}
                                 </Button>
