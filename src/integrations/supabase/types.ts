@@ -467,6 +467,7 @@ export type Database = {
       }
       cleaner_assignments: {
         Row: {
+          assignment_weekdays: number[] | null
           cleaner_user_id: string
           created_at: string
           host_user_id: string
@@ -474,6 +475,7 @@ export type Database = {
           listing_id: string
         }
         Insert: {
+          assignment_weekdays?: number[] | null
           cleaner_user_id: string
           created_at?: string
           host_user_id: string
@@ -481,6 +483,7 @@ export type Database = {
           listing_id: string
         }
         Update: {
+          assignment_weekdays?: number[] | null
           cleaner_user_id?: string
           created_at?: string
           host_user_id?: string

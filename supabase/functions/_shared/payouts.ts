@@ -1,3 +1,5 @@
+import { resolveCleanerAssignment, type CleanerAssignmentRule } from "./assignment-rules.ts";
+
 export interface GeneratePayoutsForHostArgs {
   supabase: any;
   hostUserId: string;
@@ -26,6 +28,13 @@ function normalizePayoutModel(value: string | null | undefined): PayoutModel {
 function includeUnpaidOrCurrent(query: any, currentPayoutId: string | null) {
   if (!currentPayoutId) return query.is("payout_id", null);
   return query.or(`payout_id.is.null,payout_id.eq.${currentPayoutId}`);
+}
+
+function includeUnpaidOrCurrentIds(query: any, currentPayoutIds: string[]) {
+  const ids = [...new Set(currentPayoutIds.filter(Boolean))];
+  if (ids.length === 0) return query.is("payout_id", null);
+  if (ids.length === 1) return query.or(`payout_id.is.null,payout_id.eq.${ids[0]}`);
+  return query.or(`payout_id.is.null,payout_id.in.(${ids.join(",")})`);
 }
 
 function normalizePayoutFrequency(value: string | null | undefined): PayoutFrequency {
@@ -105,6 +114,28 @@ export function buildWeeklyRange(endDateStr: string) {
   return buildPayoutRange("WEEKLY", endDateStr);
 }
 
+function groupAssignmentsByListing<T extends CleanerAssignmentRule>(assignments: T[]) {
+  const assignmentsByListing = new Map<string, T[]>();
+
+  for (const assignment of assignments) {
+    if (!assignment.listing_id) continue;
+    const listingAssignments = assignmentsByListing.get(assignment.listing_id) || [];
+    listingAssignments.push(assignment);
+    assignmentsByListing.set(assignment.listing_id, listingAssignments);
+  }
+
+  return assignmentsByListing;
+}
+
+function getPayoutCleanerId(
+  event: { listing_id?: string | null; start_at?: string | null; assigned_cleaner_id?: string | null },
+  assignmentsByListing: Map<string, CleanerAssignmentRule[]>,
+) {
+  const listingAssignments = event.listing_id ? assignmentsByListing.get(event.listing_id) || [] : [];
+  const resolvedAssignment = resolveCleanerAssignment(listingAssignments, event.start_at);
+  return resolvedAssignment?.cleaner_user_id || event.assigned_cleaner_id || null;
+}
+
 export async function generatePayoutsForHost({
   supabase,
   hostUserId,
@@ -154,10 +185,54 @@ export async function generatePayoutsForHost({
 
   const { data: assignments } = await supabase
     .from("cleaner_assignments")
-    .select("cleaner_user_id")
+    .select("cleaner_user_id, listing_id, assignment_weekdays, created_at")
     .eq("host_user_id", hostUserId);
 
-  const cleanerIds = [...new Set((assignments || []).map((assignment: any) => assignment.cleaner_user_id))];
+  const assignmentRules = (assignments || []) as CleanerAssignmentRule[];
+  const assignmentsByListing = groupAssignmentsByListing(assignmentRules);
+
+  const { data: existingPayouts } = await supabase
+    .from("payouts")
+    .select("id, cleaner_user_id, status, partial_paid_amount, manual_adjustment_amount")
+    .eq("period_id", periodId);
+
+  const existingPayoutByCleaner = new Map(
+    (existingPayouts || []).map((payout: any) => [payout.cleaner_user_id, payout])
+  );
+  const activePayoutIds = (existingPayouts || [])
+    .filter((payout: any) => payout.status !== "PAID")
+    .map((payout: any) => payout.id);
+
+  const candidateCleaningEventsQuery = supabase
+    .from("cleaning_events")
+    .select("id, checklist_run_id, status, start_at, listing_id, assigned_cleaner_id, payout_id")
+    .eq("host_user_id", hostUserId)
+    .neq("status", "CANCELLED")
+    .gte("start_at", `${startStr}T00:00:00`)
+    .lte("start_at", `${endStr}T23:59:59`);
+
+  const { data: candidateCleaningEvents } = await includeUnpaidOrCurrentIds(candidateCleaningEventsQuery, activePayoutIds);
+  const cleaningEventsByCleaner = new Map<string, any[]>();
+  const cleanerIdSet = new Set<string>();
+
+  for (const assignment of assignmentRules) {
+    cleanerIdSet.add(assignment.cleaner_user_id);
+  }
+  for (const payout of existingPayouts || []) {
+    if (payout.status !== "PAID") cleanerIdSet.add(payout.cleaner_user_id);
+  }
+
+  for (const event of candidateCleaningEvents || []) {
+    const cleanerId = getPayoutCleanerId(event, assignmentsByListing);
+    if (!cleanerId) continue;
+
+    cleanerIdSet.add(cleanerId);
+    const cleanerEvents = cleaningEventsByCleaner.get(cleanerId) || [];
+    cleanerEvents.push(event);
+    cleaningEventsByCleaner.set(cleanerId, cleanerEvents);
+  }
+
+  const cleanerIds = [...cleanerIdSet];
   if (cleanerIds.length === 0) {
     return {
       periodId,
@@ -169,12 +244,7 @@ export async function generatePayoutsForHost({
   let payoutsCreated = 0;
 
   for (const cleanerId of cleanerIds) {
-    const { data: existingPayout } = await supabase
-      .from("payouts")
-      .select("id, status, partial_paid_amount, manual_adjustment_amount")
-      .eq("period_id", periodId)
-      .eq("cleaner_user_id", cleanerId)
-      .maybeSingle();
+    const existingPayout = existingPayoutByCleaner.get(cleanerId);
 
     if (existingPayout?.status === "PAID") continue;
     const currentPayoutId = existingPayout?.id || null;
@@ -189,17 +259,8 @@ export async function generatePayoutsForHost({
 
     const { data: logHours } = await includeUnpaidOrCurrent(logHoursQuery, currentPayoutId);
 
-    const cleaningEventsQuery = supabase
-      .from("cleaning_events")
-      .select("id, checklist_run_id, status")
-      .eq("assigned_cleaner_id", cleanerId)
-      .eq("host_user_id", hostUserId)
-      .neq("status", "CANCELLED")
-      .gte("start_at", `${startStr}T00:00:00`)
-      .lte("start_at", `${endStr}T23:59:59`);
-
-    const { data: cleaningEvents } = await includeUnpaidOrCurrent(cleaningEventsQuery, currentPayoutId);
-    const cleaningEventIds = (cleaningEvents || []).map((event: any) => event.id);
+    const cleaningEvents = cleaningEventsByCleaner.get(cleanerId) || [];
+    const cleaningEventIds = cleaningEvents.map((event: any) => event.id);
 
     let eventRuns: any[] = [];
     if (cleaningEventIds.length > 0) {
@@ -210,7 +271,7 @@ export async function generatePayoutsForHost({
         .eq("host_user_id", hostUserId)
         .in("cleaning_event_id", cleaningEventIds);
 
-      const { data } = await includeUnpaidOrCurrent(eventRunsQuery, currentPayoutId);
+      const { data } = await includeUnpaidOrCurrentIds(eventRunsQuery, activePayoutIds);
       eventRuns = data || [];
     }
 
@@ -222,7 +283,7 @@ export async function generatePayoutsForHost({
 
     const payableEvents =
       payoutModel === "PER_EVENT_PLUS_HOURLY"
-        ? (cleaningEvents || []).filter((event: any) => {
+        ? cleaningEvents.filter((event: any) => {
             const run = latestRunByEvent.get(event.id);
             return event.status === "DONE" || Boolean(run?.finished_at);
           })

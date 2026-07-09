@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { formatAssignmentDays, resolveCleanerAssignment } from "@/lib/assignmentRules";
 
 type CleaningEventStartMode = "CURRENT_BOOKING_CHECKOUT" | "UPCOMING_BOOKING_CHECKIN";
 
@@ -36,6 +37,8 @@ type ListingOption = {
 type AssignmentRow = {
   listing_id: string;
   cleaner_user_id: string;
+  assignment_weekdays: number[] | null;
+  created_at: string | null;
 };
 
 type CleanerProfile = {
@@ -104,7 +107,7 @@ export function ManualCleaningEventDialog() {
           .maybeSingle(),
         supabase
           .from("cleaner_assignments")
-          .select("listing_id, cleaner_user_id")
+          .select("listing_id, cleaner_user_id, assignment_weekdays, created_at")
           .eq("host_user_id", user!.id),
       ]);
 
@@ -153,19 +156,16 @@ export function ManualCleaningEventDialog() {
     [cleaners],
   );
 
-  const defaultAssignmentByListingId = useMemo(() => {
-    const assignmentMap = new Map<string, AssignmentRow>();
+  const assignmentsByListingId = useMemo(() => {
+    const assignmentMap = new Map<string, AssignmentRow[]>();
     for (const assignment of assignments) {
-      if (!assignmentMap.has(assignment.listing_id)) {
-        assignmentMap.set(assignment.listing_id, assignment);
-      }
+      const existing = assignmentMap.get(assignment.listing_id) || [];
+      assignmentMap.set(assignment.listing_id, [...existing, assignment]);
     }
     return assignmentMap;
   }, [assignments]);
 
   const selectedListing = form.listingId ? listingsById.get(form.listingId) ?? null : null;
-  const defaultAssignment = selectedListing ? defaultAssignmentByListingId.get(selectedListing.id) ?? null : null;
-  const defaultCleaner = defaultAssignment ? cleanersById.get(defaultAssignment.cleaner_user_id) ?? null : null;
 
   const nights =
     form.bookingStartDate && form.bookingEndDate
@@ -174,6 +174,9 @@ export function ManualCleaningEventDialog() {
 
   const generatedAnchorDate =
     cleaningEventStartMode === "CURRENT_BOOKING_CHECKOUT" ? form.bookingEndDate : form.bookingStartDate;
+  const selectedListingAssignments = selectedListing ? assignmentsByListingId.get(selectedListing.id) || EMPTY_ASSIGNMENTS : EMPTY_ASSIGNMENTS;
+  const defaultAssignment = resolveCleanerAssignment(selectedListingAssignments, generatedAnchorDate || null);
+  const defaultCleaner = defaultAssignment ? cleanersById.get(defaultAssignment.cleaner_user_id) ?? null : null;
 
   const generatedWindowPreview =
     selectedListing && generatedAnchorDate
@@ -434,7 +437,7 @@ export function ManualCleaningEventDialog() {
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {defaultCleaner
-                    ? `${t("Default cleaner:")} ${defaultCleaner.name || defaultCleaner.email || defaultCleaner.user_id}`
+                    ? `${t("Default cleaner:")} ${defaultCleaner.name || defaultCleaner.email || defaultCleaner.user_id} (${t(formatAssignmentDays(defaultAssignment?.assignment_weekdays))})`
                     : t("No default cleaner is assigned to this listing yet.")}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">

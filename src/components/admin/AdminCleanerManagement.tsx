@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { UserPlus, Trash2, Home, Mail, Loader2 } from "lucide-react";
+import { UserPlus, Trash2, Home, Mail, Loader2, CalendarDays } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/LanguageProvider";
 import { buildPublicAppUrl } from "@/lib/publicAppUrl";
+import { formatAssignmentDays, normalizeAssignmentWeekdays } from "@/lib/assignmentRules";
 
 interface CleanerWithAssignments {
   user_id: string;
@@ -28,15 +29,26 @@ interface CleanerWithAssignments {
   email: string;
   setup_completed: boolean;
   status: "INVITED" | "ACTIVE";
-  assignments: { id: string; listing_id: string; listing_name: string }[];
+  assignments: { id: string; listing_id: string; listing_name: string; assignment_weekdays: number[] | null }[];
 }
 
 interface CleanerAssignmentRow {
   id: string;
   cleaner_user_id: string;
   listing_id: string;
+  assignment_weekdays: number[] | null;
   listings: { name?: string } | null;
 }
+
+const ASSIGNMENT_DAYS = [
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+  { value: 0, label: "Sun" },
+];
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) return error.message;
@@ -54,6 +66,7 @@ export function AdminCleanerManagement() {
   const [listings, setListings] = useState<{ id: string; name: string }[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
+  const [savingAssignmentId, setSavingAssignmentId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -68,7 +81,7 @@ export function AdminCleanerManagement() {
         supabase.from("host_cleaners").select("cleaner_user_id, invited_email, status").eq("host_user_id", user.id).order("created_at", { ascending: true }),
         supabase
           .from("cleaner_assignments")
-          .select("id, cleaner_user_id, listing_id, listings(name)")
+          .select("id, cleaner_user_id, listing_id, assignment_weekdays, listings(name)")
           .eq("host_user_id", user.id),
       ]);
 
@@ -110,6 +123,7 @@ export function AdminCleanerManagement() {
               id: assignment.id,
               listing_id: assignment.listing_id,
               listing_name: assignment.listings?.name || "Unknown",
+              assignment_weekdays: assignment.assignment_weekdays,
             })),
         };
       });
@@ -181,6 +195,24 @@ export function AdminCleanerManagement() {
     }
   };
 
+  const handleUpdateAssignmentDays = async (assignmentId: string, days: number[]) => {
+    setSavingAssignmentId(assignmentId);
+    const { error } = await supabase
+      .from("cleaner_assignments")
+      .update({
+        assignment_weekdays: days.length > 0 ? days : null,
+      })
+      .eq("id", assignmentId);
+
+    setSavingAssignmentId(null);
+    if (error) {
+      toast({ title: t("Error"), description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: t("Assignment updated") });
+      void fetchData();
+    }
+  };
+
   const handleRemoveAssignment = async (assignmentId: string) => {
     const { error } = await supabase.from("cleaner_assignments").delete().eq("id", assignmentId);
     if (error) {
@@ -213,6 +245,18 @@ export function AdminCleanerManagement() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="rounded-lg border border-border bg-muted/30 p-3">
+          <div className="flex items-start gap-2">
+            <CalendarDays className="mt-0.5 h-4 w-4 text-muted-foreground" />
+            <div className="space-y-1 text-sm">
+              <p className="font-medium">{t("Assignment types")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("Room/listing assignments keep access to the property. Day routing sends new events to the cleaner selected for the event weekday.")}
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="flex gap-2">
           <Input
             type="email"
@@ -299,14 +343,47 @@ export function AdminCleanerManagement() {
                       <p className="text-xs text-muted-foreground">{t("No listings assigned yet.")}</p>
                     ) : (
                       cleaner.assignments.map((assignment) => (
-                        <div key={assignment.id} className="flex items-center justify-between bg-muted/50 rounded px-2 py-1.5 text-sm">
-                          <div className="flex items-center gap-1.5">
-                            <Home className="h-3 w-3 text-muted-foreground" />
-                            <span>{assignment.listing_name}</span>
+                        <div key={assignment.id} className="rounded bg-muted/50 px-2 py-2 text-sm">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <Home className="h-3 w-3 text-muted-foreground" />
+                                <span className="font-medium">{assignment.listing_name}</span>
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {t("Routing:")} {t(formatAssignmentDays(assignment.assignment_weekdays))}
+                              </p>
+                            </div>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleRemoveAssignment(assignment.id)}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
                           </div>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleRemoveAssignment(assignment.id)}>
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {ASSIGNMENT_DAYS.map((day) => {
+                              const selectedDays = normalizeAssignmentWeekdays(assignment.assignment_weekdays);
+                              const isSelected = selectedDays.includes(day.value);
+                              const nextDays = isSelected
+                                ? selectedDays.filter((value) => value !== day.value)
+                                : normalizeAssignmentWeekdays([...selectedDays, day.value]);
+                              return (
+                                <Button
+                                  key={day.value}
+                                  type="button"
+                                  variant={isSelected ? "secondary" : "outline"}
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  disabled={savingAssignmentId === assignment.id}
+                                  onClick={() => void handleUpdateAssignmentDays(assignment.id, nextDays)}
+                                >
+                                  {day.label}
+                                </Button>
+                              );
+                            })}
+                          </div>
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            {t("No day selected keeps this as the fallback cleaner for that room/listing.")}
+                          </p>
                         </div>
                       ))
                     )}

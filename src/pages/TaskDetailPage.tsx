@@ -23,6 +23,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/i18n/LanguageProvider";
 import { ChecklistReviewFlagsCard } from "@/components/checklist/ChecklistReviewFlagsCard";
+import { resolveCleanerAssignment } from "@/lib/assignmentRules";
 
 const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props, ref) {
   const { id } = useParams();
@@ -114,7 +115,7 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
     queryFn: async () => {
       const { data: assignments } = await supabase
         .from("cleaner_assignments")
-        .select("cleaner_user_id, listing_id")
+        .select("cleaner_user_id, listing_id, assignment_weekdays, created_at")
         .eq("host_user_id", hostId!);
       if (!assignments) return { cleaners: [] as any[], assignments: [] as any[] };
       const cleanerIds = [...new Set(assignments.map(a => a.cleaner_user_id))];
@@ -130,7 +131,10 @@ const TaskDetailPage = forwardRef<HTMLDivElement>(function TaskDetailPage(_props
 
   // Pre-select default cleaner
   if (cleanersData && event && !event.assigned_cleaner_id && event.listing_id && pendingCleaner === null) {
-    const listingAssignment = cleanersData.assignments.find((a: any) => a.listing_id === event.listing_id);
+    const listingAssignment = resolveCleanerAssignment(
+      cleanersData.assignments.filter((a: any) => a.listing_id === event.listing_id),
+      event.start_at,
+    );
     if (listingAssignment && pendingCleaner === null) {
       setPendingCleaner(listingAssignment.cleaner_user_id);
     }

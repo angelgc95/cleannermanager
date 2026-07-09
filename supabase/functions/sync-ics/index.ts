@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveCleanerAssignment } from "../_shared/assignment-rules.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -154,13 +155,12 @@ async function syncListing(
   let totalEventsRemoved = 0;
   let totalBookingsRemoved = 0;
 
-  const { data: assignment } = await supabase
+  const { data: assignmentRows } = await supabase
     .from("cleaner_assignments")
-    .select("cleaner_user_id")
+    .select("cleaner_user_id, listing_id, assignment_weekdays, created_at")
     .eq("listing_id", listing.id)
-    .limit(1)
-    .maybeSingle();
-  const defaultCleanerId = assignment?.cleaner_user_id || null;
+    .eq("host_user_id", listing.host_user_id);
+  const assignments = assignmentRows || [];
 
   const templateId = listing.default_checklist_template_id || null;
 
@@ -260,6 +260,8 @@ async function syncListing(
         const eventStartAt = `${eventAnchorDate}T${listing.default_checkout_time || "11:00:00"}`;
         const eventEndAt = `${eventAnchorDate}T${listing.default_checkin_time || "15:00:00"}`;
         const reference = confirmationCode || icsEvent.uid || externalUid;
+        const resolvedAssignment = resolveCleanerAssignment(assignments, eventAnchorDate);
+        const assignedCleanerId = resolvedAssignment?.cleaner_user_id || null;
 
         const eventDetailsJson = {
           nights,
@@ -287,7 +289,7 @@ async function syncListing(
               status: "TODO",
               start_at: eventStartAt,
               end_at: eventEndAt,
-              assigned_cleaner_id: defaultCleanerId,
+              assigned_cleaner_id: assignedCleanerId,
               checklist_template_id: templateId,
               event_details_json: eventDetailsJson,
               reference,
@@ -304,6 +306,7 @@ async function syncListing(
             .update({
               start_at: eventStartAt,
               end_at: eventEndAt,
+              assigned_cleaner_id: assignedCleanerId,
               event_details_json: eventDetailsJson,
               reference,
               checklist_template_id: templateId,
